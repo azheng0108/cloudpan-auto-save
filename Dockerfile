@@ -9,7 +9,8 @@ COPY . .
 
 # 安装项目依赖并构建
 RUN yarn install && \
-    yarn build
+    npx tsc && \
+    cp -r src/public dist/public
 
 # 构建生产版本
 FROM node:16.19.0-alpine AS production
