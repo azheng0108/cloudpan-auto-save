@@ -14,17 +14,14 @@
 
 
     <p align="center">
-        <a href="https://github.com/1307super/cloud189-auto-save/releases/latest">
-            <img src="https://img.shields.io/github/v/release/1307super/cloud189-auto-save?style=flat-square" alt="GitHub release">
+        <a href="https://github.com/azheng0108/cloudpan-auto-save/releases/latest">
+            <img src="https://img.shields.io/github/v/release/azheng0108/cloudpan-auto-save?style=flat-square" alt="GitHub release">
         </a>
-         <a href="https://github.com/1307super/cloud189-auto-save/stargazers">
-            <img src="https://img.shields.io/github/stars/1307super/cloud189-auto-save?style=flat-square" alt="GitHub Stars">
+        <a href="https://github.com/azheng0108/cloudpan-auto-save/stargazers">
+            <img src="https://img.shields.io/github/stars/azheng0108/cloudpan-auto-save?style=flat-square" alt="GitHub Stars">
         </a>
-        <a href="https://github.com/1307super/cloud189-auto-save/wiki">
-            <img src="https://img.shields.io/badge/Wiki-文档-blue?style=flat-square" alt="Wiki">
-        </a>
-        <a href="https://hub.docker.com/r/xia1307/cloud189-auto-save">
-            <img src="https://img.shields.io/docker/pulls/xia1307/cloud189-auto-save?style=flat-square" alt="Docker Pulls">
+        <a href="https://hub.docker.com/r/azheng0108/cloudpan-auto-save">
+            <img src="https://img.shields.io/docker/pulls/azheng0108/cloudpan-auto-save?style=flat-square" alt="Docker Pulls">
         </a>
     </p>
 </div>
