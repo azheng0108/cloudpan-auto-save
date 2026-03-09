@@ -1,0 +1,228 @@
+/* 主题切换按钮样式 */
+.theme-switch {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+}
+
+.theme-toggle-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    color: var(--text-color);
+}
+
+
+.theme-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 1000;
+}
+
+.theme-dropdown.show {
+    display: block;
+}
+
+.theme-option {
+    padding: 8px 16px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+/* 暗黑模式变量 */
+:root {
+    --primary-rgb: 64, 158, 255;  /* #409eff 的 RGB 值 */
+    --bg-color: #ffffff;
+    --background-color: #ffffff;
+    --hover-color: #f5f5f5;
+    --text-color: rgba(0, 0, 0, 0.85);
+    --border-color: #e0e0e0;
+    --hover-bg: #f5f5f5;
+    --card-bg: #ffffff;
+    --container-bg: #ffffff;
+    --input-bg: #ffffff;
+    --input-border: #dcdfe6;
+    --btn-bg: #409eff;
+    --btn-text: #ffffff;
+    --btn-warning-bg: #f56c6c;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --link-color: #409eff;
+    --thead-bg: transparent;
+    --theme-color: #409eff;
+    --selected-bg: rgba(var(--primary-rgb), 0.2);
+}
+
+[data-theme="dark"] {
+    --primary-rgb: 64, 158, 255;  /* #409eff 的 RGB 值 */
+    --bg-color: #1a1a1a;
+    --background-color: #1a1a1a;
+    --hover-color: #1f1f1f;
+    --text-color: rgba(255, 255, 255, 0.85);
+    --border-color: #303030;
+    --hover-bg: #1f1f1f;
+    --card-bg: #1a1a1a;
+    --container-bg: #141414;
+    --input-bg: #1f1f1f;
+    --input-border: #303030;
+    --btn-bg: #409eff;
+    --btn-text: rgba(255, 255, 255, 0.85);
+    --btn-warning-bg: #f56c6c;
+    --shadow-color: rgba(255, 255, 255, 0.05);  /* 修改阴影颜色 */
+    --link-color: #409eff;
+    --thead-bg: #1d1d1d;
+    --theme-color: #409eff;
+    --selected-bg: rgba(var(--primary-rgb), 0.3);
+}
+
+/* 应用变量到全局样式 */
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.container {
+    background-color: var(--container-bg);
+}
+
+#taskTable tr,
+#accountTable tr {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    box-shadow: 0 1px 3px var(--shadow-color);  /* 使用变量控制阴影颜色 */
+}
+
+#taskTable tr:hover,
+#accountTable tr:hover {
+    box-shadow: 0 4px 8px var(--shadow-color);  /* hover 状态也使用相同的阴影颜色 */
+}
+
+a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+.modal-content {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+}
+
+input, select, textarea {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-color);
+}
+
+button {
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+}
+
+table {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+table thead {
+    background-color: var(--thead-bg);
+}
+
+table thead th {
+    background-color: var(--thead-bg);
+}
+
+tr {
+    background-color: var(--card-bg);
+}
+
+td, th {
+    border-color: var(--border-color);
+}
+
+/* 保持原有的主题切换按钮样式 */
+.theme-switch {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+}
+
+.theme-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-block;
+    vertical-align: middle;
+    background-color: var(--text-color);  /* 使用文本颜色变量 */
+    -webkit-mask-size: cover;
+    mask-size: cover;
+}
+
+/* 默认主题下的图标颜色 */
+.theme-toggle-btn .theme-icon,
+.theme-option .theme-icon {
+    background-color: rgba(0, 0, 0, 0.85);
+}
+
+/* 暗黑主题下的图标颜色 */
+[data-theme="dark"] .theme-toggle-btn .theme-icon,
+[data-theme="dark"] .theme-option .theme-icon {
+    background-color: rgba(255, 255, 255, 0.85);
+}
+
+/* 根据当前主题切换按钮图标 */
+[data-theme="dark"] .theme-toggle-btn .theme-icon {
+    -webkit-mask-image: url('/icons/moon.svg');
+    mask-image: url('/icons/moon.svg');
+}
+
+[data-theme="auto"] .theme-toggle-btn .theme-icon {
+    -webkit-mask-image: url('/icons/auto.svg');
+    mask-image: url('/icons/auto.svg');
+}
+
+[data-theme="light"] .theme-toggle-btn .theme-icon,
+.theme-toggle-btn .theme-icon {
+    -webkit-mask-image: url('/icons/sun.svg');
+    mask-image: url('/icons/sun.svg');
+}
+
+/* 下拉菜单中的图标 */
+.theme-option[data-theme="light"] .theme-icon {
+    -webkit-mask-image: url('/icons/sun.svg');
+    mask-image: url('/icons/sun.svg');
+}
+
+.theme-option[data-theme="dark"] .theme-icon {
+    -webkit-mask-image: url('/icons/moon.svg');
+    mask-image: url('/icons/moon.svg');
+}
+
+.theme-option[data-theme="auto"] .theme-icon {
+    -webkit-mask-image: url('/icons/auto.svg');
+    mask-image: url('/icons/auto.svg');
+}
+
+[data-theme='dark'] button {
+    background: var(--bg-color);
+    color: var(--btn-text);
+    border: 1px solid var(--border-color);
+}
+
+[data-theme='dark'] .status-badge {
+    background: var(--bg-color);
+}
+[data-theme='dark'] button:hover {
+    background-color: var(--hover-bg);
+}
+
+[data-theme='dark'] .folder-tree-item.selected {
+    background: var(--bg-color);
+}
+[data-theme='dark'] .folder-tree-item:hover {
+    background-color: var(--hover-bg);
+}

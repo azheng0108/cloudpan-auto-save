@@ -1,0 +1,933 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>多云盘自动转存系统</title>
+    <meta name="theme-color" content="#ffffff">
+    <meta name="color-scheme" content="light dark">
+
+    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="自动转存" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/folder-tree.css">
+    <link rel="stylesheet" href="/css/modal.css">
+    <link rel="stylesheet" href="/css/card-view.css">
+    <link rel="stylesheet" href="/css/components.css">
+    <link rel="stylesheet" href="/css/table-view.css">
+    <link rel="stylesheet" href="/css/table.css">
+    <link rel="stylesheet" href="/css/tabs.css">
+    <link rel="stylesheet" href="/css/theme.css">
+    <link rel="stylesheet" href="/css/logs.css">
+    <link rel="stylesheet" href="/css/loading.css">
+    <link rel="stylesheet" href="/css/message.css">
+    <link rel="stylesheet" href="/css/floating-btn.css">
+    <link rel="stylesheet" href="/css/cloudsaver.css">
+    <link rel="stylesheet" href="/css/chat.css">
+</head>
+<body>
+    <div class="header">
+        <h1 id="appTitle">云盘自动转存</h1>
+    </div>
+    
+    <div class="theme-switch">
+        <button id="themeToggle" class="theme-toggle-btn">
+            <span class="theme-icon"></span>
+        </button>
+        <div class="theme-dropdown" id="themeDropdown">
+            <div class="theme-option" data-theme="light">
+                <span class="theme-icon"></span>
+                默认
+            </div>
+            <div class="theme-option" data-theme="dark">
+                <span class="theme-icon"></span>
+                暗黑
+            </div>
+            <div class="theme-option" data-theme="auto">
+                <span class="theme-icon"></span>
+                自动
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="tabs">
+            <div class="tab" data-tab="account">账号</div>
+            <div class="tab active" data-tab="task">任务</div>
+            <div class="tab" data-tab="media">媒体</div>
+            <div class="tab" data-tab="settings">系统</div>
+        </div>
+
+        <div id="accountTab" class="tab-content">
+            <div class="form-header">
+                <div class="task-operations">
+                    <div class="operation-group">
+                        <div class="button-group">
+                            <button type="button" onclick="openAddAccountModal()" class="btn-primary">添加账号</button>
+                            <button type="button" onclick="clearRecycleBin()" class="btn-warning">清空回收站</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="addAccountModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                    <h3>添加账号</h3>
+                    </div>
+                    <form id="accountForm">
+                        <div class="form-body">
+                            <div class="form-group">
+                                <label for="accountType">账号类型</label>
+                                <select id="accountType" onchange="onAccountTypeChange(this.value)">
+                                    <option value="cloud189">天翼云盘（189）</option>
+                                    <option value="cloud139">移动云盘（139）</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="username">用户名</label>
+                                <input type="text" id="username" required>
+                            </div>
+                            <div class="form-group" id="passwordGroup">
+                                <label for="password">密码</label>
+                                <input type="password" id="password">
+                            </div>
+                            <!---验证码-->
+                            <div class="form-group" id="account-captcha" style="display: none;">
+                                <label for="captcha">验证码</label>
+                                <div class="captcha-container">
+                                    <img id="captchaImage" src="" alt="验证码">
+                                    <input type="text" id="validateCode" placeholder="验证码">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="cookie">Cookie</label>
+                                <input type="cookie" id="cookie">
+                            </div>
+                            <div class="form-group">
+                            <small class="form-text" id="loginHint">密码和Cookie至少填写一个, 如果都填写, 则只有账号密码生效</small>
+                            </div>
+
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit">添加</button>
+                            <button type="button" class="btn-default" onclick="closeAddAccountModal()">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="accountTable">
+                    <thead>
+                        <tr>
+                            <th>用户名</th>
+                            <th>容量</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="taskTab" class="tab-content active">
+            <div class="form-header">
+                <div class="task-operations">
+                    <div class="operation-group">
+                        <div class="button-group">
+                            <button type="button" onclick="openCreateTaskModal()" class="btn-primary">创建任务</button>
+                            <div class="dropdown-button-group">
+                                <button type="button" class="dropdown-toggle">
+                                    更多操作
+                                    <span class="dropdown-icon">▼</span>
+                                </button>
+                                <div class="dropdown-content">
+                                    <a onclick="executeAllTask()">执行所有</a>
+                                    <a onclick="deleteSelectedTasks()">批量删除</a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="search-bar">
+                            <div class="filter-dropdown">
+                                <select id="taskFilter">
+                                    <option value="all" selected>全部任务</option>
+                                    <option value="processing">追剧中</option>
+                                    <option value="completed">已完结</option>
+                                    <option value="failed">失败</option>
+                                    <option value="pending">等待中</option>
+                                </select>
+                            </div>
+                            <div class="search-input">
+                                <input type="text" id="taskSearch" placeholder="搜索资源名称/账号/备注">
+                                <button type="button" onclick="fetchTasks()" class="btn-icon" title="刷新任务列表">
+                                    <img src="/icons/refresh.svg" alt="刷新" class="refresh-icon">
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="delete-cloud-options">
+                        <label class="delete-cloud-option">
+                            <input type="checkbox" id="selectAllTasks">
+                            <span>全选</span>
+                        </label>
+                        <label class="delete-cloud-option">
+                            <input type="checkbox" id="deleteCloudOption">
+                            <span>同步删除网盘</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div id="createTaskModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>创建任务</h3>
+                    </div>
+                    <form id="taskForm">
+                        <div class="form-body">
+                            <div class="form-group">
+                                <label for="accountId">选择账号</label>
+                                <select id="accountId" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="shareLink">分享链接</label>
+                                <div class="share-input-group" style="display: flex; gap: 10px;">
+                                    <input type="text" id="shareLink" required style="flex: 2;" data-share-input placeholder="可自动解析带访问码的链接">
+                                    <input type="text" id="accessCode" placeholder="访问码（可选）" style="flex: 1;" data-share-input>
+                                </div>
+                                <div id="shareParseError" style="color: #ff4d4f; font-size: 10px; margin-top: 2px; min-height: 12px;"></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="taskName">任务名称</label>
+                                <input type="text" id="taskName" required readonly>
+                                <small class="form-text">默认使用分享目录第一个文件夹名称,识别完成后可更改</small>
+                            </div>
+                            <div class="form-group share-folders-group" style="display: none;">
+                                <label>分享目录</label>
+                                <div class="share-folders-list" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 0; border-radius: 4px;">
+                                    <div class="folder-select-header">
+                                        <label>
+                                            <input type="checkbox" id="selectAllFolders" checked>
+                                            全选
+                                            <small>如果不勾选根目录, 则只会保存子目录</small>
+                                        </label>
+                                    </div>
+                                    <div id="shareFoldersList"></div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="targetFolderId">保存目录</label>
+                                <div class="tree-select" style="display: flex; gap: 10px;">
+                                    <div style="flex: 1; position: relative;">
+                                        <input type="text" id="targetFolder" readonly required>
+                                        <input type="hidden" id="targetFolderId" required>
+                                        <div class="tree-select-dropdown"></div>
+                                    </div>
+                                    <button type="button" class="btn-default" id="favoriteFolderBtn">
+                                        <i class="fas fa-star"></i>
+                                        常用目录
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="totalEpisodes">总集数</label>
+                                <input type="number" id="totalEpisodes" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="remark">备注</label>
+                                <input type="text" id="remark" >
+                            </div>
+                            <div class="form-group">
+                                <label>文件名重命名（可选）</label>
+                                <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                                    <input type="text" id="ctSourceRegex" placeholder="正则表达式 例如: .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$" style="flex: 2 1 200px;">
+                                    <input id="ctTargetRegex" placeholder="例如: 沙尘暴.$1$2" style="flex: 1 1 100px;">
+                                </div>
+                                <div class="help-text-container" style="margin-top:4px;">
+                                    <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
+                                    <small class="form-text" style="display:none;">例如：沙尘暴 - S01E06 - 第6集.mkv 正则就填写 .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$ 值填写沙尘暴.$1$2, 结果为沙尘暴.S01E06.mkv<br/>
+                                        注意: 如果开启了AI并且正则未填写, 则会使用AI处理文件名; 正则的优先级 &gt; AI
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>文件名匹配规则（可选）</label>
+                                <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                                    <input type="text" id="matchPattern" placeholder="正则表达式 例如: (?<=E)\d+" style="flex: 2 1 200px;">
+                                    <select id="matchOperator" style="flex: 1 1 100px;">
+                                        <option value="lt">小于</option>
+                                        <option value="eq">等于</option>
+                                        <option value="gt">大于</option>
+                                        <option value="contains">包含</option>
+                                        <option value="notContains">不包含</option>
+                                    </select>
+                                    <input id="matchValue" placeholder="值" min="0" style="flex: 1 1 100px;">
+                                </div>
+                                <div class="help-text-container" style="margin-top:4px;">
+                                    <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
+                                    <small class="form-text" style="display:none;">例如：沙尘暴 - S01E06 - 第6集.mkv 想要转存大于8集的剧集, 正则就填写 (?<=E)\d+ 值填写8, 逻辑是用正则匹配出S01E06中的06与值8进行比较<br/>
+                                        注意: 如果启用了AI会默认走AI处理, 正则表达式栏可以用自然语, 例如: 剧集 大于 8 AI会处理筛选剧集大于8的文件; 文件名 不包含 特别版和番外篇 AI会只保留满足条件的
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="enableCron" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="enableCron" style="width:auto;margin:0;">启用自定义定时任务</label>
+                                <div class="cronExpression-box">
+                                    <input type="text" id="cronExpression" placeholder="Cron表达式，如：0 */30 * * * *">
+                                    <small class="form-text">每30分钟执行：0 */30 * * * *</small><br/>
+                                    <small class="form-text">每天凌晨2点执行：0 0 2 * * *</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit">创建</button>
+                            <button type="button" class="btn-default" onclick="closeCreateTaskModal()">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="taskTable">
+                    <thead>
+                        <tr>
+                            <th>操作</th>
+                            <th>资源名称</th>
+                            <th>账号</th>
+                            <!-- <th>视频类型</th> -->
+                            <th>首次保存目录</th>
+                            <th>更新目录</th>
+                            <th>更新数/总数</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="settingsTab" class="tab-content">
+            <form id="settingsForm">
+                <div class="form-group">
+                    <label for="systemApiKey">系统apiKey</label>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="systemApiKey" placeholder="系统apiKey" style="flex: 1;">
+                        <button type="button" onclick="generateApiKey()" class="btn-default" style="margin-top: unset;">生成Key</button>
+                    </div>
+                    <small class="form-text">系统apiKey, 可用于第三方调用接口使用。生成后请及时保存设置。</small>
+                </div>
+                <div class="form-group">
+                    <label>任务设置</label>
+                    <div class="push-settings">
+                        <div class="push-item">
+                            <label for="taskExpireDays">任务过期天数</label>
+                            <input type="number" id="taskExpireDays" min="1" placeholder="默认3天">
+                            <small class="form-text">超过指定天数未新增资源的任务将状态改为已完成</small>
+                        </div>
+                        <div class="push-item">
+                            <label for="taskMaxRetries">最大重试次数</label>
+                            <input type="number" id="taskMaxRetries" min="0" placeholder="默认3次">
+                            <small class="form-text">任务执行失败时的最大重试次数</small>
+                        </div>
+                        <div class="push-item">
+                            <label for="taskRetryInterval">重试间隔（秒）</label>
+                            <input type="number" id="taskRetryInterval" min="0" placeholder="默认300秒">
+                            <small class="form-text">任务重试的时间间隔</small>
+                        </div>
+                        <div class="push-item">
+                            <label>任务定时检查</label>
+                            <input type="text" id="taskCheckCron" placeholder="Cron表达式">
+                            <small class="form-text">默认：0 19-23 * * * (每天19点到23点整点执行一次) 允许多个表达式, 使用|分隔, 例如: 0 19-23 * * *|0 16-23 * * *</small>
+                        </div>
+                        <div class="push-item">
+                            <label>
+                                <input type="checkbox" id="enableAutoClearRecycle">
+                                自动清空个人回收站
+                            </label>
+                            <label>
+                                <input type="checkbox" id="enableAutoClearFamilyRecycle">
+                                自动清空回家庭收站
+                            </label>
+
+                            <input type="text" id="cleanRecycleCron" placeholder="Cron表达式">
+                            <small class="form-text">默认：0 */8 * * * (每8小时)</small>
+                        </div>
+                        <div class="push-item">
+                            <label for="mediaSuffix">媒体文件后缀</label>
+                            <input type="text" id="mediaSuffix" placeholder="例如: .mp4, .mkv">
+                            <small class="form-text">仅用于计算当前已转存集数,其他文件一样会转存。当任务总集数填写后,会根据当前填写的后缀匹配媒体文件,满足后缀的文件会计入已更新数。</small>
+                            <label>
+                                <input type="checkbox" id="enableOnlySaveMedia">
+                                仅转存指定后缀的媒体文件
+                            </label>
+                        </div>
+                        <div class="push-item">
+                            <label>
+                                <input type="checkbox" id="enableAutoCreateFolder">
+                                云盘文件夹不存在时自动创建
+                            </label>
+                            <small class="form-text">当天翼云盘中任务更新目录不存在的时候, 自动创建文件夹, 仅会创建最后一级文件夹</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>消息推送设置</label>
+                    <div class="push-settings">
+                        <div class="push-item">
+                            <label>
+                                <input type="checkbox" id="enableWecom">
+                                企微 推送
+                            </label>
+                            <input type="text" id="wecomWebhook" placeholder="机器人webhook">
+                            <label>
+                                <input type="checkbox" id="enableTelegram">
+                                Telegram 推送
+                            </label>
+                            <input type="text" id="proxyDomain" placeholder="反代地址, 选填">
+                            <label for="telegramBotToken">Bot Token</label>
+                            <input type="text" id="telegramBotToken" placeholder="Bot Token">
+                            <label for="telegramChatId">Chat ID</label>
+                            <input type="text" id="telegramChatId" placeholder="Chat ID">
+
+                            <label>
+                                <input type="checkbox" id="enableWXPusher">
+                                WXPusher 推送
+                            </label>
+                            <input type="text" id="wXPusherSPT" placeholder="WXPusher SPT">
+                            <label>
+                                <input type="checkbox" id="enableBark">
+                                Bark 推送
+                            </label>
+                            <input type="text" id="barkServerUrl" placeholder="Bark serverUrl">
+                            <input type="text" id="barkKey" placeholder="Bark key">
+
+                            <label>
+                                <input type="checkbox" id="enablePushPlus">
+                                PushPlus 推送
+                            </label>
+                            <label for="pushplusToken">Token</label>
+                            <input type="text" id="pushplusToken" placeholder="PushPlus Token">
+                            <label for="pushplusTopic">群组编码</label>
+                            <input type="text" id="pushplusTopic" placeholder="群组编码, 不填仅给自己发送">
+                            <label for="pushplusChannel">推送渠道</label>
+                            <select id="pushplusChannel">
+                                <option value="wechat">微信公众号</option>
+                                <option value="webhook">WebHook</option>
+                                <option value="cp">企业微信</option>
+                                <option value="sms">短信</option>
+                                <option value="mail">邮件</option>
+                            </select>
+                            <label for="pushplusWebhook">Webhook(选填)</label>
+                            <input type="text" id="pushplusWebhook" placeholder="仅在选择 WebHook 渠道时需要填写">
+                            <label for="pushplusTo">好友令牌(选填)</label>
+                            <input type="text" id="pushplusTo" placeholder="好友令牌">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Telegram 机器人</label>
+                    <div class="push-item">
+                        <label>
+                            <input type="checkbox" id="enableTgBot">
+                            点亮 TG 创任务
+                        </label>
+                        <label for="telegramChatId">Token</label>
+                        <input type="text" id="tgBotToken" placeholder="Bot Token">
+                        <label for="telegramChatId">Chat ID</label>
+                        <input type="text" id="tgBotChatId" placeholder="Chat ID">
+                        <small class="form-text">点亮后即可通过TG机器人管理任务。</small>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="proxySettings">代理设置</label>
+                    <div class="push-item">
+                    <div class="proxy-settings">
+                        <input type="text" id="proxyHost" placeholder="代理地址: 127.0.0.1">
+                        <input type="number" id="proxyPort" placeholder="代理端口">
+                        <input type="text" id="proxyUsername" placeholder="账号 如果有">
+                        <input type="text" id="proxyPassword" placeholder="密码 如果有">
+                    </div>
+                    <div class="proxy-options" style="margin-top: 10px;">
+                        <label style="display: block; margin-bottom: 5px;">启用代理的服务：</label>
+                        <div class="proxy-services-container">
+                            <label class="proxy-service-item">
+                                <input type="checkbox" id="proxyTelegram">
+                                <span>Telegram</span>
+                            </label>
+                            <label class="proxy-service-item">
+                                <input type="checkbox" id="proxyTmdb">
+                                <span>TMDB</span>
+                            </label>
+                            <label class="proxy-service-item">
+                                <input type="checkbox" id="proxyOpenAI">
+                                <span>OpenAI</span>
+                            </label>
+                            <label class="proxy-service-item">
+                                <input type="checkbox" id="proxyCloud189">
+                                <span>天翼</span>
+                            </label>
+                            <label class="proxy-service-item">
+                                <input type="checkbox" id="proxyCustomPush">
+                                <span>自定义推送</span>
+                            </label>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="proxySettings">用户名密码设置</label>
+                    <div class="proxy-settings">
+                        <input type="text" id="systemUserName" placeholder="登录账号">
+                        <input type="password" id="systemPassword" placeholder="登录密码">
+                    </div>
+                </div>
+
+                <button type="submit">保存设置</button>
+            </form>
+        </div>
+
+        <div id="mediaTab" class="tab-content">
+            <form id="mediaForm">
+                <div class="form-group">
+                    <label>OpenAI 设置</label>
+                    <div class="push-settings">
+                        <div class="push-item">
+                            <label>
+                                <input type="checkbox" id="enableOpenAI">
+                                启用 AI 辅助
+                            </label>
+                            <label for="openaiBaseUrl">API地址</label>
+                            <input type="text" id="openaiBaseUrl" placeholder="API地址,如: https://open.bigmodel.cn/api/paas/v4">
+                            <label for="openaiApiKey">API Key</label>
+                            <input type="text" id="openaiApiKey" placeholder="API Key">
+                            <label for="openaiModel">模型名称</label>
+                            <input type="text" id="openaiModel" placeholder="模型名称">
+                            <label for="openaiTemplate">剧集命名模版</label>
+                            <input type="text" id="openaiTemplate" placeholder="文件名模板">
+                            <label for="openaiMovieTemplate">电影命名模版</label>
+                            <input type="text" id="openaiMovieTemplate" placeholder="电影命名模版">
+                            <div class="help-text-container">
+                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
+                                <small class="form-text">
+                                    支持所有 OpenAI API 格式的接口，例如：<br/>
+                                    • OpenAI API: https://api.openai.com/v1<br/>
+                                    • 智谱AI: https://open.bigmodel.cn/api/paas/v4
+                                    <br/>
+                                    <span style="color:orange">注意: 启用后AI重命名将优先执行（优先于正则重命名），会自动处理任务名称、文件夹名和剧集名称。如果您设置了正则重命名规则，则仅在手动执行时生效。</span><br/>
+                                    剧集模板示例：<br/>
+                                    <span style="background-color: #f0f0f0;">{name} - {se}{ext}</span> → 北上 - S01E01.mkv<br/>
+                                    <span style="background-color: #f0f0f0;">{name}.第{sn}季第{en}集{ext}</span> → 北上.第1季第1集.mkv<br/>
+                                    <span style="background-color: #f0f0f0;">{name}.{year}.S{s}E{e}{ext}</span> → 北上.2024.S01E01.mkv<br/>
+                                    电影模板示例：<br/>
+                                    <span style="background-color: #f0f0f0;">{name} - {year}{ext}</span> → 指环王1 - 2001.mkv<br/>
+                                    通用占位符：<br/>
+                                    {name} - 剧名<br/>
+                                    {year} - 年份<br/>
+                                    {ext} - 扩展名（.mkv）<br/>
+                                    剧集额外占位符：<br/>
+                                    {s} - 季数（补零）<br/>
+                                    {sn} - 季数（不补零）<br/>
+                                    {e} - 集数（补零）<br/>
+                                    {en} - 集数（不补零）<br/>
+                                    {se} - 季集格式（S01E01）<br/>
+                                </small>
+                            </div>  
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>CloudSaver 设置</label>
+                    <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
+                        <input type="text" id="cloudSaverUrl" placeholder="服务地址: http://localhost:8008">
+                        <input type="text" id="cloudSaverUsername" placeholder="账号">
+                        <input type="password" id="cloudSaverPassword" placeholder="密码">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Alist 设置</label>
+                    <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
+                            <label style="display: flex;align-items: center;gap: 8px;margin-bottom: 0;width: 15%;">
+                                <input type="checkbox" id="enableAlist" style="width: auto;">
+                                启用
+                            </label>
+                            <input type="text" id="alistServer" style="height: 32px; width: 40%;" placeholder="例如: http://localhost:5244">
+                            <input type="text" id="alistApiKey" style="height: 32px;" placeholder="Alist 令牌">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>整理 &amp; 刮削</label>
+                    <small class="form-text" style="display:block;margin-bottom:8px;">设置重命名格式、刮削选项等。</small>
+                    <div class="push-settings">
+                        <div class="push-item">
+                            <label for="scraperSource">刮削数据源</label>
+                            <small class="form-text" style="margin-bottom:4px;">刮削时的元数据来源</small>
+                            <select id="scraperSource" style="height:32px;">
+                                <option value="themoviedb">TheMovieDb</option>
+                            </select>
+                            <label style="margin-top:8px;">
+                                <input type="checkbox" id="enableScraper">
+                                启用刮削
+                            </label>
+                            <input type="text" id="tmdbApiKey" placeholder="TMDB API Key">
+                            <label for="movieRenameFormat" style="margin-top:8px;">电影重命名格式</label>
+                            <small class="form-text" style="margin-bottom:4px;">使用Jinja2语法，格式参考：<a href="https://jinja.palletsprojects.com/en/3.0.x/templates" target="_blank">https://jinja.palletsprojects.com/en/3.0.x/templates</a></small>
+                            <textarea id="movieRenameFormat" rows="2" placeholder="{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}" style="width:100%;font-family:monospace;font-size:12px;"></textarea>
+                            <div class="help-text-container" style="margin-top:4px;margin-bottom:8px;">
+                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
+                                <small class="form-text" style="display:none;background:#f8f8f8;padding:6px;border-radius:4px;margin-top:4px;">
+                                    可用变量：<code>{{title}}</code> 标题、<code>{{year}}</code> 年份、<code>{{part}}</code> 分段(Part1)、<code>{{videoFormat}}</code> 画质(2160p)、<code>{{videoSource}}</code> 来源(BluRay)、<code>{{videoCodec}}</code> 视频编码(x265)、<code>{{audioCodec}}</code> 音频编码(DTS)、<code>{{fileExt}}</code> 扩展名(.mkv)
+                                </small>
+                            </div>
+                            <label for="tvRenameFormat" style="margin-top:8px;">电视剧重命名格式</label>
+                            <small class="form-text" style="margin-bottom:4px;">使用Jinja2语法，格式参考：<a href="https://jinja.palletsprojects.com/en/3.0.x/templates" target="_blank">https://jinja.palletsprojects.com/en/3.0.x/templates</a></small>
+                            <textarea id="tvRenameFormat" rows="2" placeholder="{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{{title}} - {{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}" style="width:100%;font-family:monospace;font-size:12px;"></textarea>
+                            <div class="help-text-container" style="margin-top:4px;margin-bottom:8px;">
+                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
+                                <small class="form-text" style="display:none;background:#f8f8f8;padding:6px;border-radius:4px;margin-top:4px;">
+                                    可用变量：<code>{{title}}</code> 标题、<code>{{year}}</code> 年份、<code>{{season}}</code> 季数(1)、<code>{{season_episode}}</code> 集编码(S01E01)、<code>{{episode}}</code> 集数(1)、<code>{{part}}</code> 分段(Part1)、<code>{{videoFormat}}</code> 画质(2160p)、<code>{{videoSource}}</code> 来源(BluRay)、<code>{{videoCodec}}</code> 视频编码(x265)、<code>{{audioCodec}}</code> 音频编码(DTS)、<code>{{fileExt}}</code> 扩展名(.mkv)
+                                </small>
+                            </div>
+                            <div class="help-text-container" style="margin-top:8px;">
+                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
+                                <small class="form-text">开启后会自动从TMDB获取影视剧信息。请先在 <a href="https://www.themoviedb.org/settings/api" target="_blank">TMDB</a> 申请 API Key。仅供娱乐使用; <br/>如需使用请按以下格式命名：<br/>
+                                    <span style="background-color: #f0f0f0;">剧名(年份)/[Season 01/][剧名.]S01E01.mkv</span><br/>
+                                    <span style="background-color: #f0f0f0;">电影名(年份)/电影名.年份.mkv</span><br/>
+                                    例如：<span style="background-color: #f0f0f0;">沙海(2018)/Season 01/沙海.S01E01.mkv</span><br/>
+                                    <span style="background-color: #f0f0f0;">哪吒之魔童降世(2019)/哪吒之魔童降世.2019.mkv</span><br/>
+                                    <span style="color: #666;">注：Season 01目录和文件名中的剧名可省略，但建议保留以便识别</span><br/>
+                                    <br/>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit">保存设置</button>
+            </form>
+        </div>
+    </div>
+
+<!-- 在 body 结束标签前添加以下脚本引用 -->
+<script src="/js/folderSelector.js"></script>
+<script src="/js/theme.js"></script>
+<script src="/js/tabs.js"></script>
+<script src="/js/accounts.js"></script>
+<script src="/js/tasks.js"></script>
+<script src="/js/edit-task.js"></script>
+<script src="/js/main.js"></script>
+<script src="/js/settings.js"></script>
+<script src="/js/media.js"></script>
+<script src="/js/logs.js"></script>
+<script src="/js/loading.js"></script>
+<script src="/js/message.js"></script>
+<script src="/js/cloudsaver.js"></script>
+<script src="/js/chat.js"></script>
+<script src="/js/customPush.js"></script> 
+
+
+</body>
+</html>
+
+<!-- 修改任务弹窗 -->
+<div id="editTaskModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>修改任务</h3>
+        </div>
+        <form id="editTaskForm">
+            <div class="form-body">
+                <input type="hidden" id="editTaskId">
+                <div class="form-group">
+                    <label for="editResourceName">资源名</label>
+                    <div class="tree-select">
+                        <input type="text" id="editResourceName" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="shareFolderId">源目录(分享链接中的目录)</label>
+                    <div class="tree-select">
+                        <input type="text" id="shareFolder" readonly required>
+                        <input type="hidden" id="shareFolderId" required>
+                        <div class="tree-select-dropdown"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editRealFolderId">更新目录</label>
+                    <div class="tree-select">
+                        <input type="text" id="editRealFolder" readonly required>
+                        <input type="hidden" id="editRealFolderId" required>
+                        <div class="tree-select-dropdown"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editCurrentEpisodes">更新数</label>
+                    <input type="number" id="editCurrentEpisodes" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="editTotalEpisodes">总数</label>
+                    <input type="number" id="editTotalEpisodes" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="editStatus">状态</label>
+                    <select id="editStatus" required>
+                        <option value="pending">待处理</option>
+                        <option value="processing">追剧中</option>
+                        <option value="completed">已完结</option>
+                        <option value="failed">失败</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="editRemark">备注</label>
+                    <input type="text" id="editRemark">
+                </div>
+                <div class="form-group">
+                    <label>文件名匹配规则（可选）<span class="help-icon" data-tooltip="常用正则表达式示例">?</span></label>
+                    <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        <input type="text" id="editMatchPattern" placeholder="正则表达式 例如: 第(\d+)集" style="flex: 2 1 200px;">
+                        <select id="editMatchOperator" style="flex: 1 1 100px;">
+                            <option value="lt">小于</option>
+                            <option value="eq">等于</option>
+                            <option value="gt">大于</option>
+                            <option value="contains">包含</option>
+                            <option value="notContains">不包含</option>
+                        </select>
+                        <input id="editMatchValue" placeholder="值" min="0" style="flex: 1 1 100px;">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="push-item">
+                        <label for="editEnableCron" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="editEnableCron" style="width:auto;margin:0;">自定义定时任务</label>
+                        <div class="cronExpression-box">
+                            <input type="text" id="editCronExpression" placeholder="Cron表达式，如：0 */30 * * * *">
+                            <small class="form-text">每30分钟执行：0 */30 * * * *</small><br/>
+                            <small class="form-text">每天凌晨2点执行：0 0 2 * * *</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit">保存</button>
+                <input type="hidden" id="editAccountId">
+                <button type="button" class="btn-default" onclick="closeEditTaskModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="regex-tooltip" id="regexTooltip">
+    <span style="font-size: 12px;">注意: 使用捕获组的正则仅对重命名功能有效, 文件匹配请使用零宽断言;
+         <br/>示例中前2项对重命名有效, 后3项对文件名匹配功能有效
+         <br/>示例仅供参考, 请根据实际情况自行修改
+        </span>
+    <table>
+        <thead>
+            <tr>
+                <th>示例文件名</th>
+                <th>正则表达式</th>
+                <th>匹配结果</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>北上 - S01E01 - 第一集.mkv</td>
+                <td>.*(S\d{1,3}E\d{1,3}).*</td>
+                <td>S01E01</td>
+            </tr>
+            <tr>
+                <td>北上 - S01E01 - 第一集.mkv</td>
+                <td>.*(S\d{1,3}E\d{1,3}).*?(\.\w+)$</td>
+                <td>S01E01和.mkv</td>
+            </tr>
+            <tr>
+                <td>北上 - S01E01 - 第一集.mkv</td>
+                <td>(?<=E)\d+</td>
+                <td>01</td>
+            </tr>
+            <tr>
+                <td>第06集.mp4</td>
+                <td>(?<=第)\d+(?=集)</td>
+                <td>06</td>
+            </tr>
+            <tr>
+                <td>EP08.mkv</td>
+                <td>(?<=EP)\d+</td>
+                <td>08</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="floating-btn-group">
+    <div class="floating-btns-container collapsed" id="floatingBtnsContainer">
+        <div class="floating-btn" onclick="showCloudsaver()" title="CloudSaver">
+            <img src="/icons/cloudsaver.svg" alt="CloudSaver" style="filter:none">
+        </div>
+        <div class="floating-btn" onclick="showAIChat()" title="AI助手" style="bottom: 100px;">
+            <img src="/icons/ai.svg" alt="AI Chat">
+        </div>
+        <div class="floating-btn" onclick="openCustomPushManagementModal()" title="自定义推送">
+            <img src="/icons/push.svg" alt="自定义推送">
+        </div>
+        <div class="floating-btn" id="showLogsBtn" title="查看日志">
+            <img src="/icons/logs.svg" alt="查看日志">
+        </div>
+    </div>
+    <div class="floating-btn" onclick="toggleFloatingBtns()" title="更多">
+        <img src="/icons/toggle.svg" alt="更多" id="toggleIcon">
+    </div>
+</div>
+
+<div id="logsModal" class="modal">
+    <div class="modal-content logs-modal">
+        <div class="modal-header">
+            <h3>系统日志</h3>
+            <button class="close-btn">&times;</button>
+        </div>
+        <div id="logsContainer"></div>
+    </div>
+</div>
+
+
+
+
+<!-- CloudSaver搜索模态框 -->
+<div id="cloudSaverModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="cloudsaver-search-container">
+            <div class="cloudsaver-search-box">
+                <input type="text" id="searchInput" placeholder="输入关键字搜索">
+                <button type="button" onclick="searchResources()">搜索</button>
+            </div>
+            <div id="searchResults" class="cloudsaver-search-results" style="display: none;">
+                <div class="cloudsaver-results-list"></div>
+                <div class="cloudsaver-action-buttons">
+                    <button onclick="handleSelectedResource('open')">打开链接</button>
+                    <button onclick="handleSelectedResource('create')">创建任务</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI聊天窗口 -->
+<div id="aiChatModal" class="modal">
+    <div class="modal-content" style="width: 80%; max-width: 800px; height: 80vh;">
+        <div class="chat-header modal-header">
+            <h3>AI助手</h3>
+            <button onclick="closeAIChat()" class="close-btn">&times;</button>
+        </div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="输入消息，按回车发送...">
+        </div>
+    </div>
+</div>
+
+<!--自定义推送-->
+<div id="customPushManagementModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>自定义推送管理</h3>
+            <button type="button" class="btn-default" onclick="openAddEditCustomPushModal(null)">添加推送</button>
+            <button class="close-btn" onclick="closeCustomPushManagementModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <table id="customPushTable" class="table-view">
+                <thead>
+                    <tr>
+                        <th>名称</th>
+                        <th>描述</th>
+                        <th>启用</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 自定义推送列表将由JavaScript动态填充 -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="addEditCustomPushModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="addEditCustomPushModalTitle">添加自定义推送</h3> <!-- 标题会动态改变 -->
+            <button class="close-btn" onclick="closeAddEditCustomPushModal()">&times;</button>
+        </div>
+        <form id="addEditCustomPushForm" onsubmit="saveCustomPushConfig(event)">
+            <div class="modal-body">
+                <input type="hidden" id="customPushEditIndex"> <!-- 用于编辑时存储索引 -->
+                <div class="form-group">
+                    <label for="customPushName">名称</label>
+                    <input type="text" id="customPushName" required>
+                </div>
+                <div class="form-group">
+                    <label for="customPushDescription">描述</label>
+                    <input type="text" id="customPushDescription">
+                </div>
+                <div class="form-group">
+                    <label for="customPushUrl">URL</label>
+                    <input type="url" id="customPushUrl" required>
+                </div>
+                <div class="form-group">
+                    <label for="customPushMethod">请求方法 (Method)</label>
+                    <select id="customPushMethod">
+                        <option value="POST">POST</option>
+                        <option value="GET">GET</option>
+                        <option value="PUT">PUT</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="customPushContentType">内容类型 (Content-Type)</label>
+                    <select id="customPushContentType">
+                        <option value="application/json">application/json</option>
+                        <option value="application/x-www-form-urlencoded">application/x-www-form-urlencoded</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>字段配置</label>
+                    <small>当字段类型为JSON时, 字段名不会作为参数传入</small>
+                    <div id="customPushFieldsContainer">
+                    </div>
+                    <button type="button" class="btn-default" onclick="addCustomPushFieldRow()">添加字段</button>
+                </div>
+                <div class="form-group">
+                    <label for="customPushEnabled">
+                        <input type="checkbox" id="customPushEnabled">
+                        <span>启用此推送</span>
+                    </label>
+                </div>
+                <div class="help-text-container">
+                    <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
+                    <small class="form-text">
+                        <h5 style="margin-top:0; margin-bottom: 8px;">关于 JSON 类型字段的重要说明:</h5>
+                                    <p style="font-size: 0.9em; margin-bottom: 5px;">当字段类型选择为 "JSON" 时:</p>
+                                    <ul style="font-size: 0.9em; margin-left: 20px; padding-left: 0; list-style-type: disc;">
+                                        <li>此字段的“字段名”将被忽略。</li>
+                                        <li>整个请求体将直接使用此字段的“字段值”内容。</li>
+                                        <li>“字段值”中可使用 <code>{{content}}</code> 模板变量，它将被替换为消息内容。</li>
+                                        <li>“字段值”<strong>必须</strong>是严格有效的JSON格式。所有键名和字符串值 (包括代表字符串的 <code>{{content}}</code>) 都需用双引号包裹。</li>
+                                    </ul>
+                                    <p style="font-size: 0.9em; margin-bottom: 5px;"><strong>例如:</strong></p>
+                                    <pre style="background-color: var(--code-background-color); color: var(--text-color); padding: 8px; border-radius: 4px; font-size: 0.85em; white-space: pre-wrap; word-break: break-all;"><code>{\"msgtype\":\"text\",\"text\": {\"content\": \"{{content}}\"}}</code></pre>
+                                    <small style="font-size: 0.85em; display: block; margin-top: 8px;">请注意：不正确的JSON格式将导致推送失败。建议配置后进行测试。</small>
+                    </small>
+                </div>  
+            </div>
+            <div class="form-actions">
+                <button type="submit">保存</button>
+                <button type="button" id="testCustomPushBtn" onclick="testCustomPushConfig()" class="btn-default">测试推送</button>
+                <button type="button" class="btn-default" onclick="closeAddEditCustomPushModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>

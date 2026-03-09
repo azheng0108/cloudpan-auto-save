@@ -1,0 +1,241 @@
+/* 基础样式 */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+
+.container {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 表单相关样式 */
+.form-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    color: #666;
+}
+
+input, select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: #6ebbeb;
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+button {
+    background-color: #1890ff;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+
+.btn-warning {
+    background-color: #fa8c16;
+}
+
+.btn-danger {
+    background-color: #f5222d;
+}
+
+.btn-default {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    color: rgba(0, 0, 0, 0.85);
+}
+
+.btn-primary {
+    background: #1890ff;
+    border: 1px solid #1890ff;
+    color: #fff;
+}
+
+.btn-default, .btn-primary {
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 8px;
+}
+
+.btn-default:hover {
+    border-color: #40a9ff;
+    color: #40a9ff;
+}
+
+.btn-primary:hover {
+    background: #40a9ff;
+    border-color: #40a9ff;
+}
+.btn-small {
+    padding: 5px 8px; /* 较小的内边距 */
+    font-size: 0.85em; /* 较小的字体大小 */
+    border-radius: 3px; /* 轻微的圆角 */
+    margin: 2px; /* 轻微的外边距，如果需要的话 */
+    cursor: pointer;
+    border: 1px solid #ccc; /* 默认边框 */
+    background-color: #f8f9fa; /* 默认背景色 */
+    color: #333; /* 默认文字颜色 */
+    text-decoration: none; /* 移除链接下划线（如果是a标签） */
+    display: inline-block; /* 确保正确的布局 */
+    line-height: 1.2; /* 调整行高 */
+}
+
+.btn-small:hover {
+    background-color: #e9ecef; /* 悬停背景色 */
+    border-color: #bbb; /* 悬停边框色 */
+}
+.btn-small.btn-danger:hover {
+    background-color: #c82333;
+    border-color: #bd2130;
+}
+/* 标题区域样式 */
+.header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.header h1 {
+    font-size: 26px;
+    margin: 0;
+}
+
+.header-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #666;
+}
+
+@media (max-width: 768px) {
+    .header h1 {
+        font-size: 18px;
+        margin: 0;
+    }
+}
+
+.github-icon {
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    background-color: currentColor;
+    -webkit-mask-size: cover;
+    mask-size: cover;
+    background-color: var(--text-color);  /* 使用文本颜色变量 */
+    -webkit-mask-image: url('/icons/github.svg');
+    mask-image: url('/icons/github.svg');
+}
+
+#version {
+    color: var(--text-color);
+    text-decoration: none;
+    transition: color 0.3s;
+}
+.favorite-icon {
+    cursor: pointer;
+    display: inline-block;
+    /* align-items: center; */
+    margin-right: 8px;
+    filter: grayscale(100%);
+    opacity: 0.6;
+    transition: all 0.2s ease;
+    vertical-align: middle;
+}
+
+
+@media (hover: hover) {
+    .favorite-icon:hover {
+        opacity: 0.9;
+        filter: grayscale(0%);
+    }
+}
+
+.favorite-icon.active {
+    opacity: 1;
+    filter: none;
+}
+
+.favorite-icon img {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.2s ease;
+}
+
+.favorite-icon:hover img {
+    transform: scale(1.1);
+}
+@media (hover: hover) {
+    .favorite-icon:hover img {
+        transform: scale(1.1);
+    }
+}
+
+#favoriteFolderBtn {
+    height: 33px;
+    line-height: 20px;
+    padding: 7px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+#executeAllBtn {
+    margin-left: 1rem;
+}
+.task-operations button {
+    flex-shrink: 0; /* 防止按钮被压缩 */
+}
+
+.task-search {
+    padding: 5px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    min-width: 200px;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+}
+
+
+
+
+
+#createTaskModal .form-actions {
+    padding: 20px;
+}
+
+
+
+.cronExpression-box{
+    display: none;
+}
+
+.strm-prefix {
+    display: none;
+}
+
+.emby-path-replace {
+    display: none;
+}

@@ -1,0 +1,15 @@
+# 测试文件（含硬编码凭证）
+_test_*.mjs
+_test_*.js
+
+# 运行时数据（含账号cookie/session）
+data/
+
+# 开发时生成的文件
+node_modules/
+dist/
+vender/cloud189-sdk/node_modules/
+vender/cloud189-sdk/dist/
+
+# 其他无关文件
+*.log
