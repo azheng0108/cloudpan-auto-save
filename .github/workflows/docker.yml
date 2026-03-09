@@ -29,8 +29,7 @@ jobs:
         with:
           context: .
           push: true
+          no-cache: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/cloudpan-auto-save:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/cloudpan-auto-save:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
