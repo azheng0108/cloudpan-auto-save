@@ -7,12 +7,7 @@ WORKDIR /home
 # 复制源码
 COPY . .
 
-# 安装cloud189-sdk依赖
-RUN cd vender/cloud189-sdk && \
-    yarn install && \
-    yarn build
-
-# 安装项目依赖
+# 安装项目依赖并构建
 RUN yarn install && \
     yarn build
 
@@ -31,8 +26,6 @@ RUN yarn install --production
 # 复制构建好的代码
 COPY --from=builder /home/dist ./dist
 COPY --from=builder /home/src/public ./dist/public
-# 复制cloud189-sdk编译后的代码到./vender/cloud189-sdk/dist
-COPY --from=builder /home/vender/cloud189-sdk/dist ./vender/cloud189-sdk/dist
 
 # 安装必要的依赖项
 RUN apk update && \
