@@ -26,7 +26,7 @@ docker run -d \
   -p 3001:3000 \
   --restart unless-stopped \
   --name cloudpan-auto-save \
-  YOUR_DOCKERHUB_USERNAME/cloudpan-auto-save:latest
+  azheng0108/cloudpan-auto-save:latest
 ```
 
 > - `yourpath` 替换为宿主机实际目录
