@@ -316,7 +316,6 @@ async function showFileListModal(taskId) {
             </div>
             <div class='modal-body'>
                 <button class="batch-rename-btn" onclick="showBatchRenameOptions()">批量重命名</button>
-                <button class="ai-rename-btn" onclick="showAIRenameOptions()">AI重命名</button>
                 <button class="delete-files-btn btn-danger" onclick="deleteTaskFiles()">批量删除</button>
                 <div class='form-body'>
                 <table>
@@ -634,78 +633,6 @@ async function submitRename(autoUpdate) {
     }
 }
 
-
-// 显示AI重命名选项
-async function showAIRenameOptions() {
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.dataset.filename);
-    if (selectedFiles.length === 0) {
-        message.warning('请选择要重命名的文件');
-        return;
-    }
-
-    const modal = document.createElement('div');
-    modal.className = 'modal rename-options-modal';
-    modal.innerHTML = `
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>AI重命名</h3>
-            </div>
-            <div class="form-body">
-                <div class="rename-description">
-                    AI将分析文件名并提供智能重命名建议。处理速度取决于文件数量和大模型负载，请耐心等待。
-                </div>
-                <div class="rename-preview">
-                    <h4>选中的文件：</h4>
-                    <ul>
-                        ${selectedFiles.map(file => `<li>${file}</li>`).join('')}
-                    </ul>
-                </div>
-            </div>
-            <div class="form-actions">
-                <button class="btn-primary" onclick="executeAIRename()">开始分析</button>
-                <button class="btn-default" onclick="closeRenameOptionsModal()">取消</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    modal.style.display = 'flex';
-}
-
-// 执行AI重命名
-async function executeAIRename() {
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked'));
-    const fileIds = selectedFiles.map(cb => ({
-        id: cb.dataset.id,
-        name: cb.dataset.filename
-    }));
-
-    try {
-        loading.show();
-        const response = await fetch(`/api/files/ai-rename`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                taskId: chooseTask.id,
-                files: fileIds
-            })
-        });
-
-        const data = await response.json();
-        if (data.success) {
-            // 显示预览对话框
-            // 根据用户配置的模版
-            showRenamePreview(data.data);
-        } else {
-            message.warning('AI分析失败：' + data.error);
-        }
-    } catch (error) {
-        message.warning('操作失败：' + error.message);
-    } finally {
-        loading.hide();
-    }
-}
 
 // 辅助函数
 function formatFileSize(bytes) {

@@ -39,8 +39,6 @@ async function loadSettings() {
             document.getElementById('proxyUsername').value = settings.proxy?.username || '';
             document.getElementById('proxyPassword').value = settings.proxy?.password || '';
             document.getElementById('proxyTelegram').checked = settings.proxy?.services?.telegram || false;
-            document.getElementById('proxyTmdb').checked = settings.proxy?.services?.tmdb || false;
-            document.getElementById('proxyOpenAI').checked = settings.proxy?.services?.openai || false;
             document.getElementById('proxyCloud189').checked = settings.proxy?.services?.cloud189 || false;
             document.getElementById('proxyCustomPush').checked = settings.proxy?.services?.customPush || false;
             // Bark 设置
@@ -60,34 +58,6 @@ async function loadSettings() {
             document.getElementById('cloudSaverUrl').value = settings.cloudSaver?.baseUrl || '';
             document.getElementById('cloudSaverUsername').value = settings.cloudSaver?.username || '';
             document.getElementById('cloudSaverPassword').value = settings.cloudSaver?.password || '';
-            // 刮削
-            document.getElementById('enableScraper').checked = settings.tmdb?.enableScraper || false;
-            // tmdbkey
-            document.getElementById('tmdbApiKey').value = settings.tmdb?.tmdbApiKey || '';
-            // 刮削数据源及重命名格式
-            document.getElementById('scraperSource').value = settings.tmdb?.scraperSource || 'themoviedb';
-            const DEFAULT_MOVIE_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}`;
-            const DEFAULT_TV_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{{title}} - {{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}`;
-            document.getElementById('movieRenameFormat').value = settings.tmdb?.movieRenameFormat || '';
-            document.getElementById('tvRenameFormat').value = settings.tmdb?.tvRenameFormat || '';
-            // 存全局，供创建/修改任务弹窗回填使用
-            window._renameFormats = {
-                movie: settings.tmdb?.movieRenameFormat || DEFAULT_MOVIE_FORMAT,
-                tv: settings.tmdb?.tvRenameFormat || DEFAULT_TV_FORMAT
-            };
-
-            // openai配置
-            document.getElementById('enableOpenAI').checked = settings.openai?.enable || false;
-            document.getElementById('openaiBaseUrl').value = settings.openai?.baseUrl || '';
-            document.getElementById('openaiApiKey').value = settings.openai?.apiKey || '';
-            document.getElementById('openaiModel').value = settings.openai?.model || '';
-            document.getElementById('openaiTemplate').value = settings.openai?.rename?.template || '';
-            document.getElementById('openaiMovieTemplate').value = settings.openai?.rename?.movieTemplate || '';
-
-            // alist
-            document.getElementById('enableAlist').checked = settings.alist?.enable || false;
-            document.getElementById('alistServer').value = settings.alist?.baseUrl || '';
-            document.getElementById('alistApiKey').value = settings.alist?.apiKey || '';
 
             // pushplus
             document.getElementById('enablePushPlus').checked = settings.pushplus?.enable || false;
@@ -149,8 +119,6 @@ async function saveSettings() {
             password: document.getElementById('proxyPassword').value,
             services:{
                 telegram: document.getElementById('proxyTelegram').checked,
-                tmdb: document.getElementById('proxyTmdb').checked,
-                openai: document.getElementById('proxyOpenAI').checked,
                 cloud189: document.getElementById('proxyCloud189').checked,
                 customPush: document.getElementById('proxyCustomPush').checked
             }
@@ -164,6 +132,11 @@ async function saveSettings() {
             username: document.getElementById('systemUserName').value,
             password: document.getElementById('systemPassword').value,
             apiKey: document.getElementById('systemApiKey').value
+        },
+        cloudSaver: {
+            baseUrl: document.getElementById('cloudSaverUrl').value,
+            username: document.getElementById('cloudSaverUsername').value,
+            password: document.getElementById('cloudSaverPassword').value
         },
         pushplus: {
             enable: document.getElementById('enablePushPlus').checked,

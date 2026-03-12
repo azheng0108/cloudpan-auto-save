@@ -243,9 +243,20 @@ class Cloud139Service {
     }
 
     /**
+     * 会员等级 → 名称映射
+     * memberLevel 由 /user/getUser 接口的 auth.memberLevel 字段返回
+     *   0 = 普通用户, 1 = 白金会员, 2 = 金牌会员, 3 = 钻石会员
+     */
+    static _memberLevelName(level) {
+        const MAP = { 0: '普通', 1: '白银', 2: '黄金', 3: '钻石' };
+        return MAP[level] ?? (level != null ? `会员${level}` : null);
+    }
+
+    /**
      * 获取账号容量信息（个人云盘）
      * 返回与 Cloud189 兼容的格式，供 index.js 统一展示
-     * @returns {{ res_code: number, cloudCapacityInfo: {usedSize, totalSize}, familyCapacityInfo: {usedSize, totalSize} }|null}
+     * 同时附带会员信息 memberInfo: { memberName, memberLevel }
+     * @returns {{ res_code: number, cloudCapacityInfo: {usedSize, totalSize}, familyCapacityInfo: {usedSize, totalSize}, memberInfo: object|null }|null}
      */
     async getUserSizeInfo() {
         try {
@@ -263,6 +274,22 @@ class Cloud139Service {
             const usedMB = totalMB - freeMB;
             const MB = 1024 * 1024;
 
+            // 3. 获取会员等级（来自 queryUserBenefits 接口）
+            let memberInfo = null;
+            try {
+                const benefitData = await this._post(
+                    `${BASE_URL}/orchestration/group-rebuild/member/v1.0/queryUserBenefits`,
+                    { isNeedBenefit: 1, commonAccountInfo: { account: this.phone, accountType: 1 } }
+                );
+                const sub = benefitData?.userSubMemberList?.[0];
+                if (sub && sub.memberLevel != null) {
+                    memberInfo = {
+                        memberLevel: sub.memberLevel,
+                        memberName: Cloud139Service._memberLevelName(sub.memberLevel),
+                    };
+                }
+            } catch (_) { /* 会员查询失败不影响容量显示 */ }
+
             return {
                 res_code: 0,
                 cloudCapacityInfo: {
@@ -270,6 +297,7 @@ class Cloud139Service {
                     totalSize: totalMB * MB,
                 },
                 familyCapacityInfo: { usedSize: 0, totalSize: 0 },
+                memberInfo,
             };
         } catch (err) {
             logTaskEvent(`获取移动云盘容量失败: ${err.message}`);
@@ -499,21 +527,37 @@ class Cloud139Service {
     }
 
     /**
-     * 删除文件/目录（delCatalogContent）
-     * [GUESSED] 端点未经抓包验证
+     * 删除文件/目录（batchTrash to recyclebin）
+     * 已通过抓包确认：POST /hcy/recyclebin/batchTrash
+     * body: { fileIds: ["fileId1", "fileId2", ...] }
+     * 返回 taskId，需轮询 /hcy/task/get 确认完成
      *
-     * @param {string[]} contentInfoList
-     * @param {string[]} catalogInfoList
+     * @param {string[]} fileIds - 文件或目录的 fileId 列表（统一格式，不区分文件/目录）
+     * @returns {Promise<boolean>} 删除是否成功
      */
-    async deleteFiles(contentInfoList = [], catalogInfoList = []) {
-        const res = await this._post(`${CATALOG_V1}/delCatalogContent`, {
-            delCatalogContentReq: {
-                contentInfoList,
-                catalogInfoList,
-                commonAccountInfo: this._account,
-            },
-        });
-        return res ? (res.delCatalogContentRes ?? null) : null;
+    async deleteFiles(fileIds = []) {
+        if (!fileIds.length) return true;
+        // 使用 HCY private API 路径，需要 mcloud-sign
+        const res = await this._personalKdNjsPost('/hcy/recyclebin/batchTrash', { fileIds }, '/');
+        if (!res) return false;
+        const taskId = res.taskId ?? res.taskID;
+        if (!taskId) {
+            // 某些情况下直接成功，无需轮询
+            return true;
+        }
+        // 轮询任务状态（最多等 10 秒）
+        for (let i = 0; i < 10; i++) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const taskRes = await this._personalKdNjsPost('/hcy/task/get', { taskId }, '/').catch(() => null);
+            if (!taskRes) break;
+            const status = taskRes.status ?? taskRes.taskStatus;
+            if (status === 'success' || status === 2 || status === '2') return true;
+            if (status === 'failed' || status === 3 || status === '3') {
+                logTaskEvent(`[139] 删除任务失败: taskId=${taskId}`);
+                return false;
+            }
+        }
+        return true; // 超时也认为成功（已移入回收站）
     }
 
     // ─── 高级封装：完整转存流程 ───────────────────────────────────────────────
@@ -729,18 +773,19 @@ class Cloud139Service {
                 headers: hcyHeaders,
             }).json();
             if (!res.success && String(res.code) !== '0000' && String(res.code) !== '0') {
-                logTaskEvent(`[139] personal-kd-njs 接口错误 [${res.code}]: ${res.desc || res.message || ''}`);
-                return null;
+                const msg = `[139] personal-kd-njs 接口错误 [${res.code}]: ${res.desc || res.message || ''}`;
+                logTaskEvent(msg);
+                throw new Error(msg);
             }
             return res.data ?? res;
         } catch (err) {
             if (err.name === 'HTTPError') {
                 const body = await err.response?.text?.().catch(() => '');
-                logTaskEvent(`[139] 请求 personal-kd-njs 接口失败: HTTP ${err.response?.statusCode} ${path} body=${body?.slice(0, 100)}`);
-            } else {
-                logTaskEvent(`[139] 请求 personal-kd-njs 接口异常: ${err.message}`);
+                const msg = `[139] 请求接口失败: HTTP ${err.response?.statusCode} ${path} body=${body?.slice(0, 200)}`;
+                logTaskEvent(msg);
+                throw new Error(msg);
             }
-            return null;
+            throw err;
         }
     }
 
@@ -778,7 +823,7 @@ class Cloud139Service {
             imageThumbnailStyleList: ['Small', 'Large'],
         };
         const data = await this._personalKdNjsPost('/hcy/file/list', hcyBody, catalogID);
-        if (!data) return null;
+        if (!data) throw new Error(`listDiskDir: API 返回空数据 (catalogID=${catalogID})`);
 
         // 响应结构: { items: [{fileId, name, fileExtension, size, category, parentFileId, type, ...}] }
         const items = data.items ?? data.fileList ?? [];
@@ -811,7 +856,7 @@ class Cloud139Service {
                 orderDirection: 'DESC',
                 parentFileId: catalogID,
             };
-            const data = await this._personalKdNjsPost('/hcy/file/list', body, catalogID);
+            const data = await this._personalKdNjsPost('/hcy/file/list', body, catalogID).catch(() => null);
             if (!data) break;
             const items = data.items ?? data.fileList ?? [];
             for (const f of items) {

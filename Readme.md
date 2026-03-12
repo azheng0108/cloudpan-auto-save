@@ -1,46 +1,34 @@
 <div align="center">
     <h1>cloudpan-auto-save</h1>
-    <p>多云盘自动转存系统，支持天翼云盘、移动云盘，自动监控更新并转存文件, 支持STRM生成, Emby入库通知, 支持机器人操作。</p>
+    <p>多云盘自动转存系统，支持天翼云盘、移动云盘，自动监控更新并转存文件, 支持机器人操作。</p>
 </div>
 
-> **本项目 Fork 自 [1307super/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)，在原作者的基础上进行了以下修改：**
-> - 新增支持移动云盘（139）转存
-> - 修复若干 UI 交互问题
-> - 新增 Jinja2 模板重命名功能（批量重命名弹窗）
+> **本项目 Fork 自 [1307super/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)，主要改动如下：**
+> - 新增移动云盘（139）支持：账号登录、文件转存、分享链接监控、会员等级显示、删除同步
+> - Telegram 机器人支持 139 分享链接识别、目录树浏览及 CloudSaver 结果分组展示
+> - 新增 Jinja2 模板批量重命名功能，修复若干 UI 问题
 >
-> 违反 MIT 许可证声明：本仓库保留原作者版权信息不变。
+> 遵循 MIT 许可证声明：本仓库保留原作者版权信息不变。
 
 ---
 
+## 📢 项目说明与风险提示
 
-    <p align="center">
-        <a href="https://github.com/azheng0108/cloudpan-auto-save/releases/latest">
-            <img src="https://img.shields.io/github/v/release/azheng0108/cloudpan-auto-save?style=flat-square" alt="GitHub release">
-        </a>
-        <a href="https://github.com/azheng0108/cloudpan-auto-save/stargazers">
-            <img src="https://img.shields.io/github/stars/azheng0108/cloudpan-auto-save?style=flat-square" alt="GitHub Stars">
-        </a>
-        <a href="https://hub.docker.com/r/azheng0108/cloudpan-auto-save">
-            <img src="https://img.shields.io/docker/pulls/azheng0108/cloudpan-auto-save?style=flat-square" alt="Docker Pulls">
-        </a>
-    </p>
-</div>
+感谢你关注本项目！目前 cloudpan-auto-save 已初步完成核心功能的开发，但由于开发者个人精力及测试环境有限，项目仍处于 **Beta / 测试阶段**。
 
+你需要了解的是：
 
-## 💬 Pro版震撼上线
-**天翼自动转存Pro版上线**！永久买断制，支持网盘文件一键预览、1000+任务批量创建、「玄鲸极速」播放加速、TG机器人批量任务管理，集成反代+直链解析实现0门槛部署，点击查看[详细文档](https://1307super.github.io/Cloud189AutoSaveProDoc/)了解更多。
+- **潜在 Bug：** 在特定边界条件（如超大文件、特殊字符文件名、网络波动等）下，可能存在未察觉的逻辑缺陷。
+- **运行环境：** 目前主要在有限的系统环境下通过了基础测试，无法保证在所有场景下百分之百稳定。
+- **数据建议：** 建议在正式使用前，先用非核心数据进行小规模测试，以免造成不必要的麻烦。
 
+如果你在使用过程中发现了问题，欢迎提交 [Issue](../../issues) 或 [Pull Request](../../pulls)，每一份反馈对我来说都非常宝贵！让我们一起把这个工具变得更好。
 
-
-## 💬 社区交流
-- ~~[Telegram 群组](https://t.me/cloud189_auto_save) - 加入官方群组获取帮助和分享经验~~ 因不知名原因, 账号被封禁
-- ~~请加[Telegram 临时群组](https://t.me/cloud189_auto_save2)~~ 也没了
-- [Telegram 3群](https://t.me/cloud189_auto_save3) 且加且珍惜
-- ## 遇到问题请先查看 [Wiki 文档](https://github.com/1307super/cloud189-auto-save/wiki)
+---
 
 ## ⚠️ 安全警告
 
-本项目涉及天翼云盘账号密码、Cookie 等敏感隐私信息，为了确保您的数据安全：
+本项目涉及云盘账号密码、Cookie 等敏感隐私信息，为了确保您的数据安全：
 
 - 请务必私有化部署，不建议将服务暴露在公网
 - 不要使用他人搭建的本项目实例，即使是收费的也不要使用
@@ -58,19 +46,13 @@
 - 支持自动重试失败任务
 - 支持自动清理天翼云盘回收站
 - 自动监控分享链接更新, 自动重命名
-- AI 辅助功能
-   - 支持智普AI、OpenAI等多个支持 OpenAi API的平台
-   - 自动识别并重命名文件
-   - 智能刮削媒体信息
+
 
 ### 📂 文件管理
 - 支持指定转存目录
 - 支持保存常用目录
 
 ### 🎬 媒体服务
-- 支持 STRM 文件生成
-  - 支持根据任务新增追更实时生成 STRM 文件
-  - 支持根据Alist全量生成 STRM 文件
 - 支持 Emby 媒体库更新通知
 - 支持CloudSaver资源搜索
 - 媒体刮削
@@ -90,36 +72,44 @@
 - 支持 WebUI 可视化管理
 - 支持资源搜索功能
 - 支持企业微信、Telegram, Bark, Wxpusher 消息推送
-- 系统代理分享链接
-   - 支持通过系统代理访问分享链接
-   - 无需登录即可访问分享内容
-   - 支持 Emby 直接播放
 - 系统 API Key
    - 提供 REST API 接口
    - 支持第三方程序调用
 
 ## 快速开始
 
-## Docker 部署
+### Docker 部署
 
-### 直接使用镜像
+#### 自行构建镜像
+
+```bash
+# 在项目根目录执行
+docker build -t cloudpan-auto-save .
+```
+
+#### 运行容器
 
 ```bash
 docker run -d \
   -v /yourpath/data:/home/data \
   -v /yourpath/strm:/home/strm \
-  -p 3000:3000 \
+  -p 3001:3000 \
   --restart unless-stopped \
-  --name cloud189 \
+  --name cloudpan-auto-save \
   -e PUID=0 \
   -e PGID=0 \
-  xia1307/cloud189-auto-save
-  ```
-注意: `yourpath`请替换为你宿主机的目录; 如果不需要strm功能, 可以不挂载strm目录, 允许配置PUID和PGID, 默认0
+  cloudpan-auto-save
+```
 
-### 访问系统
+> **注意：**
+> - `yourpath` 请替换为你宿主机的实际目录
+> - 宿主机端口使用 `3001`，避免与原项目 [xia1307/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)（默认占用 `3000`）冲突，两个项目可在同一台机器上同时运行互不干扰
+> - 如不需要 STRM 功能，可以去掉 `-v /yourpath/strm:/home/strm` 这一行
+> - 支持通过 `-e PORT=3001` 修改容器内部监听端口（同时将 `-p` 改为 `3001:3001`）
 
-浏览器访问 `http://localhost:3000`，默认账号密码为admin admin 登录后请在系统页修改密码
+#### 访问系统
+
+浏览器访问 `http://localhost:3001`，默认账号密码为 admin / admin，登录后请在系统页修改密码
 
 ## 使用说明
 
@@ -128,7 +118,7 @@ docker run -d \
     
 ### 1. 账号管理
 - 支持账号密码登录和 Cookie 登录两种方式
-- Cookie 登录步骤：
+- **天翼云盘（189）Cookie 登录步骤：**
   1. 打开天翼云盘官网登录界面
   2. 打开浏览器的开发者工具(ctrl+f12), 勾选保留日志
   3. 正常发起登录, 然后在开发者工具中选择网络(network)
@@ -136,6 +126,22 @@ docker run -d \
   5. 获取 set-cookie 中的 SSON 值（只需要 SSON=xxxxx 中的 xxxxx 部分）
   6. 填入账号创建中的 cookie 中即可
   7. 可点击媒体目录和本地目录设置STRM的访问前缀
+
+- **移动云盘（139）Cookie / Authorization 登录步骤：**
+  1. 打开 [yun.139.com](https://yun.139.com) 并登录账号
+  2. 按 `F12` 打开开发者工具，切换到 **网络（Network）** 标签，筛选 `Fetch/XHR`
+  3. 刷新页面或在网盘内随意操作一次（如打开某个目录）
+  4. 找到任意一个发往 `yun.139.com` 的请求，点击查看 **请求头（Request Headers）**
+
+  **Authorization**
+  - 复制请求头中的 `Authorization` 字段值（格式为 `Basic xxxxxxxx`）
+  - 将该值填入账号创建表单的 **Cookie** 输入框
+
+  <img src="doc/new_personal.png" alt="找到请求头中的 Authorization" style="max-width:600px;">
+
+  > 💡 **提示：** `Authorization` 方式更稳定，推荐优先使用。Cookie 过期后需重新抓取。
+
+  <img src="doc/139_new_au.png" alt="填入 Authorization" style="max-width:600px;">
 
 ### 2. 任务管理
 - 创建任务需填写：
@@ -151,6 +157,7 @@ docker run -d \
 ### 3. 自动重命名
 - 支持两种重命名方式：
   - 正则表达式重命名：支持后续自动更新时应用同样的规则
+  - Jinja2 模板重命名：自动解析标题、年份、剧集等信息并批量重命名
   - 顺序重命名：适合一次性重命名
 - 操作步骤：
   1. 点击任务的更新目录
@@ -166,6 +173,7 @@ docker run -d \
   - 任务重试次数和间隔
   - 定时检查时间（支持 Cron 表达式）
   - 自动清空回收站（支持个人和家庭网盘）
+  - 云盘文件夹不存在时自动创建：当任务的目标更新目录被删除时，自动重新创建该目录（天翼云盘和移动云盘均支持，仅会创建最后一级文件夹）
 - 媒体设置：
   - STRM 文件生成：自动为媒体文件生成对应的 STRM 文件
   - Emby 通知：支持自动刷新 Emby 媒体库
@@ -225,10 +233,11 @@ docker run -d \
        * 已添加为常用目录的文件夹会显示 ✅ 标记
      - 使用 `/df_[ID]` 可删除指定的常用目录
   3. 创建转存任务
-     - 直接发送天翼云盘分享链接即可
+     - 直接发送天翼云盘或移动云盘分享链接即可
      - 支持以下格式：
-       * 普通链接：`https://cloud.189.cn/t/xxxxx`
-       * 带访问码链接：`https://cloud.189.cn/t/xxxxx（访问码：xxxx）`
+       * 天翼云盘：`https://cloud.189.cn/t/xxxxx`
+       * 移动云盘：`https://yun.139.com/w/cloud/share?...`
+       * 带访问码链接：链接后附上访问码即可
      - 发送链接后会显示常用目录列表
      - 选择保存目录后即可创建任务
      - 如目标位置已存在同名文件夹：
@@ -254,7 +263,7 @@ docker run -d \
 ### 6. CloudSaver 资源搜索
 - 功能说明：
   - 支持搜索资源并一键创建转存任务
-  - 本项目过滤了非天翼云盘资源并根据分享链接去重
+  - 本项目保留天翼云盘（189）和移动云盘（139）资源，并根据分享链接去重
   - 支持 Telegram 机器人搜索命令
   
 - 部署步骤：
@@ -271,14 +280,14 @@ docker run -d \
   3. 选择合适的资源后可一键创建转存任务
       
 ## 注意事项
-- 更新目录可以任意移动但不能被删除, 否则任务无法执行
+- 更新目录可以任意移动但不能被删除, 否则任务可能失败
 - 数据库文件会持久化保存在宿主机的 data 目录
 - 支持容器自动重启
 - 推荐使用反向代理进行安全访问
 - 媒体文件后缀配置会影响文件计数和过滤
 - STRM 文件生成需要配置正确的访问前缀
 - Emby 通知需要配置正确的服务器地址和 API Key
-- 如需使用TG机器人创建任务, 如果是老版本系统, 请取消常用目录所有后重新添加
+- 如需使用TG机器人创建任务, 如果是老版本系统, 请清空常用目录后重新添加
 
 </details>
     
@@ -337,36 +346,14 @@ docker run -d \
 
 </details>
 
-## ❤️ 支持项目
-
-如果觉得这个项目对你有帮助，你可以通过以下方式支持我：
-
-1. ⭐ 给项目点个 Star，让更多的人看到
-2. 📢 分享给更多有需要的朋友
-3. ☕ 请作者喝杯冰阔乐~
-
-<div align="center">
-<img src="img/wechat.JPG" alt="微信" height="300">
-    <img src="img/ali.png" alt="支付宝" height="300" style="margin-right: 20px">
-</div>
-
-
 ## ⚠️ 特别声明
 
-1. 本项目仅供学习交流使用，请勿用于任何非法用途
-2. 本项目仅提供天翼云盘资源转存功能，所有接口均为天翼云盘官方接口，本项目不对任何资源内容负责
-
-## 📈 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=1307super/cloud189-auto-save&type=Date)](https://star-history.com/#1307super/cloud189-auto-save&Date)
+1. 本项目仅供学习交流使用，请勿用于任何非法用途。
+2. 本项目提供天翼云盘（189）及移动云盘（139）资源转存功能，所有接口均为各平台官方接口，本项目不对任何资源内容负责。
+3. 使用本项目产生的一切后果由用户自行承担，开发者不对任何损失负责。
 
 ## License
 
 MIT
 
-## 赞助商
-
-本项目 CDN 加速及安全防护由 Tencent EdgeOne 赞助
-
-<a href="https://edgeone.ai/?from=github" target="_blank"><img title="亚洲最佳CDN、边缘和安全解决方案 - Tencent EdgeOne" src="https://edgeone.ai/media/34fe3a45-492d-4ea4-ae5d-ea1087ca7b4b.png" width="300"></a>
 

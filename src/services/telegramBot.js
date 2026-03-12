@@ -1,13 +1,15 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { AppDataSource } = require('../database');
-const { Task, Account, CommonFolder } = require('../entities');
+const { Task, Account, CommonFolder, TransferredFile } = require('../entities');
 const { TaskService } = require('./task');
 const { Cloud189Service } = require('./cloud189');
+const { Cloud139Service } = require('./cloud139');
 const { TMDBService } = require('./tmdb');
 const path = require('path');
 const { default: cloudSaverSDK } = require('../sdk/cloudsaver/sdk');
 const ProxyUtil = require('../utils/ProxyUtil');
 const cloud189Utils = require('../utils/Cloud189Utils');
+const Cloud139Utils = require('../utils/Cloud139Utils');
 
 class TelegramBotService {
     constructor(token, chatId) {
@@ -17,7 +19,8 @@ class TelegramBotService {
         this.accountRepo = AppDataSource.getRepository(Account);
         this.commonFolderRepo = AppDataSource.getRepository(CommonFolder);
         this.taskRepo = AppDataSource.getRepository(Task);
-        this.taskService = new TaskService(this.taskRepo, this.accountRepo);
+        this.transferredFileRepo = AppDataSource.getRepository(TransferredFile);
+        this.taskService = new TaskService(this.taskRepo, this.accountRepo, this.transferredFileRepo);
         this.currentAccountId = null;
         this.currentAccount = null;
         this.currentShareLink = null;
@@ -123,7 +126,7 @@ class TelegramBotService {
     initCommands() {
         this.bot.onText(/\/help/, async (msg) => {
             const helpText = 
-                '🤖 天翼云盘机器人使用指南\n\n' +
+                '🤖 云盘机器人使用指南\n\n' +
                 '📋 基础命令：\n' +
                 '/help - 显示帮助信息\n' +
                 '/accounts - 账号列表与切换\n' +
@@ -133,15 +136,13 @@ class TelegramBotService {
                 '/search_cs - 搜索CloudSaver资源\n' +
                 '/cancel - 取消当前操作\n\n' +
                 '📥 创建任务：\n' +
-                '直接发送天翼云盘分享链接即可创建任务\n' +
+                '直接发送天翼云盘(189)或移动云盘(139)分享链接即可创建任务\n' +
                 '格式：链接（支持访问码的链接）\n\n' +
                 '📝 任务操作：\n' +
                 '/execute_[ID] - 执行指定任务\n' +
                 '/execute_all - 执行所有任务\n' +
-                '/strm_[ID] - 生成STRM文件\n' +
-                '/emby_[ID] - 通知Emby刷新\n' +
                 '/dt_[ID] - 删除指定任务\n' +
-                '/df_[ID] - 删除指定常用目录\n\n' +
+
                 '🔍 资源搜索：\n' +
                 '1. 输入 /search_cs 进入搜索模式\n' +
                 '2. 直接输入关键字搜索资源\n' +
@@ -171,12 +172,25 @@ class TelegramBotService {
                         return;
                     }
                     try {
-                        const { url: shareLink, accessCode } = cloud189Utils.parseCloudShare(cacheShareLink);
+                        let shareLink, accessCode;
+                        if (/(?:yun|caiyun)\.139\.com/i.test(cacheShareLink)) {
+                            const extracted = Cloud139Utils.extractFromShareText(cacheShareLink);
+                            shareLink = extracted ? extracted.url : cacheShareLink;
+                            accessCode = extracted?.passwd || '';
+                        } else if (/cloud\.189\.cn/i.test(cacheShareLink)) {
+                            const parsed = cloud189Utils.parseCloudShare(cacheShareLink);
+                            shareLink = parsed?.url;
+                            accessCode = parsed?.accessCode || '';
+                        } else {
+                            // 其他来源链接，直接发送给用户
+                            await this.bot.sendMessage(chatId, `🔗 资源链接（非189/139云盘，请手动处理）:\n${cacheShareLink}`);
+                            return;
+                        }
                         // 处理分享链接
                         await this.handleFolderSelection(chatId, shareLink, null, accessCode);
                         return
                     }catch(e){
-                        this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
+                        this.bot.sendMessage(chatId, `处理失败: ${e.message}`);
                         return;
                     }
                 }
@@ -195,10 +209,30 @@ class TelegramBotService {
             }
             try {
                 if (!this._checkUserId(chatId)) return;
+                if (!await this._ensureAccountType(chatId, 'cloud189')) return;
                 const { url: shareLink, accessCode } = cloud189Utils.parseCloudShare(msg.text);
                 await this.handleFolderSelection(chatId, shareLink, null, accessCode);
             } catch (error) {
                 console.log(error)
+                this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
+            }
+        });
+
+        // 139 移动云盘分享链接直接识别
+        this.bot.onText(/(?:yun|caiyun)\.139\.com/, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!this._checkChatId(chatId)) return;
+            // 如果处于搜索模式，则不处理
+            if (this.isSearchMode) return;
+            try {
+                if (!this._checkUserId(chatId)) return;
+                if (!await this._ensureAccountType(chatId, 'cloud139')) return;
+                const extracted = Cloud139Utils.extractFromShareText(msg.text);
+                const shareLink = extracted ? extracted.url : msg.text.trim();
+                const accessCode = extracted?.passwd || '';
+                await this.handleFolderSelection(chatId, shareLink, null, accessCode);
+            } catch (error) {
+                console.log(error);
                 this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
             }
         });
@@ -271,20 +305,6 @@ class TelegramBotService {
             }
         });
 
-        // 生成strm
-        this.bot.onText(/\/strm_(\d+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return
-            await this.bot.sendMessage(chatId, 'STRM功能已移除');
-        })
-        // emby通知
-        this.bot.onText(/\/emby_(\d+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const taskId = match[1];
-            if (!this._checkChatId(chatId)) return
-            if(!this._checkTaskId(taskId)) return;
-            await this.bot.sendMessage(chatId, 'Emby功能已移除');
-        })
         // 添加删除任务命令
         this.bot.onText(/\/dt_(\d+)/, async (msg, match) => {
             const chatId = msg.chat.id;
@@ -302,24 +322,7 @@ class TelegramBotService {
             });
         });
 
-        // 删除常用目录
-        this.bot.onText(/\/df_(-?\d+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const folderId = match[1];
-            if (!this._checkChatId(chatId)) return
-            if (!this._checkUserId(chatId)) return
-          
-            try {
-                await this.commonFolderRepo.delete({
-                    id: folderId,
-                    accountId: this.currentAccountId
-                });
-                await this.bot.sendMessage(chatId, '删除成功');
-                await this.showCommonFolders(chatId);
-            } catch (error) {
-                await this.bot.sendMessage(chatId, `删除失败: ${error.message}`);
-            }
-        });
+
 
         // 搜索CloudSaver命令
         this.bot.onText(/\/search_cs/, async (msg) => {
@@ -405,6 +408,13 @@ class TelegramBotService {
                         break;
                     case 'fs': // 保存当前目录
                         await this.saveFolderAsFavorite(chatId, data, messageId);
+                        break;
+                    case 'delf': // 删除常用目录
+                        await this.commonFolderRepo.delete({
+                            id: data.id,
+                            accountId: this.currentAccountId
+                        });
+                        await this.showCommonFolders(chatId, messageId);
                         break;
                 }
             } catch (error) {
@@ -526,8 +536,6 @@ class TelegramBotService {
             `🔄 状态：${this.formatStatus(task.status)}\n` +
             `⌚️ 更新：${new Date(task.lastFileUpdateTime).toLocaleString('zh-CN')}\n` +
             `📁 执行: /execute_${task.id}\n` +
-            `📁 STRM：/strm_${task.id}\n` +
-            `🎬 Emby：/emby_${task.id}\n` +
             `❌ 删除: /dt_${task.id}`
         ).join('\n\n');
 
@@ -589,6 +597,24 @@ class TelegramBotService {
         return statusMap[status] || status;
     }
 
+    /**
+     * 确保当前账号类型与链接类型匹配，否则自动切换到第一个匹配账号。
+     * @returns {boolean} true=账号就绪，false=无可用账号（已发送错误提示）
+     */
+    async _ensureAccountType(chatId, requiredType) {
+        if (this.currentAccount?.accountType === requiredType) return true;
+        const accounts = await this.accountRepo.find({ where: { accountType: requiredType } });
+        if (accounts.length === 0) {
+            const label = requiredType === 'cloud139' ? '移动云盘(139)' : '天翼云盘(189)';
+            await this.bot.sendMessage(chatId, `当前没有可用的 ${label} 账号，请先在账号页面添加对应账号`);
+            return false;
+        }
+        const account = accounts[0];
+        this.currentAccountId = account.id;
+        this.currentAccount = account;
+        return true;
+    }
+
     async setCurrentAccount(chatId, data, messageId) {
         try {
             const accountId = data.i;
@@ -619,9 +645,10 @@ class TelegramBotService {
         const folders = await this.commonFolderRepo.find({ where: { accountId: this.currentAccountId } });
         
         if (folders.length === 0) {
+            const rootFolderId = this.currentAccount?.accountType === 'cloud139' ? '/' : '-11';
             const keyboard = [[{ 
                 text: '📁 添加常用目录',
-                callback_data: JSON.stringify({ t: 'fd', f: '-11' })
+                callback_data: JSON.stringify({ t: 'fd', f: rootFolderId })
             }]];
             const message = `当前账号: ${this._getDesensitizedUserName()} \n 未找到常用目录，请添加常用目录`;
             if (messageId) {
@@ -786,9 +813,10 @@ class TelegramBotService {
                 path: 'ASC'
             }
         });
+        const rootFolderId = this.currentAccount?.accountType === 'cloud139' ? '/' : '-11';
         const keyboard = [[{ 
             text: '📁 添加常用目录',
-            callback_data: JSON.stringify({ t: 'fd', f: '-11' })
+            callback_data: JSON.stringify({ t: 'fd', f: rootFolderId })
         }]];
         if (folders.length === 0) {
             const message = `当前账号: ${this._getDesensitizedUserName()} \n 未找到常用目录，请先添加常用目录`;
@@ -809,9 +837,15 @@ class TelegramBotService {
             return;
         }
 
-        const folderList = folders.map(folder => 
-            `📁 ${folder.path}\n❌ 删除: /df_${folder.id}`
-        ).join('\n\n');
+        const folderList = folders.map(folder => `📁 ${folder.path}`).join('\n');
+
+        // 每个常用目录添加一个删除按钮行
+        folders.forEach(folder => {
+            keyboard.push([{
+                text: `❌ 删除 ${folder.path}`,
+                callback_data: JSON.stringify({ t: 'delf', id: folder.id })
+            }]);
+        });
 
         const message = `当前账号: ${this._getDesensitizedUserName()} \n 常用目录列表:\n\n${folderList}`;
         if (messageId) {
@@ -825,36 +859,51 @@ class TelegramBotService {
             if (this.globalCommonFolderListMessageId) {
                 await this.bot.deleteMessage(chatId, this.globalCommonFolderListMessageId);
             }
-            const newMessage = await this.bot.sendMessage(chatId, message,{reply_markup: { inline_keyboard: keyboard }});
+            const newMessage = await this.bot.sendMessage(chatId, message, { reply_markup: { inline_keyboard: keyboard } });
             this.globalCommonFolderListMessageId = newMessage.message_id;
         }
     }
 
     async showFolderTree(chatId, data, messageId = null) {
         try {
-            let folderId = data?.f || '-11';
+            if (!this.currentAccount) {
+                await this.bot.sendMessage(chatId, '未选择账号，请先使用 /accounts 选择账号');
+                return;
+            }
+            const isCloud139 = this.currentAccount.accountType === 'cloud139';
+            const ROOT_ID = isCloud139 ? '/' : '-11';
+            let folderId = data?.f || ROOT_ID;
             if (!this._checkUserId(chatId)) return;
             if (data?.r) {
                // 返回上一级目录，从记录的父级ID中获取
-               const parentId = Array.from(this.parentFolderIds).pop() || '-11';
+               const parentId = Array.from(this.parentFolderIds).pop() || ROOT_ID;
                this.parentFolderIds.delete(parentId);
                const path = this.currentFolderPath.split('/').filter(Boolean);
                path.pop();
                path.pop();
                this.currentFolderPath = path.join('/');
                folderId = parentId;
-            } else if (folderId !== '-11') {
+            } else if (folderId !== ROOT_ID) {
                 // 非根目录时记录父级ID
                 const folder = this.folders.get(folderId);
                 if (folder?.pId) {
                     this.parentFolderIds.add(folder.pId);
                 }
             }
-            const cloud189 = Cloud189Service.getInstance(this.currentAccount);
-            const folders = await cloud189.getFolderNodes(folderId);
-            if (!folders) {
-                await this.bot.sendMessage(chatId, '获取文件夹列表失败');
-                return;
+
+            let folders;
+            if (isCloud139) {
+                const cloud139 = Cloud139Service.getInstance(this.currentAccount);
+                const result = await cloud139.listDiskDir(folderId === ROOT_ID ? '/' : folderId);
+                folders = result.items
+                    .filter(f => f.type === 'folder')
+                    .map(f => ({ id: f.fileId, name: f.name, pId: folderId }));
+            } else {
+                const cloud189 = Cloud189Service.getInstance(this.currentAccount);
+                folders = await cloud189.getFolderNodes(folderId);
+                if (!folders) {
+                    throw new Error('getFolderNodes 返回空');
+                }
             }
 
             // 获取当前账号的所有常用目录
@@ -867,11 +916,11 @@ class TelegramBotService {
             this.currentFolderId = folderId;
 
             // 处理路径更新
-            if (folderId === '-11') {
+            if (folderId === ROOT_ID) {
                 // 根目录
                 this.currentFolderPath = '/';
             } else {
-                this.currentFolderPath = path.join(this.currentFolderPath, this.folders.get(folderId).name);
+                this.currentFolderPath = path.join(this.currentFolderPath, this.folders.get(folderId)?.name || folderId);
             }
 
             const keyboard = [];
@@ -894,11 +943,11 @@ class TelegramBotService {
                     text: '❌ 关闭',
                     callback_data: JSON.stringify({ t: 'fc' })
                 },
-                ...(folderId !== '-11' ? [{
+                ...(folderId !== ROOT_ID ? [{
                     text: '🔄 返回',
                     callback_data: JSON.stringify({
                         t: 'fd',
-                        f: folders[0]?.pId || '-11',
+                        f: folders[0]?.pId || ROOT_ID,
                         r: true
                     })
                 }] : []),
@@ -988,15 +1037,33 @@ class TelegramBotService {
                 });
                 return
             }
-            // 保存结果到this.cloudSaverSearchMap
-            result.forEach((item, index) => {
-                this.cloudSaverSearchMap.set(index + 1, item.cloudLinks[0].link);
-            });
+            // 分组：天翼189 和 移动139
+            const cloud189Results = result.filter(item => item.cloudLinks[0].link.includes('cloud.189.cn'));
+            const cloud139Results = result.filter(item => /(?:yun|caiyun)\.139\.com/.test(item.cloudLinks[0].link));
+
+            // 保存结果到 cloudSaverSearchMap（按分组顺序编号）
+            let globalIndex = 0;
+            let groupText = '';
+            if (cloud189Results.length > 0) {
+                groupText += '☁️ <b>天翼云盘 (189)</b>\n';
+                cloud189Results.forEach(item => {
+                    globalIndex++;
+                    this.cloudSaverSearchMap.set(globalIndex, item.cloudLinks[0].link);
+                    groupText += `${globalIndex}. 🎬 <a href="${item.cloudLinks[0].link}">${item.title}</a>\n`;
+                });
+            }
+            if (cloud139Results.length > 0) {
+                if (groupText) groupText += '\n';
+                groupText += '📱 <b>移动云盘 (139)</b>\n';
+                cloud139Results.forEach(item => {
+                    globalIndex++;
+                    this.cloudSaverSearchMap.set(globalIndex, item.cloudLinks[0].link);
+                    groupText += `${globalIndex}. 🎬 <a href="${item.cloudLinks[0].link}">${item.title}</a>\n`;
+                });
+            }
             const results = `💡 以下资源来自 CloudSaver\n` +
-                `📝 共找到 ${result.length} 个结果,输入编号可转存\n` +
-                result.map((item, index) => 
-                    `${index + 1}. 🎬 <a href="${item.cloudLinks[0].link}">${item.title}</a>`
-                ).join('\n\n');
+                `📝 共找到 ${result.length} 个结果，输入编号可转存\n\n` +
+                groupText;
             await this.bot.editMessageText(`搜索结果：\n\n${results}`, {
                 chat_id: chatId,
                 message_id: message.message_id,

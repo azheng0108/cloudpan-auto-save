@@ -45,7 +45,6 @@ class ConfigService {
         password: '',
         services: {
           telegram: true,
-          tmdb: true,
           cloud189: false
         }
       },
@@ -72,28 +71,6 @@ class ConfigService {
         baseUrl: '',
         username: '',
         password: ''
-      },
-      tmdb: {
-        enableScraper: false,
-        apiKey: '',
-        scraperSource: 'themoviedb',
-        movieRenameFormat: '{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}',
-        tvRenameFormat: '{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{{title}} - {{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}'
-      },
-      openai: {
-        enable: false,
-        baseUrl: '',
-        apiKey: '',
-        model: 'GLM-4-Flash-250414',
-        rename: {
-          template: "{name} - {se}{ext}",  // 默认模板
-          movieTemplate: "{name} ({year}){ext}",  // 电影模板
-        }
-      },
-      alist: {
-        enable: false,
-        baseUrl: '',
-        apiKey: ''
       },
       customPush: [] // 自定义推送
     };

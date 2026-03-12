@@ -12,14 +12,13 @@ const packageJson = require('../package.json');
 const session = require('express-session');
 const FileStore = require('session-file-store')(session);
 const { SchedulerService } = require('./services/scheduler');
-const { logTaskEvent, initSSE, sendAIMessage } = require('./utils/logUtils');
+const { logTaskEvent, initSSE } = require('./utils/logUtils');
 const TelegramBotManager = require('./utils/TelegramBotManager');
 const fs = require('fs').promises;
 const path = require('path');
 const { setupCloudSaverRoutes, clearCloudSaverToken } = require('./sdk/cloudsaver');
 const { Like, Not, IsNull, In, Or } = require('typeorm');
 const cors = require('cors'); 
-const AIService = require('./services/ai');
 const CustomPushService = require('./services/message/CustomPushService');
 
 const app = express();
@@ -157,6 +156,7 @@ AppDataSource.initialize().then(async () => {
                     if (capacity && capacity.res_code === 0) {
                         account.capacity.cloudCapacityInfo = capacity.cloudCapacityInfo;
                         account.capacity.familyCapacityInfo = capacity.familyCapacityInfo;
+                        account.memberInfo = capacity.memberInfo || null;
                     }
                 } catch (e) {
                     // 容量获取失败不影响账号列表展示
@@ -717,50 +717,31 @@ AppDataSource.initialize().then(async () => {
             res.status(500).json({ success: false, error: error.message });
         }
     })
-    
-    app.post('/api/chat', async (req, res) => {
-        const { message } = req.body;
+    // 单条添加常用目录
+    app.post('/api/favorites/add', async (req, res) => {
         try {
-            let userMessage = message.trim();
-            if(!userMessage) {
-                res.json({ success: true });
-                return
-            }
-            
-            AIService.streamChat(userMessage, async (chunk) => {
-                sendAIMessage(chunk);
-            })
+            const { accountId, id, name, path } = req.body;
+            if (!accountId || !id) throw new Error('参数不完整');
+            const existing = await commonFolderRepo.findOne({ where: { accountId: parseInt(accountId), id } });
+            if (existing) return res.json({ success: true, data: existing });
+            const folder = await commonFolderRepo.save({ accountId: parseInt(accountId), id, name: name || id, path: path || id });
+            res.json({ success: true, data: folder });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    })
+    // 单条删除常用目录
+    app.delete('/api/favorites/:accountId/:folderId', async (req, res) => {
+        try {
+            const { accountId, folderId } = req.params;
+            if (!accountId || !folderId) throw new Error('参数不完整');
+            await commonFolderRepo.delete({ accountId: parseInt(accountId), id: folderId });
             res.json({ success: true });
         } catch (error) {
-            console.error('处理聊天消息失败:', error);
-            res.status(500).json({ success: false, error: '处理消息失败' });
+            res.status(500).json({ success: false, error: error.message });
         }
     })
-
-
-    // ai重命名
-    app.post('/api/files/ai-rename', async (req, res) => {
-        try {
-            const { taskId, files } = req.body;
-            if (files.length == 0) {
-                throw new Error('未获取到需要修改的文件');
-            }
-            const task = await taskService.getTaskById(taskId);
-            if (!task) {
-                throw new Error('任务不存在');
-            }
-            // 开始ai分析
-            const resourceInfo = await taskService._analyzeResourceInfo(
-                task.resourceName,
-                files,
-                'file'
-            )
-            return res.json({ success: true, data: await taskService.handleAiRename(files, resourceInfo) });
-        } catch (error) {
-            res.json({ success: false, error: error.message });
-        }
-    })
-
+    
     app.post('/api/custom-push/test', async (req, res) => {
         try{
             const configTest = req.body

@@ -28,8 +28,8 @@ async function fetchAccounts(updateSelect = false) {
                         <button class="btn-danger" onclick="deleteAccount(${account.id})">删除</button>
                         </td>
                     <td data-label='账户名'>${account.username}</td>
-                    <td data-label='个人容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
-                    <td data-label='家庭容量'>${formatBytes(account.capacity.familyCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.familyCapacityInfo.totalSize)}</td>
+                    <td data-label='会员状态'>${account.memberInfo ? account.memberInfo.memberName : '-'}</td>
+                    <td data-label='容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
 
                 </tr>
             `;

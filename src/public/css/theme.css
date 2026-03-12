@@ -216,6 +216,9 @@ td, th {
 [data-theme='dark'] .status-badge {
     background: var(--bg-color);
 }
+[data-theme='dark'] .member-level-1 { background: #2a2a2a; color: #aaa; border-color: #444; }
+[data-theme='dark'] .member-level-2 { background: #2d2000; color: #e8a200; border-color: #6b4800; }
+[data-theme='dark'] .member-level-3 { background: #001a3a; color: #4096ff; border-color: #003a8c; }
 [data-theme='dark'] button:hover {
     background-color: var(--hover-bg);
 }

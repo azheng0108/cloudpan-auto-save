@@ -59,36 +59,38 @@ class FolderSelector {
         }
     }
 
-    // 保存常用目录
-    saveFavorites(favorites) {
-        localStorage.setItem(this.favoritesKey, JSON.stringify(favorites));
-        // 调用接口存储常用目录
-        fetch('/api/saveFavorites', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({favorites, accountId:this.accountId}),
-        })
-    }
     // 添加到常用目录
-    async addToFavorites(id, name, element) {
-        const favorites = await this.getFavorites();
-        if (!favorites.find(f => f.id === id)) {
-            // 获取当前选中节点的完整路径
-            const path = this.getNodePath(element);
-            favorites.push({ id, name, path });
-            this.saveFavorites(favorites);
+    async addToFavorites(id, name, path) {
+        if (this.favorites.find(f => f.id === id)) return;
+        const finalPath = path || name;
+        try {
+            const res = await fetch('/api/favorites/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accountId: this.accountId, id, name, path: finalPath })
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            this.favorites.push({ id, name, path: finalPath });
+        } catch (error) {
+            console.error('添加常用目录失败:', error);
+            message.error('添加常用目录失败');
         }
     }
 
     // 从常用目录移除
     async removeFromFavorites(id) {
-        const favorites = await this.getFavorites();
-        const index = favorites.findIndex(f => f.id === id);
-        if (index !== -1) {
-            favorites.splice(index, 1);
-            this.saveFavorites(favorites);
+        try {
+            const res = await fetch(`/api/favorites/${this.accountId}/${id}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            const index = this.favorites.findIndex(f => f.id === id);
+            if (index !== -1) this.favorites.splice(index, 1);
+        } catch (error) {
+            console.error('移除常用目录失败:', error);
+            message.error('移除常用目录失败');
         }
     }
 
@@ -173,9 +175,10 @@ class FolderSelector {
         this.currentPath = []; 
         try {
             if (this.isShowingFavorites) {
-                await this.loadFolderNodes(null, this.folderTree, false);
+                this.favorites = await this.getFavorites();
+                this.renderFolderNodes(this.favorites, this.folderTree, '');
             } else {
-                await this.loadFolderNodes('-11', this.folderTree, true);
+                await this.loadFolderNodes('-11', this.folderTree, true, '');
             }
         } finally {
             refreshLink.classList.remove('loading');
@@ -266,6 +269,11 @@ class FolderSelector {
     }
 
     _insertNewFolderItem(newNode, parentElement, insertBefore = null) {
+        // 计算新建文件夹的完整路径：父目录路径 + 文件夹名
+        const selectedItem = this.modal.querySelector('.folder-tree-item.selected');
+        const parentPath = selectedItem?.dataset?.path || '';
+        const nodePath = parentPath ? `${parentPath}/${newNode.name}` : newNode.name;
+
         const isFavorite = this.favorites.some(f => f.id === newNode.id);
         const favoriteIcon = this.enableFavorites ? `
             <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${newNode.id}" data-name="${newNode.name}">
@@ -274,6 +282,7 @@ class FolderSelector {
         ` : '';
         const newItem = document.createElement('div');
         newItem.className = 'folder-tree-item';
+        newItem.dataset.path = nodePath;
         newItem.innerHTML = `
             ${favoriteIcon}
             <span class="folder-icon">📁</span>
@@ -287,7 +296,7 @@ class FolderSelector {
             e.stopPropagation();
             this.selectFolder(newNode, newItem);
             if (!newItem.classList.contains('expanded')) {
-                await this.loadFolderNodes(newNode.id, children);
+                await this.loadFolderNodes(newNode.id, children, false, nodePath);
             }
             newItem.classList.toggle('expanded');
         });
@@ -299,7 +308,7 @@ class FolderSelector {
                     const { id, name } = e.currentTarget.dataset;
                     const isFav = this.favorites.some(f => f.id === id);
                     if (!isFav) {
-                        this.addToFavorites(id, name, newItem);
+                        this.addToFavorites(id, name, newItem.dataset.path || name);
                         e.currentTarget.classList.add('active');
                     } else {
                         this.removeFromFavorites(id);
@@ -323,17 +332,19 @@ class FolderSelector {
         }
 
         this.modal.style.display = 'block';
-        // 设置z-index
         this.modal.style.zIndex = 1001;
         this.selectedNode = null;
         this.isShowingFavorites = false;
-        this.favorites =  await this.getFavorites()
+        this.favorites = await this.getFavorites();
         this.modal.querySelector('.modal-title').textContent = this.title;
-        await this.loadFolderNodes('-11');
+        await this.loadFolderNodes('-11', this.folderTree, false, '');
     }
 
     close() {
         this.modal.style.display = 'none';
+        // 关闭时恢复新建按鈕显示
+        const mkdirLink = this.modal.querySelector('.mkdir-link');
+        if (mkdirLink) mkdirLink.style.display = '';
         // 移除DOM节点
         this.modal.remove();
         this.initModal();
@@ -361,13 +372,12 @@ class FolderSelector {
         this.close();
     }
 
-    async loadFolderNodes(folderId, parentElement = this.folderTree, refresh = false) {
+    async loadFolderNodes(folderId, parentElement = this.folderTree, refresh = false, parentPath = '') {
         try {
             let nodes;
             if (this.isShowingFavorites) {
-                // 从缓存加载常用目录数据
                 nodes = await this.getFavorites();
-            }else{
+            } else {
                 const params = this.apiConfig.buildParams(this.accountId, folderId, this);
                 const response = await fetch(`${this.apiConfig.url}/${params}${refresh ? '&refresh=true' : ''}`);
                 const data = await response.json();
@@ -376,20 +386,20 @@ class FolderSelector {
                 }
                 nodes = this.apiConfig.parseResponse(data);
             }
-            this.renderFolderNodes(nodes, parentElement);
+            this.renderFolderNodes(nodes, parentElement, parentPath);
         } catch (error) {
             console.error('加载目录失败:', error);
             message.warning('加载目录失败');
         }
     }
 
-    async renderFolderNodes(nodes, parentElement = this.folderTree) {
+    async renderFolderNodes(nodes, parentElement = this.folderTree, parentPath = '') {
         parentElement.innerHTML = '';
-        let favorites = this.favorites
+        const favorites = this.favorites;
         nodes.forEach(node => {
             const item = document.createElement('div');
             item.className = 'folder-tree-item';
-            // 常用目录视图不显示展开图标和复选框 是否允许点击
+            // 常用目录视图不显示展开图标
             const expandIcon = (this.isShowingFavorites || node.isFile) ? '' : '<span class="expand-icon">▶</span>';
             const isFavorite = favorites.some(f => f.id === node.id);
             const favoriteIcon = this.enableFavorites ? `
@@ -398,14 +408,19 @@ class FolderSelector {
                 </span>
             ` : '';
 
-            // 如果是常用目录视图，显示完整路径
-            const displayName = this.isShowingFavorites && node.path ? 
-                `${node.path}` : 
-                node.name;
+            // 计算完整路径：收藏视图取DB存的path，树形视图由parentPath逐层累积
+            const nodePath = this.isShowingFavorites
+                ? (node.path && node.path !== node.id ? node.path : (node.name || node.id))
+                : (parentPath ? `${parentPath}/${node.name}` : node.name);
+
+            item.dataset.path = nodePath;
+
+            // 树形视图显示文件夹名，收藏视图显示完整路径
+            const displayName = this.isShowingFavorites ? nodePath : node.name;
 
             item.innerHTML = `
                 ${favoriteIcon}
-                <span class="folder-icon">${node.isFile?'📃':'📁'}</span>
+                <span class="folder-icon">${node.isFile ? '📃' : '📁'}</span>
                 <span class="folder-name">${displayName}</span>
                 ${expandIcon}
             `;
@@ -421,25 +436,26 @@ class FolderSelector {
                 favoriteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const { id, name } = e.currentTarget.dataset;
-                    const isFavorite = favorites.some(f => f.id === id);
-                    if (!isFavorite) {
-                        // 传入当前项的DOM元素
-                        this.addToFavorites(id, name, item);
+                    const isFav = favorites.some(f => f.id === id);
+                    if (!isFav) {
+                        this.addToFavorites(id, name, nodePath);
                         e.currentTarget.classList.add('active');
                     } else {
                         this.removeFromFavorites(id);
-                        e.currentTarget.classList.remove('active');
+                        if (this.isShowingFavorites) {
+                            item.remove();
+                        } else {
+                            e.currentTarget.classList.remove('active');
+                        }
                     }
                 });
             }
             item.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 this.selectFolder(node, item);
-                if (this.isShowingFavorites || node.isFile) {
-                    return;
-                }
+                if (this.isShowingFavorites || node.isFile) return;
                 if (!item.classList.contains('expanded')) {
-                    await this.loadFolderNodes(node.id, children);
+                    await this.loadFolderNodes(node.id, children, false, nodePath);
                 }
                 item.classList.toggle('expanded');
             });
@@ -450,15 +466,13 @@ class FolderSelector {
     selectFolder(node, element) {
         if (this.selectedNode) {
             const prevSelected = this.modal.querySelector('.folder-tree-item.selected');
-            if (prevSelected) {
-                prevSelected.classList.remove('selected');
-            }
+            if (prevSelected) prevSelected.classList.remove('selected');
         }
         this.selectedNode = node;
         element.classList.add('selected');
-
-        // 更新当前路径
-        this.updatePath(element);
+        // 直接从 dataset.path 读取完整路径，与 TG 的 currentFolderPath 逻辑对齐
+        const fullPath = element.dataset.path || node.name || '';
+        this.currentPath = fullPath ? fullPath.split('/').filter(Boolean) : [];
     }
 
     updatePath(element) {
@@ -478,7 +492,7 @@ class FolderSelector {
     }
 
 
-    showFavorites(accountId = '') {
+    async showFavorites(accountId = '') {
         if (accountId) {
             this.accountId = accountId;
         }
@@ -490,8 +504,12 @@ class FolderSelector {
         this.modal.style.zIndex = 1001;
         this.selectedNode = null;
         this.isShowingFavorites = true;
+        this.favorites = await this.getFavorites();
         this.modal.querySelector('.modal-title').textContent = '常用目录';
-        this.loadFolderNodes(null, this.folderTree, false, true);
+        // 常用目录视图中隐藏新建按鈕
+        const mkdirLink = this.modal.querySelector('.mkdir-link');
+        if (mkdirLink) mkdirLink.style.display = 'none';
+        this.renderFolderNodes(this.favorites, this.folderTree, '');
     }
 }
 

@@ -124,9 +124,10 @@
                 <table id="accountTable">
                     <thead>
                         <tr>
-                            <th>用户名</th>
-                            <th>容量</th>
                             <th>操作</th>
+                            <th>用户名</th>
+                            <th>会员状态</th>
+                            <th>容量</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -311,6 +312,14 @@
         <div id="settingsTab" class="tab-content">
             <form id="settingsForm">
                 <div class="form-group">
+                    <label>CloudSaver 设置</label>
+                    <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
+                        <input type="text" id="cloudSaverUrl" placeholder="服务地址: http://localhost:8008">
+                        <input type="text" id="cloudSaverUsername" placeholder="账号">
+                        <input type="password" id="cloudSaverPassword" placeholder="密码">
+                    </div>
+                </div>
+                <div class="form-group">
                     <label for="systemApiKey">系统apiKey</label>
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <input type="text" id="systemApiKey" placeholder="系统apiKey" style="flex: 1;">
@@ -460,14 +469,6 @@
                                 <span>Telegram</span>
                             </label>
                             <label class="proxy-service-item">
-                                <input type="checkbox" id="proxyTmdb">
-                                <span>TMDB</span>
-                            </label>
-                            <label class="proxy-service-item">
-                                <input type="checkbox" id="proxyOpenAI">
-                                <span>OpenAI</span>
-                            </label>
-                            <label class="proxy-service-item">
                                 <input type="checkbox" id="proxyCloud189">
                                 <span>天翼</span>
                             </label>
@@ -493,125 +494,15 @@
         </div>
 
         <div id="mediaTab" class="tab-content">
-            <form id="mediaForm">
-                <div class="form-group">
-                    <label>OpenAI 设置</label>
-                    <div class="push-settings">
-                        <div class="push-item">
-                            <label>
-                                <input type="checkbox" id="enableOpenAI">
-                                启用 AI 辅助
-                            </label>
-                            <label for="openaiBaseUrl">API地址</label>
-                            <input type="text" id="openaiBaseUrl" placeholder="API地址,如: https://open.bigmodel.cn/api/paas/v4">
-                            <label for="openaiApiKey">API Key</label>
-                            <input type="text" id="openaiApiKey" placeholder="API Key">
-                            <label for="openaiModel">模型名称</label>
-                            <input type="text" id="openaiModel" placeholder="模型名称">
-                            <label for="openaiTemplate">剧集命名模版</label>
-                            <input type="text" id="openaiTemplate" placeholder="文件名模板">
-                            <label for="openaiMovieTemplate">电影命名模版</label>
-                            <input type="text" id="openaiMovieTemplate" placeholder="电影命名模版">
-                            <div class="help-text-container">
-                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
-                                <small class="form-text">
-                                    支持所有 OpenAI API 格式的接口，例如：<br/>
-                                    • OpenAI API: https://api.openai.com/v1<br/>
-                                    • 智谱AI: https://open.bigmodel.cn/api/paas/v4
-                                    <br/>
-                                    <span style="color:orange">注意: 启用后AI重命名将优先执行（优先于正则重命名），会自动处理任务名称、文件夹名和剧集名称。如果您设置了正则重命名规则，则仅在手动执行时生效。</span><br/>
-                                    剧集模板示例：<br/>
-                                    <span style="background-color: #f0f0f0;">{name} - {se}{ext}</span> → 北上 - S01E01.mkv<br/>
-                                    <span style="background-color: #f0f0f0;">{name}.第{sn}季第{en}集{ext}</span> → 北上.第1季第1集.mkv<br/>
-                                    <span style="background-color: #f0f0f0;">{name}.{year}.S{s}E{e}{ext}</span> → 北上.2024.S01E01.mkv<br/>
-                                    电影模板示例：<br/>
-                                    <span style="background-color: #f0f0f0;">{name} - {year}{ext}</span> → 指环王1 - 2001.mkv<br/>
-                                    通用占位符：<br/>
-                                    {name} - 剧名<br/>
-                                    {year} - 年份<br/>
-                                    {ext} - 扩展名（.mkv）<br/>
-                                    剧集额外占位符：<br/>
-                                    {s} - 季数（补零）<br/>
-                                    {sn} - 季数（不补零）<br/>
-                                    {e} - 集数（补零）<br/>
-                                    {en} - 集数（不补零）<br/>
-                                    {se} - 季集格式（S01E01）<br/>
-                                </small>
-                            </div>  
-                        </div>
-                    </div>
+            <div class="cloudsaver-search-container">
+                <div class="cloudsaver-search-box">
+                    <input type="text" id="searchInput" placeholder="输入关键字搜索资源">
+                    <button type="button" onclick="searchResources()">搜索</button>
                 </div>
-                <div class="form-group">
-                    <label>CloudSaver 设置</label>
-                    <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
-                        <input type="text" id="cloudSaverUrl" placeholder="服务地址: http://localhost:8008">
-                        <input type="text" id="cloudSaverUsername" placeholder="账号">
-                        <input type="password" id="cloudSaverPassword" placeholder="密码">
-                    </div>
+                <div id="searchResults" class="cloudsaver-search-results" style="display: none;">
+                    <div class="cloudsaver-results-list"></div>
                 </div>
-
-                <div class="form-group">
-                    <label>Alist 设置</label>
-                    <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
-                            <label style="display: flex;align-items: center;gap: 8px;margin-bottom: 0;width: 15%;">
-                                <input type="checkbox" id="enableAlist" style="width: auto;">
-                                启用
-                            </label>
-                            <input type="text" id="alistServer" style="height: 32px; width: 40%;" placeholder="例如: http://localhost:5244">
-                            <input type="text" id="alistApiKey" style="height: 32px;" placeholder="Alist 令牌">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>整理 &amp; 刮削</label>
-                    <small class="form-text" style="display:block;margin-bottom:8px;">设置重命名格式、刮削选项等。</small>
-                    <div class="push-settings">
-                        <div class="push-item">
-                            <label for="scraperSource">刮削数据源</label>
-                            <small class="form-text" style="margin-bottom:4px;">刮削时的元数据来源</small>
-                            <select id="scraperSource" style="height:32px;">
-                                <option value="themoviedb">TheMovieDb</option>
-                            </select>
-                            <label style="margin-top:8px;">
-                                <input type="checkbox" id="enableScraper">
-                                启用刮削
-                            </label>
-                            <input type="text" id="tmdbApiKey" placeholder="TMDB API Key">
-                            <label for="movieRenameFormat" style="margin-top:8px;">电影重命名格式</label>
-                            <small class="form-text" style="margin-bottom:4px;">使用Jinja2语法，格式参考：<a href="https://jinja.palletsprojects.com/en/3.0.x/templates" target="_blank">https://jinja.palletsprojects.com/en/3.0.x/templates</a></small>
-                            <textarea id="movieRenameFormat" rows="2" placeholder="{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}" style="width:100%;font-family:monospace;font-size:12px;"></textarea>
-                            <div class="help-text-container" style="margin-top:4px;margin-bottom:8px;">
-                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
-                                <small class="form-text" style="display:none;background:#f8f8f8;padding:6px;border-radius:4px;margin-top:4px;">
-                                    可用变量：<code>{{title}}</code> 标题、<code>{{year}}</code> 年份、<code>{{part}}</code> 分段(Part1)、<code>{{videoFormat}}</code> 画质(2160p)、<code>{{videoSource}}</code> 来源(BluRay)、<code>{{videoCodec}}</code> 视频编码(x265)、<code>{{audioCodec}}</code> 音频编码(DTS)、<code>{{fileExt}}</code> 扩展名(.mkv)
-                                </small>
-                            </div>
-                            <label for="tvRenameFormat" style="margin-top:8px;">电视剧重命名格式</label>
-                            <small class="form-text" style="margin-bottom:4px;">使用Jinja2语法，格式参考：<a href="https://jinja.palletsprojects.com/en/3.0.x/templates" target="_blank">https://jinja.palletsprojects.com/en/3.0.x/templates</a></small>
-                            <textarea id="tvRenameFormat" rows="2" placeholder="{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{{title}} - {{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}" style="width:100%;font-family:monospace;font-size:12px;"></textarea>
-                            <div class="help-text-container" style="margin-top:4px;margin-bottom:8px;">
-                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
-                                <small class="form-text" style="display:none;background:#f8f8f8;padding:6px;border-radius:4px;margin-top:4px;">
-                                    可用变量：<code>{{title}}</code> 标题、<code>{{year}}</code> 年份、<code>{{season}}</code> 季数(1)、<code>{{season_episode}}</code> 集编码(S01E01)、<code>{{episode}}</code> 集数(1)、<code>{{part}}</code> 分段(Part1)、<code>{{videoFormat}}</code> 画质(2160p)、<code>{{videoSource}}</code> 来源(BluRay)、<code>{{videoCodec}}</code> 视频编码(x265)、<code>{{audioCodec}}</code> 音频编码(DTS)、<code>{{fileExt}}</code> 扩展名(.mkv)
-                                </small>
-                            </div>
-                            <div class="help-text-container" style="margin-top:8px;">
-                                <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
-                                <small class="form-text">开启后会自动从TMDB获取影视剧信息。请先在 <a href="https://www.themoviedb.org/settings/api" target="_blank">TMDB</a> 申请 API Key。仅供娱乐使用; <br/>如需使用请按以下格式命名：<br/>
-                                    <span style="background-color: #f0f0f0;">剧名(年份)/[Season 01/][剧名.]S01E01.mkv</span><br/>
-                                    <span style="background-color: #f0f0f0;">电影名(年份)/电影名.年份.mkv</span><br/>
-                                    例如：<span style="background-color: #f0f0f0;">沙海(2018)/Season 01/沙海.S01E01.mkv</span><br/>
-                                    <span style="background-color: #f0f0f0;">哪吒之魔童降世(2019)/哪吒之魔童降世.2019.mkv</span><br/>
-                                    <span style="color: #666;">注：Season 01目录和文件名中的剧名可省略，但建议保留以便识别</span><br/>
-                                    <br/>
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <button type="submit">保存设置</button>
-            </form>
+            </div>
         </div>
     </div>
 
@@ -629,7 +520,6 @@
 <script src="/js/loading.js"></script>
 <script src="/js/message.js"></script>
 <script src="/js/cloudsaver.js"></script>
-<script src="/js/chat.js"></script>
 <script src="/js/customPush.js"></script> 
 
 
@@ -767,12 +657,6 @@
 
 <div class="floating-btn-group">
     <div class="floating-btns-container collapsed" id="floatingBtnsContainer">
-        <div class="floating-btn" onclick="showCloudsaver()" title="CloudSaver">
-            <img src="/icons/cloudsaver.svg" alt="CloudSaver" style="filter:none">
-        </div>
-        <div class="floating-btn" onclick="showAIChat()" title="AI助手" style="bottom: 100px;">
-            <img src="/icons/ai.svg" alt="AI Chat">
-        </div>
         <div class="floating-btn" onclick="openCustomPushManagementModal()" title="自定义推送">
             <img src="/icons/push.svg" alt="自定义推送">
         </div>
@@ -798,38 +682,8 @@
 
 
 
-<!-- CloudSaver搜索模态框 -->
-<div id="cloudSaverModal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
-        <div class="cloudsaver-search-container">
-            <div class="cloudsaver-search-box">
-                <input type="text" id="searchInput" placeholder="输入关键字搜索">
-                <button type="button" onclick="searchResources()">搜索</button>
-            </div>
-            <div id="searchResults" class="cloudsaver-search-results" style="display: none;">
-                <div class="cloudsaver-results-list"></div>
-                <div class="cloudsaver-action-buttons">
-                    <button onclick="handleSelectedResource('open')">打开链接</button>
-                    <button onclick="handleSelectedResource('create')">创建任务</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- AI聊天窗口 -->
-<div id="aiChatModal" class="modal">
-    <div class="modal-content" style="width: 80%; max-width: 800px; height: 80vh;">
-        <div class="chat-header modal-header">
-            <h3>AI助手</h3>
-            <button onclick="closeAIChat()" class="close-btn">&times;</button>
-        </div>
-        <div id="chatMessages" class="chat-messages"></div>
-        <div class="chat-input">
-            <input type="text" id="messageInput" placeholder="输入消息，按回车发送...">
-        </div>
-    </div>
-</div>
+
 
 <!--自定义推送-->
 <div id="customPushManagementModal" class="modal">
