@@ -37,3 +37,11 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/cloudpan-auto-save:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/cloudpan-auto-save:${{ github.sha }}
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/cloudpan-auto-save
+          readme-filepath: ./DOCKERHUB.md
