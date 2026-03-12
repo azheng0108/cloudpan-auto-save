@@ -75,14 +75,27 @@
 
 ### Docker 部署
 
-#### 自行构建镜像
+#### 方式一：拉取 Docker Hub 镜像（推荐）
+
+```bash
+docker run -d \
+  -v /yourpath/data:/home/data \
+  -p 3001:3000 \
+  --restart unless-stopped \
+  --name cloudpan-auto-save \
+  -e PUID=0 \
+  -e PGID=0 \
+  azheng0108/cloudpan-auto-save:latest
+```
+
+#### 方式二：自行构建镜像
 
 ```bash
 # 在项目根目录执行
 docker build -t cloudpan-auto-save .
 ```
 
-#### 运行容器
+构建完成后运行容器：
 
 ```bash
 docker run -d \
