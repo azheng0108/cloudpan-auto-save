@@ -87,7 +87,6 @@ docker build -t cloudpan-auto-save .
 ```bash
 docker run -d \
   -v /yourpath/data:/home/data \
-  -v /yourpath/strm:/home/strm \
   -p 3001:3000 \
   --restart unless-stopped \
   --name cloudpan-auto-save \
@@ -99,7 +98,6 @@ docker run -d \
 > **注意：**
 > - `yourpath` 请替换为你宿主机的实际目录
 > - 宿主机端口使用 `3001`，避免与原项目 [xia1307/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)（默认占用 `3000`）冲突，两个项目可在同一台机器上同时运行互不干扰
-> - 如不需要 STRM 功能，可以去掉 `-v /yourpath/strm:/home/strm` 这一行
 > - 支持通过 `-e PORT=3001` 修改容器内部监听端口（同时将 `-p` 改为 `3001:3001`）
 
 #### 访问系统
