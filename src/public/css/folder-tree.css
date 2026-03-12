@@ -4,9 +4,10 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    overflow-x: auto;  /* 添加水平滚动 */
-    white-space: nowrap;  /* 防止换行 */
-    min-width: 200px;  /* 设置最小宽度 */
+    /* 横向滚动已上移至 .form-body 统一管理，此处不再设置 overflow-x */
+    white-space: nowrap;  /* 防止文件名换行，配合父容器 overflow-x: auto 实现水平滑动 */
+    min-width: 200px;
+    width: max-content;   /* 宽度撑开至内容实际宽度，触发父容器 form-body 的横向滚动条 */
 }
 
 .folder-tree-item {
@@ -107,6 +108,17 @@
     border: 1px dashed #91caff;
     border-radius: 4px;
     padding: 4px 12px;
+    /*
+     * 当目录树有超长文件名导致水平滚动时，输入行会随之变宽，
+     * 确认/取消按钮被推到视口外不可见。
+     * position: sticky + left: 0 使输入行始终贴左可见，
+     * box-sizing + max-width 限制宽度不超出 form-body 可见区域。
+     */
+    position: sticky;
+    left: 0;
+    box-sizing: border-box;
+    max-width: 100%;
+    z-index: 2;
 }
 
 .mkdir-input {
@@ -117,7 +129,8 @@
     outline: none;
     font-size: 13px;
     padding: 2px 4px;
-    min-width: 120px;
+    min-width: 80px;    /* 适当降低最小宽度，为确认/取消按钮留出空间 */
+    max-width: 100%;
     color: inherit;
 }
 

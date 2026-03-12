@@ -1,4 +1,4 @@
-/* 模态框样式 */
+/* 模态框遮罩层 */
 .modal {
     position: fixed;
     top: 0;
@@ -18,8 +18,15 @@
     align-items: center;
     padding: 0 10px 0 0;
     border-bottom: 1px solid #eee;
+    flex-shrink: 0; /* 头部不随内容缩小 */
 }
 
+/*
+ * 核心修复：
+ * 1. 添加 max-height: 90vh — 防止弹窗超出视口，导致底部按钮不可见
+ * 2. overflow: hidden — 配合 max-height 裁剪溢出，使 flex 布局正确工作
+ * 3. display: flex + flex-direction: column — 让 form-body 弹性填充、form-actions 钉在底部
+ */
 .modal-content {
     background-color: var(--bg-color);
     border-radius: 8px;
@@ -27,60 +34,41 @@
     position: relative;
     width: 90%;
     max-width: 600px;
+    max-height: 90vh;   /* 限制高度，防止超出视口 */
     margin: 0 auto;
     display: flex;
     flex-direction: column;
+    overflow: hidden;   /* 裁剪溢出，使 flex 子元素滚动正常工作 */
     padding: 0;
 }
+
 .modal-content h3 {
     margin-left: 15px;
 }
-/* 移除 form-body 的 flex: 1，改用固定高度 */
+
+/*
+ * form-body 使用正确的 flex 可滚动模式：
+ * - flex: 1 1 auto  → 填充 modal-content 的剩余空间
+ * - min-height: 0   → flexbox 子元素实现内部滚动的关键，防止内容撑开父容器
+ * - overflow-y: auto → 纵向内容超出时滚动
+ * - overflow-x: auto → 横向内容超出时显示滚动条（长文件名等场景）
+ *   统一在此层管理双向滚动，确保滚动条始终可见且不被父容器裁剪
+ */
 .form-body {
-    height: calc(70vh - 120px); /* 减去头部和底部的高度 */
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: auto;
     padding: 20px;
-     scrollbar-color: var(--border-color) transparent;
+    scrollbar-color: var(--border-color) transparent;
 }
 
+/*
+ * form-actions 作为 flex 末尾项，配合 flex-shrink: 0 始终固定在底部
+ * 无需 position: sticky（在 overflow: hidden 的父容器中 sticky 会失效）
+ */
 .form-actions {
-    position: sticky;
-    bottom: 0;
-    background-color: var(--bg-color);
-    padding: 15px 20px;
-    border-top: 1px solid var(--border-color);
-    margin: 0;
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    z-index: 1;
-}
-
-@media (max-width: 768px) {
-    .form-body {
-        height: calc(85vh - 140px);
-        padding: 15px;
-    }
-}
-
-.modal-body {
-    padding: 10px;
-}
-.modal-footer {
-    padding: 20px;
-}
-
-@media (max-width: 768px) {
-    .form-body {
-        max-height: calc(60vh - 100px);
-        overflow-y: auto;
-        padding: 10px;
-    }
-}
-
-.form-actions {
-    position: sticky;
-    bottom: 0;
+    flex-shrink: 0;
     background-color: var(--bg-color);
     padding: 15px 20px;
     border-top: 1px solid var(--border-color);
@@ -89,6 +77,24 @@
     justify-content: flex-end;
     gap: 10px;
     border-radius: 0 0 8px 8px;
+    z-index: 1;
+}
+
+@media (max-width: 768px) {
+    .modal-content {
+        max-height: 88vh; /* 移动端留出少量间距 */
+    }
+    .form-body {
+        padding: 15px;
+    }
+}
+
+.modal-body {
+    padding: 10px;
+}
+
+.modal-footer {
+    padding: 20px;
 }
 
 .rename-type-selector {
@@ -96,48 +102,38 @@
     gap: 32px;
     margin-bottom: 20px;
 }
+
 .radio-label {
     display: flex;
     align-items: center;
     gap: 8px;
 }
+
 .radio-label input[type="radio"] {
     width: auto;
     order: -1;
 }
 
+/* 文件列表弹窗 */
 .files-list-modal .modal-content {
     max-width: 1000px;
-}
-
-.files-list-modal .form-body {
-    height: calc(60vh - 100px);
-    padding: 0;
-}
-/* 移除这些重复的样式 */
-.files-list-modal .modal-content {
     max-height: 70vh;
     margin-top: 2vh;
 }
 
-.rename-options-modal .form-body {
-    height: calc(55vh - 100px);
+.files-list-modal .form-body {
+    padding: 0;
 }
-/* 移除这些重复的样式 */
+
+/* 重命名选项弹窗 */
 .rename-options-modal .modal-content {
     max-height: 60vh;
     margin-top: 2vh;
 }
 
+/* 重命名预览弹窗 */
 .preview-rename-modal .modal-content {
     max-width: 1000px;
-}
-
-.preview-rename-modal .form-body {
-    height: calc(55vh - 100px);
-}
-/* 移除这些重复的样式 */
-.preview-rename-modal .modal-content {
     max-height: 60vh;
     margin-top: 2vh;
 }
