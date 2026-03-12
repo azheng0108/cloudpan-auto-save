@@ -128,13 +128,20 @@ class Cloud139Service {
         this.phone = account.phone || account.username;
 
         // 构建认证头
+        // 将 auth 字符串规范化为带 "Basic " 前缀的完整头值
+        const _normalizeBasicAuth = (str) => /^Basic\s+/i.test(str.trim()) ? str.trim() : `Basic ${str.trim()}`;
+        // 判断字符串是否为 Basic auth（带或不带 "Basic " 前缀的 base64，不含 "; " cookie 特征）
+        const _isBasicAuthStr = (str) => /^Basic\s+/i.test(str.trim()) || /^[A-Za-z0-9+/]+=*$/.test(str.trim());
+
         const authHeaders = {};
         if (account.authorization) {
-            authHeaders['Authorization'] = account.authorization;
+            // 兼容用户填写时不带 "Basic " 前缀的情况
+            const authValue = _normalizeBasicAuth(account.authorization);
+            authHeaders['Authorization'] = authValue;
             // 尝试从 Basic auth 提取手机号：Base64("pc:PHONE:token")
             if (!this.phone || this.phone.length < 11) {
                 try {
-                    const decoded = Buffer.from(account.authorization.replace(/^Basic\s+/i, ''), 'base64').toString();
+                    const decoded = Buffer.from(authValue.replace(/^Basic\s+/i, ''), 'base64').toString();
                     const parts = decoded.split(':');
                     if (parts.length >= 2 && /^1\d{10}$/.test(parts[1])) this.phone = parts[1];
                 } catch (_) {}
@@ -142,13 +149,14 @@ class Cloud139Service {
         } else if (account.cookie) {
             authHeaders['Cookie'] = account.cookie;
         } else if (account.cookies) {
-            // cookies 字段可能存储 "Basic xxxx" 形式的 Authorization 值
-            if (account.cookies.trim().startsWith('Basic ')) {
-                authHeaders['Authorization'] = account.cookies.trim();
+            // cookies 字段可能存储 "Basic xxxx" 或不带前缀的 base64 Authorization 值
+            if (_isBasicAuthStr(account.cookies)) {
+                const authValue = _normalizeBasicAuth(account.cookies);
+                authHeaders['Authorization'] = authValue;
                 // 尝试从 Basic auth 提取手机号：Base64("pc:PHONE:token")
                 if (!this.phone || this.phone.length < 11) {
                     try {
-                        const decoded = Buffer.from(account.cookies.trim().replace(/^Basic\s+/i, ''), 'base64').toString();
+                        const decoded = Buffer.from(authValue.replace(/^Basic\s+/i, ''), 'base64').toString();
                         const parts = decoded.split(':');
                         if (parts.length >= 2 && /^1\d{10}$/.test(parts[1])) this.phone = parts[1];
                     } catch (_) {}
