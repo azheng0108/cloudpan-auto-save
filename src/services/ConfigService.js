@@ -14,7 +14,8 @@ class ConfigService {
         retryInterval: 300,   // 重试间隔（秒）
         enableAutoClearRecycle: false,
         enableAutoClearFamilyRecycle: false,
-        mediaSuffix: '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov', // 媒体文件后缀
+        // 媒体文件后缀：视频格式 + 常见压缩包格式（rar/zip/tar/7z 等资源分发时常用压缩包）
+        mediaSuffix: '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov;.rar;.zip;.7z;.tar;.gz;.tar.gz;.tar.bz2;.tar.xz',
         enableOnlySaveMedia: false, // 只保存媒体文件
         // 文件夹不存在时重新创建
         enableAutoCreateFolder: false,

@@ -839,7 +839,9 @@ class Cloud139Service {
             items: items.map(f => ({
                 fileId: f.fileId,
                 name: f.name,
-                type: f.fileType === 'folder' || f.category === 'folder' || !f.fileExtension ? 'folder' : 'file',
+                // 仅凭 fileType/category 判断类型，不依赖 fileExtension
+                // （压缩包等非媒体文件的 fileExtension 字段在 139 API 中可能为空）
+                type: f.fileType === 'folder' || f.category === 'folder' ? 'folder' : 'file',
                 extension: (f.fileExtension || '').toLowerCase(),
                 size: f.size,
                 updatedAt: f.updatedAt,
@@ -869,7 +871,9 @@ class Cloud139Service {
             const items = data.items ?? data.fileList ?? [];
             for (const f of items) {
                 // 只收集文件，不含文件夹
-                if (f.fileType !== 'folder' && f.category !== 'folder' && f.fileExtension) {
+                // 去除 && f.fileExtension 条件：压缩包等文件在 139 API 中 fileExtension 可能为空，
+                // 若以此判断会导致磁盘已有压缩包无法计入去重名单，引发重复转存
+                if (f.fileType !== 'folder' && f.category !== 'folder' && f.name) {
                     allFiles.push({ fileId: f.fileId, name: f.name });
                 }
             }
