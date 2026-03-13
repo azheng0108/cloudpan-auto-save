@@ -380,12 +380,22 @@
 }
 
 .folder-select-header {
-    padding: 12px;
+    padding: 10px 12px;
     background: var(--bg-color);
     border-bottom: 1px solid var(--border-color);
     position: sticky;
     top: 0;
     z-index: 1;
+}
+
+/* 根目录条目：字体加粗，底部细分隔线，视觉上与子目录区分 */
+.folder-item-root {
+    border-bottom: 1px solid var(--border-color);
+    background: color-mix(in srgb, var(--primary-color) 5%, transparent);
+}
+
+.folder-item-root label {
+    font-weight: 500 !important;
 }
 
 .folder-select-header input[type="checkbox"],
