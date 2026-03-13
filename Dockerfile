@@ -1,55 +1,56 @@
 # ── 构建阶段 ──────────────────────────────────────────────────────────────────
-# node:18-slim 体积小于完整 node 镜像，适合编译 TypeScript
-FROM node:18-slim AS builder
+# 与生产阶段同用 Alpine，保证 sqlite3 等原生模块二进制兼容
+# 从而可直接复制 node_modules，省去生产阶段重复下载
+FROM node:18-alpine AS builder
 
 WORKDIR /home
 
-# 先只复制依赖文件，充分利用 Docker 构建缓存
-# 只有 package.json / yarn.lock 变化时才重新 yarn install
+# sqlite3 在 Alpine 上需从源码编译（musl libc 无预编译包）
+RUN apk add --no-cache python3 make g++
+
+# 先复制依赖清单，充分利用 Docker 层缓存
 COPY package.json yarn.lock ./
 
-# 安装全部依赖（含 devDependencies，tsc 需要）
-# 不加 --frozen-lockfile：yarn.lock 因清理 puppeteer 残留条目而需要自动更新
+# 安装全部依赖（含 devDependencies，编译 TypeScript 需要）
 RUN yarn install --ignore-engines
 
 # 复制源码并编译
 COPY . .
 RUN npx tsc && cp -r src/public dist/public
 
+# 原地裁剪 node_modules 为纯生产依赖（不重新下载，只删除 devDependencies）
+# 同时清理运行时完全不需要的文件，进一步瘦身：
+#   - node-gyp：sqlite3 编译工具，编译完成后无用
+#   - *.d.ts / *.d.ts.map：TypeScript 声明文件，JS 运行时不读取
+#   - 各包内的 README / CHANGELOG / LICENSE 文本
+RUN yarn install --production --ignore-engines && \
+    yarn cache clean && \
+    rm -rf node_modules/node-gyp && \
+    find node_modules -name "*.d.ts" -delete && \
+    find node_modules -name "*.d.ts.map" -delete && \
+    find node_modules \( -name "README*" -o -name "CHANGELOG*" \) -not -path "*/bin/*" -delete 2>/dev/null; true
+
 # ── 生产阶段 ──────────────────────────────────────────────────────────────────
-# node:18-alpine 是最小的 Node 运行时，比 slim 小 ~50MB
 FROM node:18-alpine AS production
 
 WORKDIR /home
 
-COPY --from=builder /home/package.json ./
-COPY --from=builder /home/yarn.lock ./
-
-# 所有操作合并为单个 RUN，避免产生多余镜像层：
-#   1. 安装系统运行时包
-#   2. 只安装生产依赖
-#   3. 清理 yarn 缓存（这是镜像体积虚大的主因）
-#   4. 设置时区
-#   5. 创建持久化目录
+# 安装系统运行时包、设置时区、创建持久化目录 — 合并为单层
 RUN apk add --no-cache ca-certificates tzdata && \
-    yarn install --production --ignore-engines && \
-    yarn cache clean && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     mkdir -p /home/data /home/strm
 
-# 复制编译产物
+# 直接复制 Builder 中已裁剪的 node_modules（同为 Alpine，原生库完全兼容）
+# 无需在生产阶段重新执行 yarn install，节省镜像层和构建时间
+COPY --from=builder /home/node_modules ./node_modules
 COPY --from=builder /home/dist ./dist
 # 兜底：显式复制前端静态资源，防止 login.html 等页面缺失
 COPY --from=builder /home/src/public ./dist/public
+COPY --from=builder /home/package.json ./
 
 ENV TZ=Asia/Shanghai
 
-# 挂载点
 VOLUME ["/home/data", "/home/strm"]
-
-# 暴露端口
 EXPOSE 3000
-
-# 直接用 node 启动，无需 yarn 参与运行时，减少冷启动开销
 CMD ["node", "dist/index.js"]
