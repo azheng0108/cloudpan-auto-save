@@ -876,8 +876,15 @@ async function parseShareLink() {
             // 监听根目录 checkbox 变化，实时同步子目录状态
             const rootCb = document.querySelector('input[name="chooseShareFolder"][value="-1"]');
             if (rootCb) {
-                rootCb.addEventListener('change', syncRootFolderCheckboxState);
+                rootCb.addEventListener('change', () => {
+                    syncRootFolderCheckboxState();
+                    syncSelectAllState();
+                });
             }
+            // 监听所有子目录 checkbox 变化，实时更新「全选」按钮状态
+            document.querySelectorAll('input[name="chooseShareFolder"]:not([value="-1"])').forEach(cb => {
+                cb.addEventListener('change', syncSelectAllState);
+            });
              // 使用根目录（level=0）名称作为任务名称
             const rootFolder = data.data.find(f => (f.level || 0) === 0) || data.data[0];
             if (rootFolder) {
@@ -903,10 +910,37 @@ async function parseShareLink() {
 // 全选/取消全选处理
 document.getElementById('selectAllFolders').addEventListener('change', function(e) {
     const checkboxes = document.querySelectorAll('input[name="chooseShareFolder"]');
-    checkboxes.forEach(cb => cb.checked = e.target.checked);
+    checkboxes.forEach(cb => { cb.checked = e.target.checked; cb.disabled = false; });
     // 同步更新根目录 checkbox 的联动状态
     syncRootFolderCheckboxState();
+    syncSelectAllState();
 });
+
+/**
+ * 同步「全选」按钮的 checked / indeterminate 状态，反映当前实际选中情况：
+ * - 全部选中 → checked=true,  indeterminate=false
+ * - 部分选中 → checked=false, indeterminate=true （半选状态）
+ * - 全不选中 → checked=false, indeterminate=false
+ * 根目录选中时子目录被禁用，不纳入统计，以根目录本身的选中状态为准。
+ */
+function syncSelectAllState() {
+    const selectAll = document.getElementById('selectAllFolders');
+    if (!selectAll) return;
+    // 只统计「可见可交互」的 checkbox（不含被禁用的子目录）
+    const all = Array.from(document.querySelectorAll('input[name="chooseShareFolder"]:not(:disabled)'));
+    if (!all.length) return;
+    const checkedCount = all.filter(cb => cb.checked).length;
+    if (checkedCount === all.length) {
+        selectAll.checked = true;
+        selectAll.indeterminate = false;
+    } else if (checkedCount === 0) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+    } else {
+        selectAll.checked = false;
+        selectAll.indeterminate = true; // 浏览器渲染为「-」半选样式
+    }
+}
 
 /**
  * 当根目录（id=-1）被勾选时，子目录 checkbox 自动禁用并变灰，
