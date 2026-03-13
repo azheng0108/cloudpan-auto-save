@@ -24,8 +24,10 @@ COPY --from=builder /home/yarn.lock ./
 # 仅安装生产依赖
 RUN yarn install --production --ignore-engines
 
-# 复制构建产物
+# 复制编译后的 JS 产物（dist/ 由 tsc 生成，.dockerignore 已排除源 dist/）
 COPY --from=builder /home/dist ./dist
+# 兜底：显式复制前端静态资源，防止 cp 异常时 login.html 等页面缺失
+COPY --from=builder /home/src/public ./dist/public
 
 # 安装运行时必要的系统包
 RUN apk update && \
