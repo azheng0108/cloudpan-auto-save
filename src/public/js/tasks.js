@@ -58,16 +58,25 @@ async function fetchTasks() {
         data.data.forEach(task => {
             taskList.push(task)
             const progressRing = task.totalEpisodes ? createProgressRing(task.currentEpisodes || 0, task.totalEpisodes) : '';
-            const taskName = task.shareFolderName?(task.resourceName + '/' + task.shareFolderName): task.resourceName || '未知'
+            // root-files 任务：文件直接存根目录，不拼子目录路径，加小标签区分
+            // taskNameText 用于 HTML 属性（title/data-name），不能含引号；taskName 用于可见内容
+            const taskNameText = (task.shareFolderId === 'root-files')
+                ? ((task.resourceName || '未知') + ' [散文件]')
+                : task.shareFolderName
+                    ? (task.resourceName + '/' + task.shareFolderName)
+                    : task.resourceName || '未知'
+            const taskName = (task.shareFolderId === 'root-files')
+                ? ((task.resourceName || '未知') + ' <span style="font-size:11px;color:#888;font-weight:normal;">[散文件]</span>')
+                : taskNameText
             const cronIcon = task.enableCron ? '<span class="cron-icon" title="已开启自定义定时任务">⏰</span>' : '';
             tbody.innerHTML += `
-                <tr data-status='${task.status}' data-task-id='${task.id}' data-name='${taskName}'>
+                <tr data-status='${task.status}' data-task-id='${task.id}' data-name='${taskNameText}'>
                     <td>
                         <button class="btn-danger" onclick="deleteTask(${task.id})">删除</button>
                         <button class="btn-warning" onclick="executeTask(${task.id})">执行</button>
                         <button onclick="showEditTaskModal(${task.id})">修改</button>
                     </td>
-                    <td data-label="资源名称">${cronIcon}<a href="${task.shareLink}" target="_blank" class='ellipsis' title="${taskName}">${taskName}</a></td>
+                    <td data-label="资源名称">${cronIcon}<a href="${task.shareLink}" target="_blank" class='ellipsis' title="${taskNameText}">${taskName}</a></td>
                     <td data-label="账号">${task.account.username}</td>
                     <!--<td data-label="首次保存目录"><a href="https://cloud.189.cn/web/main/file/folder/${task.targetFolderId}" target="_blank">${task.targetFolderId}</a></td>-->
                      <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class='ellipsis'>${task.realFolderName || task.realFolderId}</a></td>
@@ -223,11 +232,11 @@ function initTaskForm() {
             message.warning('填了目标正则, 那么源正则就必须填');
             return;
         }
-        // 获取选中的分享目录
+        // 读取所有选中的分享目录 checkbox（含根目录 -1、根目录文件 root-files、子目录 caID）
         const selectedFolders = Array.from(document.querySelectorAll('input[name="chooseShareFolder"]:checked'))
-        .map(cb => cb.value);
-        if (selectedFolders.length == 0) {
-            message.warning('至少选择一个分享目录');
+            .map(cb => cb.value);
+        if (selectedFolders.length === 0) {
+            message.warning('请至少选择一个目录');
             return;
         }
         const body = { accountId, shareLink, totalEpisodes, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName };
@@ -315,8 +324,10 @@ async function showFileListModal(taskId) {
                 <h3>文件列表</h3>
             </div>
             <div class='modal-body'>
-                <button class="batch-rename-btn" onclick="showBatchRenameOptions()">批量重命名</button>
-                <button class="delete-files-btn btn-danger" onclick="deleteTaskFiles()">批量删除</button>
+                <div class="files-list-toolbar">
+                    <button class="btn-primary" onclick="showBatchRenameOptions()">批量重命名</button>
+                    <button class="btn-danger" onclick="deleteTaskFiles()">批量删除</button>
+                </div>
                 <div class='form-body'>
                 <table>
                     <thead>
@@ -860,38 +871,61 @@ async function parseShareLink() {
         const data = await response.json();
         if (data.success) {
             shareFoldersGroup.style.display = 'block';
-            shareFoldersList.innerHTML = data.data.map(folder => {
-                const level = folder.level || 0;
-                const indent = level > 0 ? `style="padding-left:${level * 20}px"` : '';
-                const icon = level > 0 ? '📁 ' : '🗂️ ';
-                return `<div class="folder-item" ${indent}>
+            const rootFolderMeta = data.data.find(f => (f.level || 0) === 0);
+            const subFolders = data.data.filter(f => (f.level || 0) > 0);
+            const hasRootFiles = rootFolderMeta?.hasRootFiles || false;
+
+            // 根目录条目（id=-1）：代表「同步整个分享」，选中后其余 checkbox 自动禁用
+            const rootName = rootFolderMeta ? rootFolderMeta.name : '';
+            const rootItemHtml = rootFolderMeta
+                ? `<div class="folder-item folder-item-root">
                     <label>
-                        <input type="checkbox" name="chooseShareFolder" value="${folder.id}" checked>
-                        ${icon}${folder.name}
+                        <input type="checkbox" name="chooseShareFolder" value="-1" checked>
+                        🗂️ ${rootName}（全部内容）
+                    </label>
+                </div>`
+                : '';
+
+            // 散文件条目：始终显示，用实际文件夹名让描述更直观；
+            // 若实际无直属文件，后端任务执行后会返回「0 个新文件」并正常结束。
+            const rootFilesItemHtml = `<div class="folder-item" style="border-top:1px dashed var(--border-color);">
+                    <label>
+                        <input type="checkbox" name="chooseShareFolder" value="root-files">
+                        📄 ${rootName} 里的散文件
+                        <small style="color:var(--text-secondary);margin-left:4px;font-size:11px;">仅文件，不含子文件夹</small>
                     </label>
                 </div>`;
-            }).join('');
-            // 渲染完成后立即初始化根目录联动状态（默认全选时根已勾选，子目录应禁用）
-            syncRootFolderCheckboxState();
-            // 监听根目录 checkbox 变化，实时同步子目录状态
+
+            // 子目录条目：初始禁用（因根目录默认选中），取消根目录后恢复可选
+            const folderItemsHtml = subFolders.length > 0
+                ? subFolders.map(folder => `<div class="folder-item" style="padding-left:20px;opacity:0.45;">
+                    <label>
+                        <input type="checkbox" name="chooseShareFolder" value="${folder.id}" checked disabled>
+                        📁 ${folder.name}
+                    </label>
+                </div>`).join('')
+                : '';
+
+            // 底部提示：用通俗语言说明子目录同步行为
+            const hintHtml = `<div id="subDirRecursiveHint" style="display:none; padding:6px 12px; color:var(--primary-color); font-size:12px; border-top:1px solid var(--border-color);">
+                💡 选中的文件夹里所有文件（包括文件夹内套的文件夹）都会被同步
+            </div>`;
+
+            shareFoldersList.innerHTML = rootItemHtml + rootFilesItemHtml + folderItemsHtml + hintHtml;
+
+            // 绑定根目录 checkbox 联动：选中时子目录禁用，取消时子目录启用
+            // 绑定后立即调用一次，确保散文件 checkbox 初始状态与子目录一致（灰色+选中）
             const rootCb = document.querySelector('input[name="chooseShareFolder"][value="-1"]');
             if (rootCb) {
-                rootCb.addEventListener('change', () => {
-                    syncRootFolderCheckboxState();
-                    syncSelectAllState();
-                });
+                rootCb.addEventListener('change', syncRootFolderCheckboxState);
+                syncRootFolderCheckboxState();
             }
-            // 监听所有子目录 checkbox 变化，实时更新「全选」按钮状态
-            document.querySelectorAll('input[name="chooseShareFolder"]:not([value="-1"])').forEach(cb => {
-                cb.addEventListener('change', syncSelectAllState);
-            });
-             // 使用根目录（level=0）名称作为任务名称
-            const rootFolder = data.data.find(f => (f.level || 0) === 0) || data.data[0];
-            if (rootFolder) {
-                const taskName = document.getElementById('taskName')
-                taskName.value = rootFolder.name;
-                // 移除taskName的只读
-                taskName.readOnly = false;
+
+            // 使用根目录（level=0）名称作为任务名称
+            if (rootFolderMeta) {
+                const taskNameEl = document.getElementById('taskName');
+                taskNameEl.value = rootFolderMeta.name;
+                taskNameEl.readOnly = false;
             }
         } else {
             shareFoldersGroup.style.display = 'none';
@@ -907,66 +941,36 @@ async function parseShareLink() {
     }
 }
 
-// 全选/取消全选处理
-document.getElementById('selectAllFolders').addEventListener('change', function(e) {
-    const checkboxes = document.querySelectorAll('input[name="chooseShareFolder"]');
-    checkboxes.forEach(cb => { cb.checked = e.target.checked; cb.disabled = false; });
-    // 同步更新根目录 checkbox 的联动状态
-    syncRootFolderCheckboxState();
-    syncSelectAllState();
-});
-
 /**
- * 同步「全选」按钮的 checked / indeterminate 状态，反映当前实际选中情况：
- * - 全部选中 → checked=true,  indeterminate=false
- * - 部分选中 → checked=false, indeterminate=true （半选状态）
- * - 全不选中 → checked=false, indeterminate=false
- * 根目录选中时子目录被禁用，不纳入统计，以根目录本身的选中状态为准。
- */
-function syncSelectAllState() {
-    const selectAll = document.getElementById('selectAllFolders');
-    if (!selectAll) return;
-    // 只统计「可见可交互」的 checkbox（不含被禁用的子目录）
-    const all = Array.from(document.querySelectorAll('input[name="chooseShareFolder"]:not(:disabled)'));
-    if (!all.length) return;
-    const checkedCount = all.filter(cb => cb.checked).length;
-    if (checkedCount === all.length) {
-        selectAll.checked = true;
-        selectAll.indeterminate = false;
-    } else if (checkedCount === 0) {
-        selectAll.checked = false;
-        selectAll.indeterminate = false;
-    } else {
-        selectAll.checked = false;
-        selectAll.indeterminate = true; // 浏览器渲染为「-」半选样式
-    }
-}
-
-/**
- * 当根目录（id=-1）被勾选时，子目录 checkbox 自动禁用并变灰，
- * 避免用户误以为可以单独控制子目录（根任务会递归同步所有内容，子目录勾选无效）。
- * 当根目录取消勾选时，恢复子目录的独立选择能力。
+ * 根目录（id=-1）checkbox 联动逻辑：
+ * - 根目录选中：其余所有 checkbox（根目录文件 + 子目录）禁用变灰并视觉全选，
+ *   因为递归根任务已涵盖全部内容，单独子任务无意义。
+ * - 根目录取消：恢复其余 checkbox 的可交互状态（全部选中，用户按需取消）。
  */
 function syncRootFolderCheckboxState() {
-    const rootCheckbox = document.querySelector('input[name="chooseShareFolder"][value="-1"]');
-    if (!rootCheckbox) return;
-    const isRootChecked = rootCheckbox.checked;
-    const subCheckboxes = document.querySelectorAll('input[name="chooseShareFolder"]:not([value="-1"])');
-    subCheckboxes.forEach(cb => {
+    const rootCb = document.querySelector('input[name="chooseShareFolder"][value="-1"]');
+    if (!rootCb) return;
+    const isRootChecked = rootCb.checked;
+    const otherCbs = document.querySelectorAll('input[name="chooseShareFolder"]:not([value="-1"])');
+    otherCbs.forEach(cb => {
         cb.disabled = isRootChecked;
-        cb.closest('.folder-item').style.opacity = isRootChecked ? '0.45' : '1';
-        if (isRootChecked) cb.checked = true; // 根任务包含所有子目录
+        cb.checked = true; // 根选中时保持视觉全选；取消根时恢复为全选让用户再逐项取消
+        const item = cb.closest('.folder-item');
+        if (item) item.style.opacity = isRootChecked ? '0.45' : '1';
     });
-    // 更新根目录 label 提示
-    if (rootCheckbox) {
-        const label = rootCheckbox.closest('label') || rootCheckbox.parentElement;
-        const existingHint = label?.querySelector('.root-hint');
-        if (isRootChecked && label && !existingHint) {
+    // 递归提示仅在根目录取消后（子目录可选时）显示
+    const hint = document.getElementById('subDirRecursiveHint');
+    if (hint) hint.style.display = isRootChecked ? 'none' : 'block';
+    // 根目录 label 提示文字
+    const rootItem = rootCb.closest('.folder-item');
+    if (rootItem) {
+        const existingHint = rootItem.querySelector('.root-hint');
+        if (isRootChecked && !existingHint) {
             const hint = document.createElement('small');
             hint.className = 'root-hint';
-            hint.style.cssText = 'color: var(--primary-color); margin-left: 6px; font-size: 11px;';
-            hint.textContent = '（已选根目录，将递归同步所有子目录）';
-            label.appendChild(hint);
+            hint.style.cssText = 'color:var(--primary-color);margin-left:6px;font-size:11px;';
+            hint.textContent = '（递归同步所有内容）';
+            rootItem.querySelector('label').appendChild(hint);
         } else if (!isRootChecked && existingHint) {
             existingHint.remove();
         }

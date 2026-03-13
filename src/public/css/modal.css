@@ -131,12 +131,63 @@
 /* 文件列表弹窗 */
 .files-list-modal .modal-content {
     max-width: 1000px;
-    max-height: 70vh;
+    /* 更激进的高度限制：小屏设备避免底部按钮被裁切 */
+    max-height: 90vh;
     margin-top: 2vh;
 }
 
-.files-list-modal .form-body {
+/*
+ * 文件列表弹窗结构：
+ * .modal-content
+ *   .modal-header (fixed)
+ *   .modal-body   (buttons + .form-body(table))
+ *   .form-actions (fixed)
+ *
+ * 关键：让 .modal-body 参与 flex 布局并限制高度，使内部表格区域可滚动，
+ * 否则在小屏设备上会把内容撑出视口，导致“显示不全/按钮看不到”。
+ */
+.files-list-modal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;            /* 允许内部滚动生效的关键 */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;         /* 由内部 .form-body 负责滚动 */
+}
+
+.files-list-modal .modal-body .form-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;           /* 表格在此处双向滚动 */
     padding: 0;
+}
+
+/* 文件列表工具栏（批量重命名 / 批量删除） */
+.files-list-toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0 0 10px 0;
+    flex-wrap: wrap;          /* 小屏自动换行，不会挤压表头 */
+}
+
+.files-list-toolbar .btn-primary,
+.files-list-toolbar .btn-danger {
+    min-width: 110px;
+    padding: 6px 14px;
+}
+
+@media (max-width: 900px) {
+    .files-list-modal .modal-content {
+        width: 96vw;
+        max-width: 96vw;
+        margin-top: 1vh;
+        max-height: 92vh;
+    }
+    .files-list-modal .modal-body {
+        padding: 8px;
+    }
 }
 
 /* 重命名选项弹窗 */

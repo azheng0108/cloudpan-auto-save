@@ -216,9 +216,34 @@ AppDataSource.initialize().then(async () => {
 
     app.delete('/api/accounts/:id', async (req, res) => {
         try {
-            const account = await accountRepo.findOneBy({ id: parseInt(req.params.id) });
+            const accountId = parseInt(req.params.id);
+            const account = await accountRepo.findOneBy({ id: accountId });
             if (!account) throw new Error('账号不存在');
+
+            // 规则：账号下有任务时不允许删除（避免误删任务，同时也规避外键约束失败）
+            const taskCount = await taskRepo.count({ where: { accountId } });
+            if (taskCount > 0) {
+                return res.json({
+                    success: false,
+                    error: `该账号下仍有 ${taskCount} 个任务，请先删除/迁移任务后再删除账号`,
+                });
+            }
+
+            // 若删除的是默认账号，删除后尝试将其它账号置为默认（避免界面无默认值）
+            const wasDefault = !!account.isDefault;
             await accountRepo.remove(account);
+            if (wasDefault) {
+                const next = await accountRepo.findOne({ where: { id: Not(accountId) } });
+                if (next) {
+                    await accountRepo.update({ id: next.id }, { isDefault: true });
+                }
+            }
+
+            // 清理账号相关缓存，避免前端刷新仍看到旧数据
+            folderCache.clearPrefix('folders_');
+            folderCache.clearPrefix('share_folders_');
+            folderCache.clearPrefix('favorites_');
+            logTaskEvent(`[system] 已删除账号 ${accountId}（并清理关联任务/目录缓存）`);
             res.json({ success: true });
         } catch (error) {
             res.json({ success: false, error: error.message });
@@ -470,9 +495,24 @@ AppDataSource.initialize().then(async () => {
             if (account.accountType === 'cloud139') {
                 const cloud139 = Cloud139Service.getInstance(account);
                 if (folderId == -11) {
-                    // 返回任务当前选中的分享目录作为根节点
-                    const rootId = task.shareFolderId || 'root';
-                    const rootName = task.shareFolderName || task.resourceName;
+                    // root-files 任务：shareFolderId='root-files' 是内部标记，不是真实目录 ID。
+                    // 必须映射到真实分享根目录 'root'，否则点击展开会用 'root-files' 调用分享 API 导致"资源不存在"。
+                    // 同时：若分享根下仅有一个文件夹且无直属文件，则下探一层，避免出现 “test → test” 的重复显示。
+                    let rootId = (task.shareFolderId === 'root-files' || !task.shareFolderId) ? 'root' : task.shareFolderId;
+                    let rootName = task.shareFolderName || task.resourceName;
+                    if (rootId === 'root') {
+                        try {
+                            const rootDir = await cloud139.listShareDir(task.shareId, task.accessCode || '', 'root');
+                            const rootFolders = rootDir?.folderList ?? [];
+                            const rootFiles = rootDir?.fileList ?? [];
+                            if (rootFolders.length === 1 && rootFiles.length === 0) {
+                                rootId = String(rootFolders[0].catalogID ?? rootFolders[0].caID);
+                                rootName = rootFolders[0].catalogName ?? rootFolders[0].caName ?? rootName;
+                            }
+                        } catch (_) {
+                            // 下探失败不影响渲染，保持默认 root 节点
+                        }
+                    }
                     return res.json({ success: true, data: [{ id: rootId, name: rootName }] });
                 }
                 // 列出指定分享子目录内的文件夹

@@ -324,7 +324,11 @@ class TaskService {
         }
 
         // 重建 realFolderId（子目录任务）
-        if (task.realFolderId !== task.realRootFolderId) {
+        // root-files 任务的 realFolderId 应始终等于 realRootFolderId（不需要子目录）。
+        // 旧版任务可能将 realFolderId 错误地指向 'root-files' 子目录，此处统一修正。
+        if (task.shareFolderId === 'root-files') {
+            task.realFolderId = task.realRootFolderId;
+        } else if (task.realFolderId !== task.realRootFolderId) {
             logTaskEvent(`[139] 正在创建子目录: ${task.shareFolderName}`);
             const created = await cloud139.createFolderHcy(task.realRootFolderId, task.shareFolderName);
             if (!created?.fileId) throw new Error('创建子目录失败');
@@ -1012,7 +1016,12 @@ class TaskService {
         let saveResults = []
         logTaskEvent(`================================`);
         for (const task of tasks) {
-            const taskName = task.shareFolderName?(task.resourceName + '/' + task.shareFolderName): task.resourceName || '未知'
+            // root-files 任务显示为 "[散文件]" 标签，避免拼出 "test/root-files" 误导日志
+            const taskName = (task.shareFolderId === 'root-files')
+                ? `${task.resourceName || '未知'} [散文件]`
+                : task.shareFolderName
+                    ? (task.resourceName + '/' + task.shareFolderName)
+                    : task.resourceName || '未知'
             logTaskEvent(`任务[${taskName}]开始执行`);
             try {
                 const result = await this.processTask(task);
@@ -1292,6 +1301,119 @@ class TaskService {
         try {
         const linkID = task.shareId;
         const passwd = task.accessCode || '';
+
+        // ── 根目录文件模式（root-files）────────────────────────────────────────────
+        // 用户在「选择子目录」中勾选了「根目录文件」选项时，此任务只同步根层直属文件，
+        // 不递归进入任何子目录，与 cloud189 的 (根) 任务行为对齐。
+        if (task.shareFolderId === 'root-files') {
+            // 确定有效根目录（与 _createCloud139Tasks 单文件夹穿透逻辑一致）
+            const rootDirInfo = await cloud139.listShareDir(linkID, passwd, 'root');
+            const rootFolderList = rootDirInfo?.folderList ?? [];
+            const rootFileListRaw = rootDirInfo?.fileList ?? [];
+            let effectiveRootDir = 'root';
+            let directFilesRaw = rootFileListRaw;
+            if (rootFolderList.length === 1 && rootFileListRaw.length === 0) {
+                // 分享根下只有唯一文件夹，实际内容在其内，下探一层
+                effectiveRootDir = String(rootFolderList[0].catalogID ?? rootFolderList[0].caID);
+                const childDirInfo = await cloud139.listShareDir(linkID, passwd, effectiveRootDir);
+                directFilesRaw = childDirInfo?.fileList ?? [];
+            }
+            // 添加 pCaID 字段供后续统一引用
+            const directFiles = directFilesRaw.map(f => ({ ...f, pCaID: effectiveRootDir }));
+
+            const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(s => s.toLowerCase());
+            const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
+
+            // 媒体类型过滤 + 自定义匹配规则
+            const allFiles = directFiles.filter(f => {
+                const fileId = f.path || String(f.coID ?? '');
+                if (!fileId) return false;
+                const name = (f.coName || '').toLowerCase();
+                if (enableOnlySaveMedia && !mediaSuffixs.some(s => name.endsWith(s))) return false;
+                if (!this._handleMatchMode(task, { name: f.coName || '' })) return false;
+                return true;
+            });
+
+            // 目标目录检查，必要时自动重建
+            const realFolderCheck = await cloud139.listDiskDir(task.realFolderId).catch(() => null);
+            if (!realFolderCheck) {
+                logTaskEvent('[139] 根文件目标目录不存在!');
+                if (ConfigService.getConfigValue('task.enableAutoCreateFolder')) {
+                    await this._autoCreateFolder139(cloud139, task);
+                } else {
+                    throw new Error('目标目录不存在，请检查任务配置或开启自动创建目录');
+                }
+            }
+
+            // 磁盘已有文件名（目录级去重）
+            let existingNames = new Set();
+            try {
+                const existingOnDisk = await cloud139.listAllDiskFiles(task.realFolderId);
+                existingNames = new Set(existingOnDisk.map(f => f.name));
+            } catch (e) {
+                logTaskEvent(`[139] 根文件目标目录文件列取失败，降级使用DB记录去重`);
+            }
+
+            // DB 转存记录去重
+            const transferredIds = this.transferredFileRepo
+                ? new Set((await this.transferredFileRepo.find({ where: { taskId: task.id } })).map(r => r.fileId))
+                : new Set();
+
+            // 预记录已在磁盘但未入库的文件
+            const alreadyOnDisk = allFiles.filter(f => existingNames.has(f.coName || ''));
+            if (alreadyOnDisk.length > 0) {
+                const toRecord = alreadyOnDisk.filter(f => !transferredIds.has(f.path || String(f.coID ?? '')));
+                if (toRecord.length > 0) {
+                    await this._recordTransferredFiles(task.id, toRecord.map(f => ({
+                        fileId: f.path || String(f.coID ?? ''),
+                        fileName: f.coName || '',
+                        md5: null,
+                    })));
+                    toRecord.forEach(f => transferredIds.add(f.path || String(f.coID ?? '')));
+                }
+            }
+
+            // 新文件：DB 记录 + 磁盘文件名双重去重
+            const newFiles = allFiles.filter(f => {
+                const fileId = f.path || String(f.coID ?? '');
+                if (transferredIds.has(fileId)) return false;
+                if (existingNames.size > 0) return !existingNames.has(f.coName || '');
+                return true;
+            });
+
+            if (newFiles.length === 0) {
+                logTaskEvent(`${task.resourceName}(根目录文件) 没有新文件`);
+                task.currentEpisodes = transferredIds.size;
+                task.lastCheckTime = new Date();
+                await this.taskRepo.save(task);
+                return '';
+            }
+
+            // 转存至目标目录
+            const coPathLst = newFiles.filter(f => f.path).map(f => f.path);
+            if (coPathLst.length > 0) {
+                const saveRes = await cloud139.saveShareFiles(linkID, coPathLst, [], task.realFolderId, !!passwd);
+                if (!saveRes) throw new Error('转存失败');
+            }
+
+            // 记录已转存
+            await this._recordTransferredFiles(task.id, newFiles.map(f => ({
+                fileId: f.path || String(f.coID ?? ''),
+                fileName: f.coName || '',
+                md5: null,
+            })));
+
+            const fileCount = newFiles.length;
+            task.currentEpisodes = (task.currentEpisodes || 0) + fileCount;
+            task.lastFileUpdateTime = new Date();
+            task.lastCheckTime = new Date();
+            await this.taskRepo.save(task);
+
+            const fileNameList = newFiles.map(f => f.coName || f.path);
+            return `${task.resourceName}(根目录文件) 新增${fileCount}个:\n${fileNameList.join('\n')}`;
+        }
+        // ── 根目录文件模式结束 ──────────────────────────────────────────────────────
+
         let rootPCaID = (!task.shareFolderId || task.shareFolderId === 'root' ||
             task.shareFolderId === -1 || task.shareFolderId === '-1')
             ? 'root'
@@ -1711,7 +1833,45 @@ class TaskService {
             }
             return tasks;
         }
-        for (const caID of selectedFolders.filter(id => String(id) !== '-1')) {
+
+        // 根目录文件任务：用户在「选择子目录」模式下勾选了「根目录文件」选项
+        // shareFolderId='root-files' 标记此任务只同步根层直属文件，不递归子目录
+        if (selectedFolders.map(String).includes('root-files')) {
+            const rootFilesTask = this.taskRepo.create({
+                accountId: taskDto.accountId,
+                shareLink: taskDto.shareLink,
+                shareId: linkID,
+                shareFolderId: 'root-files',
+                // 空字符串：让卡片只显示 resourceName（taskName），不拼子目录路径
+                shareFolderName: '',
+                shareMode: 0,
+                targetFolderId: effectiveTargetFolderId,
+                realFolderId: realRootFolderId,
+                realFolderName: path.join(taskDto.targetFolder || '', taskName),
+                realRootFolderId: realRootFolderId,
+                resourceName: taskName,
+                status: 'pending',
+                totalEpisodes: taskDto.totalEpisodes,
+                currentEpisodes: 0,
+                accessCode: effectivePasswd,
+                matchPattern: taskDto.matchPattern,
+                matchOperator: taskDto.matchOperator,
+                matchValue: taskDto.matchValue,
+                remark: taskDto.remark,
+                enableCron: taskDto.enableCron,
+                cronExpression: taskDto.cronExpression,
+                sourceRegex: taskDto.sourceRegex,
+                targetRegex: taskDto.targetRegex,
+                movieRenameFormat: taskDto.movieRenameFormat || '',
+                tvRenameFormat: taskDto.tvRenameFormat || '',
+                isFolder: true,
+            });
+            tasks.push(await this.taskRepo.save(rootFilesTask));
+            logTaskEvent(`[139] 已创建根目录文件任务（仅同步直属文件，不递归子目录）`);
+        }
+
+        // 子目录任务循环：排除 '-1' 和 'root-files' 两个特殊标记
+        for (const caID of selectedFolders.filter(id => String(id) !== '-1' && String(id) !== 'root-files')) {
             const folder = folderListForLookup.find(f => {
                 const id = f.catalogID || f.caID;
                 return String(id) === String(caID);
@@ -1796,6 +1956,8 @@ class TaskService {
             const rootFiles = result.fileList ?? [];
             let subFolders = result.folderList ?? [];
             let rootName = result.linkName || linkID;
+            // 追踪「有效根层」的直属文件，用于判断是否需要「根目录文件」选项
+            let effectiveRootFiles = rootFiles;
 
             // 若 root 下只有唯一一个文件夹且无文件，说明分享的实际内容在该文件夹内；
             // 将该文件夹作为根节点，并下探一层展示其子目录。
@@ -1805,14 +1967,18 @@ class TaskService {
                 rootName = singleFolder.catalogName ?? singleFolder.caName;
                 const childResult = await cloud139.listShareDir(linkID, effectivePasswd, singleFolderID);
                 subFolders = childResult?.folderList ?? [];
+                // 下探后，有效根层的直属文件来自子文件夹内
+                effectiveRootFiles = childResult?.fileList ?? [];
             }
 
             // 根目录 level=0，子目录 level=1，便于前端渲染缩进层级树
-            const folders = [{ id: -1, name: rootName, level: 0 }];
+            // 子目录 name 拼接父目录前缀，与 189 保持一致（"资源名/子目录1"）
+            // hasRootFiles：前端据此决定是否展示「根目录文件」checkbox
+            const folders = [{ id: -1, name: rootName, level: 0, hasRootFiles: effectiveRootFiles.length > 0 }];
             for (const folder of subFolders) {
                 folders.push({
                     id: folder.catalogID ?? folder.caID,
-                    name: folder.catalogName ?? folder.caName,
+                    name: path.join(rootName, folder.catalogName ?? folder.caName),
                     level: 1,
                 });
             }
