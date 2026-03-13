@@ -21,7 +21,6 @@
     "node-cron": "^3.0.2",
     "node-telegram-bot-api": "^0.66.0",
     "nunjucks": "^3.2.4",
-    "puppeteer": "^24.39.0",
     "reflect-metadata": "^0.1.13",
     "session-file-store": "^1.5.0",
     "sqlite3": "^5.1.6",

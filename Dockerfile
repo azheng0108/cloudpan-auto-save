@@ -1,51 +1,47 @@
-# 使用Node.js v16.19.0作为基础镜像
-FROM node:16.19.0-slim AS builder
+# 使用 Node.js 18 LTS 作为构建基础镜像
+# Node 16 已于 2023-09 EOL；puppeteer@24+ 强制要求 Node >= 18
+FROM node:18-slim AS builder
 
 # 设置工作目录
 WORKDIR /home
 
-# 复制源码
+# 复制源码（.dockerignore 会排除 node_modules、dist、data 等）
 COPY . .
 
-# 安装项目依赖并构建
-RUN yarn install && \
+# 安装依赖并构建（使用 yarn，忽略 package-lock.json 以消除混用警告）
+RUN yarn install --ignore-engines && \
     npx tsc && \
     cp -r src/public dist/public
 
-# 构建生产版本
-FROM node:16.19.0-alpine AS production
+# ── 生产镜像 ─────────────────────────────────────────────────────────────────
+FROM node:18-alpine AS production
 
-# 设置工作目录
 WORKDIR /home
 
-COPY --from=builder /home/package*.json ./
+COPY --from=builder /home/package.json ./
 COPY --from=builder /home/yarn.lock ./
 
-# 安装生产依赖
-RUN yarn install --production
+# 仅安装生产依赖
+RUN yarn install --production --ignore-engines
 
-# 复制构建好的代码
+# 复制构建产物
 COPY --from=builder /home/dist ./dist
-COPY --from=builder /home/src/public ./dist/public
 
-# 安装必要的依赖项
+# 安装运行时必要的系统包
 RUN apk update && \
     apk add --no-cache ca-certificates tzdata
-    
 
 # 设置时区
 ENV TZ=Asia/Shanghai
 RUN ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && \
     echo $TZ > /etc/timezone
-    
-# 创建数据目录
-RUN mkdir -p /home/data
 
-# 创建STRM目录
-RUN mkdir -p /home/strm
+# 创建持久化目录
+RUN mkdir -p /home/data /home/strm
 
 # 挂载点
 VOLUME ["/home/data", "/home/strm"]
+
 # 暴露端口
 EXPOSE 3000
 

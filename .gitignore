@@ -135,3 +135,4 @@ _test_*.mjs
 
 # 二进制插件
 *.crx
+package-lock.json
