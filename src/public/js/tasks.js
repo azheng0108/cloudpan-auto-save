@@ -1,4 +1,4 @@
-﻿// 添加全局筛选参数
+// 添加全局筛选参数
 let taskFilterParams = {
     status: 'all',
     search: ''
@@ -871,6 +871,13 @@ async function parseShareLink() {
                     </label>
                 </div>`;
             }).join('');
+            // 渲染完成后立即初始化根目录联动状态（默认全选时根已勾选，子目录应禁用）
+            syncRootFolderCheckboxState();
+            // 监听根目录 checkbox 变化，实时同步子目录状态
+            const rootCb = document.querySelector('input[name="chooseShareFolder"][value="-1"]');
+            if (rootCb) {
+                rootCb.addEventListener('change', syncRootFolderCheckboxState);
+            }
              // 使用根目录（level=0）名称作为任务名称
             const rootFolder = data.data.find(f => (f.level || 0) === 0) || data.data[0];
             if (rootFolder) {
@@ -897,7 +904,40 @@ async function parseShareLink() {
 document.getElementById('selectAllFolders').addEventListener('change', function(e) {
     const checkboxes = document.querySelectorAll('input[name="chooseShareFolder"]');
     checkboxes.forEach(cb => cb.checked = e.target.checked);
+    // 同步更新根目录 checkbox 的联动状态
+    syncRootFolderCheckboxState();
 });
+
+/**
+ * 当根目录（id=-1）被勾选时，子目录 checkbox 自动禁用并变灰，
+ * 避免用户误以为可以单独控制子目录（根任务会递归同步所有内容，子目录勾选无效）。
+ * 当根目录取消勾选时，恢复子目录的独立选择能力。
+ */
+function syncRootFolderCheckboxState() {
+    const rootCheckbox = document.querySelector('input[name="chooseShareFolder"][value="-1"]');
+    if (!rootCheckbox) return;
+    const isRootChecked = rootCheckbox.checked;
+    const subCheckboxes = document.querySelectorAll('input[name="chooseShareFolder"]:not([value="-1"])');
+    subCheckboxes.forEach(cb => {
+        cb.disabled = isRootChecked;
+        cb.closest('.folder-item').style.opacity = isRootChecked ? '0.45' : '1';
+        if (isRootChecked) cb.checked = true; // 根任务包含所有子目录
+    });
+    // 更新根目录 label 提示
+    if (rootCheckbox) {
+        const label = rootCheckbox.closest('label') || rootCheckbox.parentElement;
+        const existingHint = label?.querySelector('.root-hint');
+        if (isRootChecked && label && !existingHint) {
+            const hint = document.createElement('small');
+            hint.className = 'root-hint';
+            hint.style.cssText = 'color: var(--primary-color); margin-left: 6px; font-size: 11px;';
+            hint.textContent = '（已选根目录，将递归同步所有子目录）';
+            label.appendChild(hint);
+        } else if (!isRootChecked && existingHint) {
+            existingHint.remove();
+        }
+    }
+}
 
 
 // 复制直链到剪贴板
