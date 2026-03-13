@@ -47,6 +47,20 @@
 }
 
 /*
+ * 修复核心问题：.modal-content 是 flex-column 容器，但 <form> 作为其直接子元素
+ * 未参与 flex 伸缩，导致 .form-body 的 flex:1 和 min-height:0 完全失效，
+ * 表单内容超出 max-height 后底部按钮被裁剪、无法显示。
+ * 将 form 也设为 flex-column 并撑满剩余空间，问题即可修复。
+ */
+.modal-content > form {
+    flex: 1 1 auto;       /* 填充 .modal-content 的剩余高度 */
+    min-height: 0;        /* 允许 flex 子项收缩，内部滚动生效的关键 */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;     /* 配合 max-height 裁剪，让 .form-body 负责滚动 */
+}
+
+/*
  * form-body 使用正确的 flex 可滚动模式：
  * - flex: 1 1 auto  → 填充 modal-content 的剩余空间
  * - min-height: 0   → flexbox 子元素实现内部滚动的关键，防止内容撑开父容器
