@@ -883,6 +883,41 @@ class Cloud139Service {
     }
 
     /**
+     * 在指定目录下按名称查找文件夹，支持分页遍历（解决 listDiskDir 仅返回首页 100 条导致漏查的问题）。
+     * 当目标目录子文件夹数量超过 100 时，原 listDiskDir 只检查首页，找不到已有同名目录，
+     * 最终调 createFolderHcy 时 139 API 自动给文件夹追加时间戳+随机后缀，造成重复目录堆积。
+     *
+     * @param {string} parentFileId - 父目录 ID
+     * @param {string} folderName   - 目标文件夹名称（精确匹配，忽略首尾空格）
+     * @returns {Promise<string|null>} 找到则返回 fileId，否则返回 null
+     */
+    async findFolderByName(parentFileId, folderName) {
+        let cursor = null;
+        const catalogID = parentFileId || '/';
+        const targetName = (folderName || '').trim();
+        do {
+            const body = {
+                pageInfo: { pageSize: 100, pageCursor: cursor },
+                orderBy: 'updated_at',
+                orderDirection: 'DESC',
+                parentFileId: catalogID,
+            };
+            const data = await this._personalKdNjsPost('/hcy/file/list', body, catalogID).catch(() => null);
+            if (!data) break;
+            const items = data.items ?? data.fileList ?? [];
+            for (const f of items) {
+                // 仅匹配文件夹类型
+                if ((f.fileType === 'folder' || f.category === 'folder') &&
+                    (f.name || '').trim() === targetName) {
+                    return f.fileId;
+                }
+            }
+            cursor = data.pageInfo?.nextPageCursor ?? null;
+        } while (cursor);
+        return null;
+    }
+
+    /**
      * 重命名文件（HCY 新接口）
      */
     async renameFile(fileId, newName) {

@@ -1530,24 +1530,27 @@ class TaskService {
      * @param {string} folderName - 要查找的目录名
      * @returns {Promise<string|null>}
      */
+    /**
+     * 在 parentCatalogID 目录下按名称查找子文件夹，返回其 fileId，找不到返回 null。
+     *
+     * 原实现使用 listDiskDir（每页仅 100 条、无分页），当目录下子文件夹数量超过 100 时
+     * 无法找到已有同名目录，最终调 createFolderHcy，139 API 会自动给新建目录追加时间戳
+     * 和随机后缀（如 _20260313_000440_1795），导致同名目录不断堆积。
+     *
+     * 现改用 cloud139.findFolderByName 分页遍历所有子目录，彻底解决此问题。
+     */
     async _findMatchingFolder139(cloud139, parentCatalogID, folderName) {
         if (!parentCatalogID || parentCatalogID === '-1' || parentCatalogID === 'root') return null;
         try {
-            // 使用新版 hcy/file/list 接口（旧版 getDisk 接口已废弃，返回 101002009 错误）
-            const result = await cloud139.listDiskDir(parentCatalogID);
-            if (result && Array.isArray(result.items)) {
-                const match = result.items.find(
-                    f => f.type === 'folder' && (f.name || '').trim() === folderName.trim()
-                );
-                if (match) {
-                    logTaskEvent(`[139] 在目标目录下找到匹配子目录: "${folderName}" (${match.fileId})`);
-                    return match.fileId;
-                }
+            const fileId = await cloud139.findFolderByName(parentCatalogID, folderName);
+            if (fileId) {
+                logTaskEvent(`[139] 在目标目录下找到匹配子目录: "${folderName}" (${fileId})`);
+                return fileId;
             }
         } catch (e) {
-            logTaskEvent(`[139] 搜索子目录失败，使用目标目录: ${e.message}`);
+            logTaskEvent(`[139] 搜索子目录失败: ${e.message}`);
         }
-        logTaskEvent(`[139] 目标目录下未找到 "${folderName}"，将直接保存到目标目录`);
+        logTaskEvent(`[139] 目标目录下未找到 "${folderName}"，将新建`);
         return null;
     }
 
