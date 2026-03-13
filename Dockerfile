@@ -9,7 +9,8 @@ WORKDIR /home
 COPY package.json yarn.lock ./
 
 # 安装全部依赖（含 devDependencies，tsc 需要）
-RUN yarn install --ignore-engines --frozen-lockfile
+# 不加 --frozen-lockfile：yarn.lock 因清理 puppeteer 残留条目而需要自动更新
+RUN yarn install --ignore-engines
 
 # 复制源码并编译
 COPY . .
@@ -31,7 +32,7 @@ COPY --from=builder /home/yarn.lock ./
 #   4. 设置时区
 #   5. 创建持久化目录
 RUN apk add --no-cache ca-certificates tzdata && \
-    yarn install --production --ignore-engines --frozen-lockfile && \
+    yarn install --production --ignore-engines && \
     yarn cache clean && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \

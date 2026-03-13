@@ -1,15 +1,39 @@
-# 测试文件（含硬编码凭证）
+# Git 历史（2.8MB，构建时完全不需要）
+.git/
+.gitmodules
+
+# CI/CD 及编辑器配置（不影响运行时）
+.github/
+.vscode/
+
+# 文档文件
+doc/
+README.md
+DOCKERHUB.md
+CHANGELOG.md
+LICENSE
+*.md
+
+# 测试文件（可能含硬编码凭证）
 _test_*.mjs
 _test_*.js
 
-# 运行时数据（含账号cookie/session）
+# 运行时数据（含账号 cookie/session，不能打包进镜像）
 data/
 
-# 开发时生成的文件
+# 构建产物（Builder 阶段自行生成，无需从宿主机复制）
 node_modules/
 dist/
+
+# vender 子模块中不需要的部分
 vender/cloud189-sdk/node_modules/
 vender/cloud189-sdk/dist/
+vender/cloud189-sdk/test/
+vender/cloud189-sdk/example/
+vender/cloud189-sdk/docs/
 
 # 其他无关文件
 *.log
+*.crx
+*.pem
+.env.example
