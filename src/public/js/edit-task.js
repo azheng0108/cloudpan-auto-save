@@ -34,7 +34,7 @@ function showEditTaskModal(id) {
     document.getElementById('editMatchOperator').value = task.matchOperator;
     document.getElementById('editMatchValue').value = task.matchValue;
     document.getElementById('editRemark').value = task.remark;
-    document.getElementById('editTaskModal').style.display = 'block';
+    document.getElementById('editTaskModal').style.display = 'flex';
     document.getElementById('editEnableCron').checked = task.enableCron;
     document.getElementById('editCronExpression').value = task.cronExpression;
     document.getElementById('editAccountId').value = task.accountId;
