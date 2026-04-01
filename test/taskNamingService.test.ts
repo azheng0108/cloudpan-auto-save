@@ -3,8 +3,8 @@
  * 迁移自 test-task-naming-service.js
  */
 
-import { describe, test, expect } from '@jest/globals';
-const { TaskNamingService } = require('../src/services/taskNamingService');
+import { describe, test, expect, beforeEach } from '@jest/globals';
+import { TaskNamingService } from '../src/services/taskNamingService';
 
 describe('TaskNamingService', () => {
     let service: any;

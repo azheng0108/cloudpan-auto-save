@@ -4,7 +4,7 @@
  * 用于记录和管理任务执行过程中的错误
  */
 
-const { ErrorClassifier } = require('./errorClassifier');
+const { ErrorClassifier, ERROR_TYPES } = require('./errorClassifier');
 const { logTaskEvent } = require('../utils/logUtils');
 
 class TaskErrorService {
@@ -123,31 +123,6 @@ class TaskErrorService {
     }
 
     /**
-     * 清理过期的错误记录
-     * @param {number} daysToKeep - 保留天数
-     */
-    async cleanupOldErrors(daysToKeep = 30) {
-        if (!this.taskErrorRepo) {
-            return;
-        }
-
-        try {
-            const cutoffDate = new Date();
-            cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-            const result = await this.taskErrorRepo
-                .createQueryBuilder()
-                .delete()
-                .where('createdAt < :cutoffDate', { cutoffDate })
-                .execute();
-
-            logTaskEvent(`[错误记录] 清理完成: 删除 ${result.affected || 0} 条旧记录`);
-        } catch (err) {
-            logTaskEvent(`[错误记录] 清理失败: ${err.message}`);
-        }
-    }
-
-    /**
      * 判断错误是否应该重试
      * @param {Object} error - 错误对象或错误记录
      * @returns {boolean} 是否应该重试
@@ -175,8 +150,18 @@ class TaskErrorService {
         let baseDelay = 300; // 默认5分钟
 
         if (error) {
-            const classification = ErrorClassifier.classify(error);
-            baseDelay = classification.type.retryDelay || 300;
+            // 错误记录对象分支：优先根据 errorType 直接映射
+            if (error.errorType && typeof error.errorType === 'string') {
+                const mapped = ERROR_TYPES[error.errorType];
+                if (mapped && mapped.retryDelay) {
+                    baseDelay = mapped.retryDelay;
+                } else if (typeof error.retryDelay === 'number' && error.retryDelay > 0) {
+                    baseDelay = error.retryDelay;
+                }
+            } else {
+                const classification = ErrorClassifier.classify(error);
+                baseDelay = classification.type.retryDelay || 300;
+            }
         }
 
         // 指数退避：baseDelay * 2^retryCount，最大不超过1小时

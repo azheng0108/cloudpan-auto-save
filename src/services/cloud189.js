@@ -54,10 +54,20 @@ class Cloud189Service {
         body.headers = {'Accept': 'application/json;charset=UTF-8'}
         try {
             const noCache = Math.random().toString()
-            return await this.client.request('https://cloud.189.cn' + action+'?noCach='+noCache, body).json();
+            return await this.client.request('https://cloud.189.cn' + action+'?noCache='+noCache, body).json();
         }catch (error) {
             if (error instanceof got.HTTPError) {
-                const responseBody = JSON.parse(error.response.body);
+                let responseBody = null;
+                try {
+                    responseBody = JSON.parse(error.response.body);
+                } catch (parseError) {
+                    logger.error('Cloud189 错误响应解析失败', {
+                        action,
+                        responseBody: error.response.body,
+                        parseError: parseError.message
+                    });
+                    throw error;
+                }
                 if (responseBody.res_code === "ShareAuditWaiting") {
                     return responseBody;
                 }
