@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
+const logger = require('./logger');
 
 class BloomFilter {
     constructor(size = 10000, hashFunctions = 3) {
@@ -89,10 +90,10 @@ class HarmonizedFilter {
             const content = await fs.readFile(this.filePath, 'utf-8');
             const md5List = content.split('\n').filter(line => line.trim());
             this.addHarmonizedList(md5List);
-            console.log(`已从文件加载 ${md5List.length} 个和谐记录`);
+            logger.info(`已从文件加载 ${md5List.length} 个和谐记录`);
         } catch (error) {
             if (error.code !== 'ENOENT') {
-                console.error('加载和谐文件失败:', error);
+                logger.error('加载和谐文件失败', { error: error.message, stack: error.stack });
             }
         }
     }
@@ -102,7 +103,7 @@ class HarmonizedFilter {
         try {
             await fs.appendFile(this.filePath, md5 + '\n');
         } catch (error) {
-            console.error('写入和谐MD5到文件失败:', error);
+            logger.error('写入和谐MD5到文件失败', { error: error.message, stack: error.stack });
         }
     }
 
@@ -110,7 +111,7 @@ class HarmonizedFilter {
     addHarmonized(md5) {
         this.filter.add(md5);
         s.appendToFile(md5).catch(error => {
-            console.error('写入和谐MD5到文件失败:', error);
+            logger.error('写入和谐MD5到文件失败', { error: error.message, stack: error.stack });
         });
     }
 
@@ -121,7 +122,7 @@ class HarmonizedFilter {
         }
         fs.writeFile(this.filePath, md5List.join('\n') + '\n')
         .catch(error => {
-            console.error('批量写入和谐MD5到文件失败:', error);
+            logger.error('批量写入和谐MD5到文件失败', { error: error.message, stack: error.stack });
         });
     }
 

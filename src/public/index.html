@@ -353,6 +353,11 @@
                             <small class="form-text">默认：0 19-23 * * * (每天19点到23点整点执行一次) 允许多个表达式, 使用|分隔, 例如: 0 19-23 * * *|0 16-23 * * *</small>
                         </div>
                         <div class="push-item">
+                            <label>重试任务检查</label>
+                            <input type="text" id="retryTaskCron" placeholder="Cron表达式">
+                            <small class="form-text">默认：*/1 * * * * (每分钟执行一次重试扫描)</small>
+                        </div>
+                        <div class="push-item">
                             <label>
                                 <input type="checkbox" id="enableAutoClearRecycle">
                                 自动清空个人回收站

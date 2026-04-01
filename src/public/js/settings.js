@@ -10,6 +10,7 @@ async function loadSettings() {
             // 任务设置
             document.getElementById('taskExpireDays').value = settings.task?.taskExpireDays || 3;
             document.getElementById('taskCheckCron').value = settings.task?.taskCheckCron || '0 19-23 * * *';
+            document.getElementById('retryTaskCron').value = settings.task?.retryTaskCron || '*/1 * * * *';
             document.getElementById('cleanRecycleCron').value = settings.task?.cleanRecycleCron || '0 */8 * * * ';
             document.getElementById('taskMaxRetries').value = settings.task?.maxRetries || 3;
             document.getElementById('taskRetryInterval').value = settings.task?.retryInterval || 300;
@@ -86,6 +87,7 @@ async function saveSettings() {
         task: {
             taskExpireDays: parseInt(document.getElementById('taskExpireDays').value) || 3,
             taskCheckCron: document.getElementById('taskCheckCron').value || '0 19-23 * * *',
+            retryTaskCron: document.getElementById('retryTaskCron').value || '*/1 * * * *',
             cleanRecycleCron: document.getElementById('cleanRecycleCron').value || '0 */8 * * *',
             maxRetries: parseInt(document.getElementById('taskMaxRetries').value) || 3,
             retryInterval: parseInt(document.getElementById('taskRetryInterval').value) || 300,
