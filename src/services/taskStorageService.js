@@ -101,7 +101,7 @@ class TaskStorageService {
         }
     }
 
-    async deleteCloudFile139(cloud139, file) {
+    async deleteCloudFile139(cloud139, file, isFolder = 0) {
         if (!file) return;
         const fileIds = [];
         if (Array.isArray(file)) {

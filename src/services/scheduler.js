@@ -18,7 +18,11 @@ class SchedulerService {
         });
 
         logTaskEvent('初始化系统定时任务...');
-        this.applySystemJobs(taskService, ConfigService.getConfigValue('task') || {});
+        try {
+            this.applySystemJobs(taskService, ConfigService.getConfigValue('task') || {});
+        } catch (error) {
+            logTaskEvent(`初始化系统定时任务失败，将跳过系统任务初始化。原因: ${error?.message || error}`);
+        }
     }
 
     static saveTaskJob(task, taskService) {
