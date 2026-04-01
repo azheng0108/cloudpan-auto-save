@@ -100,9 +100,11 @@
 
 执行命令：
 - `npm run build`
+- `node test/test-runtime-routes.js`
 - `node test/test-health.js`
 - `node test/test-cloud139-retry.js`
 - `node test/test-legacy-isolation.js`
 - `node test/test-ui-asset-version.js`
+- `npm test`
 
 结果：全部通过。
