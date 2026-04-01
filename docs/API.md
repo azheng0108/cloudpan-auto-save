@@ -71,4 +71,36 @@
 ## 说明
 
 - 139 为主运行链路，legacy 189 默认禁用。
-- 接口错误统一为 success=false + error 文本（部分接口可能返回 500）。
+
+## 错误响应约定
+
+- 业务错误默认字段：`success=false` + `error`（字符串）。
+- 部分异常路径会返回 HTTP 500，同时 body 仍包含 `success=false` 与 `error`。
+- 调用方应优先判断 `success`，其次结合 HTTP 状态码处理。
+
+典型业务错误示例（200）：
+
+```json
+{
+  "success": false,
+  "error": "任务不存在"
+}
+```
+
+典型认证错误示例（401）：
+
+```json
+{
+  "success": false,
+  "error": "未登录"
+}
+```
+
+典型服务异常示例（500）：
+
+```json
+{
+  "success": false,
+  "error": "数据库连接失败"
+}
+```
