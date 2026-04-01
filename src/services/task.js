@@ -13,10 +13,9 @@ const path = require('path');
 const { EventService } = require('./eventService');
 const { TaskEventHandler } = require('./taskEventHandler');
 const harmonizedFilter = require('../utils/BloomFilter');
-const cloud189Utils = require('../utils/Cloud189Utils');
-const Cloud139Utils = require('../utils/Cloud139Utils');
 const { processCloud139Task } = require('./cloud139TaskProcessor');
 const { TaskNamingService } = require('./taskNamingService');
+const { TaskParserService } = require('./taskParserService');
 
 class TaskService {
     constructor(taskRepo, accountRepo, transferredFileRepo) {
@@ -26,6 +25,7 @@ class TaskService {
         this.messageUtil = new MessageUtil();
         this.eventService = EventService.getInstance();
         this.taskNamingService = new TaskNamingService();
+        this.taskParserService = new TaskParserService();
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
             const taskEventHandler = new TaskEventHandler(this.messageUtil);
@@ -174,7 +174,7 @@ class TaskService {
 
         // Cloud139 分支 — 先从分享文本中提取纯 URL 和访问码
         if (account.accountType === 'cloud139') {
-            const parsed = Cloud139Utils.extractFromShareText(taskDto.shareLink);
+            const parsed = this.taskParserService.extractCloud139ShareText(taskDto.shareLink);
             if (parsed) {
                 taskDto.shareLink = parsed.url;
                 if (parsed.passwd && !taskDto.accessCode) taskDto.accessCode = parsed.passwd;
@@ -182,14 +182,13 @@ class TaskService {
             return await this._createCloud139Tasks(params, account, taskDto);
         }
 
-        // 解析url
-        const {url: parseShareLink, accessCode} = cloud189Utils.parseCloudShare(taskDto.shareLink)
-        if (accessCode) {
-            taskDto.accessCode = accessCode;
+        const cloud189Parsed = this.taskParserService.parseCloud189ShareInput(taskDto.shareLink);
+        if (cloud189Parsed.parsedAccessCode) {
+            taskDto.accessCode = cloud189Parsed.parsedAccessCode;
         }
-        taskDto.shareLink = parseShareLink;
+        taskDto.shareLink = cloud189Parsed.normalizedUrl;
         const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(taskDto.shareLink);
+        const { shareCode } = cloud189Parsed;
         const shareInfo = await this.getShareInfo(cloud189, shareCode);
         // 如果分享链接是加密链接, 且没有提供访问码, 则抛出错误
         if (shareInfo.shareMode == 1 ) {
@@ -1286,7 +1285,7 @@ class TaskService {
 
     async _createCloud139Tasks(params, account, taskDto) {
         const cloud139 = Cloud139Service.getInstance(account);
-        const { linkID, passwd } = Cloud139Utils.parseShareLink(taskDto.shareLink);
+        const { linkID, passwd } = this.taskParserService.parseCloud139ShareLink(taskDto.shareLink);
         const effectivePasswd = taskDto.accessCode || passwd;
 
         // 获取分享根目录信息
@@ -1501,78 +1500,17 @@ class TaskService {
 
         // Cloud139 分支
         if (account.accountType === 'cloud139') {
-            // 支持直接粘贴分享文本，从中提取纯 URL 和提取码
-            const extracted = Cloud139Utils.extractFromShareText(shareLink);
-            const cleanLink = extracted ? extracted.url : shareLink;
-            const effectivePasswd = accessCode || (extracted ? extracted.passwd : '');
-            const { linkID } = Cloud139Utils.parseShareLink(cleanLink);
             const cloud139 = Cloud139Service.getInstance(account);
-            const result = await cloud139.listShareDir(linkID, effectivePasswd);
-            if (!result) throw new Error('获取分享信息失败');
-
-            const rootFiles = result.fileList ?? [];
-            let subFolders = result.folderList ?? [];
-            let rootName = result.linkName || linkID;
-            // 追踪「有效根层」的直属文件，用于判断是否需要「根目录文件」选项
-            let effectiveRootFiles = rootFiles;
-
-            // 若 root 下只有唯一一个文件夹且无文件，说明分享的实际内容在该文件夹内；
-            // 将该文件夹作为根节点，并下探一层展示其子目录。
-            if (subFolders.length === 1 && rootFiles.length === 0) {
-                const singleFolder = subFolders[0];
-                const singleFolderID = singleFolder.catalogID ?? singleFolder.caID;
-                rootName = singleFolder.catalogName ?? singleFolder.caName;
-                const childResult = await cloud139.listShareDir(linkID, effectivePasswd, singleFolderID);
-                subFolders = childResult?.folderList ?? [];
-                // 下探后，有效根层的直属文件来自子文件夹内
-                effectiveRootFiles = childResult?.fileList ?? [];
-            }
-
-            // 根目录 level=0，子目录 level=1，便于前端渲染缩进层级树
-            // 子目录 name 拼接父目录前缀，与 189 保持一致（"资源名/子目录1"）
-            // hasRootFiles：前端据此决定是否展示「根目录文件」checkbox
-            const folders = [{ id: -1, name: rootName, level: 0, hasRootFiles: effectiveRootFiles.length > 0 }];
-            for (const folder of subFolders) {
-                folders.push({
-                    id: folder.catalogID ?? folder.caID,
-                    name: path.join(rootName, folder.catalogName ?? folder.caName),
-                    level: 1,
-                });
-            }
-            return folders;
+            return this.taskParserService.buildCloud139ShareFolders(cloud139, shareLink, accessCode);
         }
 
         const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(shareLink)
-        const shareInfo = await this.getShareInfo(cloud189, shareCode)
-        if (shareInfo.shareMode == 1) {
-            if (!accessCode) {
-                throw new Error('分享链接为私密链接, 请输入提取码')
-            }
-            // 校验访问码是否有效
-            const accessCodeResponse = await cloud189.checkAccessCode(shareCode, accessCode);
-            if (!accessCodeResponse) {
-                throw new Error('校验访问码失败');
-            }
-            if (!accessCodeResponse.shareId) {
-                throw new Error('访问码无效');
-            }
-            shareInfo.shareId = accessCodeResponse.shareId;
-        }
-        const folders = []
-        // 根目录为分享链接的名称
-        folders.push({id: -1 ,name: shareInfo.fileName})
-        if (!shareInfo.isFolder) {
-            return folders;
-        }
-        // 遍历分享链接的目录
-        const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, accessCode);
-        if (!result?.fileListAO) return folders;
-        const { folderList: subFolders = [] } = result.fileListAO;
-        subFolders.forEach(folder => {
-            folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
-        });
-        return folders;
+        return this.taskParserService.buildCloud189ShareFolders(
+            cloud189,
+            shareLink,
+            accessCode,
+            this.getShareInfo.bind(this)
+        );
     }
 
     // 校验目录是否在目录列表中
