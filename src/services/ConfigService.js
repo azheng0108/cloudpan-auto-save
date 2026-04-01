@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const logger = require('../utils/logger');
 class ConfigService {
   constructor() {
     // 配置文件路径
@@ -10,6 +12,8 @@ class ConfigService {
         taskExpireDays: 3,
         taskCheckCron: '0 19-23 * * *',
         cleanRecycleCron: '0 */8 * * *',
+        cloud139Concurrency: 3,
+        cloud189Concurrency: 5,
         maxRetries: 3,        // 最大重试次数
         retryInterval: 300,   // 重试间隔（秒）
         enableAutoClearRecycle: false,
@@ -66,7 +70,8 @@ class ConfigService {
         username: 'admin',
         password: 'admin',
         baseUrl: '',
-        apiKey: ''
+        apiKey: '',
+        sessionSecret: ''
       },
       legacy: {
         enableCloud189Runtime: false
@@ -94,7 +99,7 @@ class ConfigService {
         this._saveConfig();
       }
     } catch (error) {
-      console.error('系统配置初始化失败:', error);
+      logger.error('系统配置初始化失败', { error: error.message, stack: error.stack });
     }
   }
 
@@ -116,8 +121,18 @@ class ConfigService {
     try {
       fs.writeFileSync(this._configFile, JSON.stringify(this._config, null, 2));
     } catch (error) {
-      console.error('系统配置保存失败:', error);
+      logger.error('系统配置保存失败', { error: error.message, stack: error.stack });
     }
+  }
+
+  getOrCreateSessionSecret() {
+    const existingSecret = this.getConfigValue('system.sessionSecret');
+    if (existingSecret) {
+      return existingSecret;
+    }
+    const sessionSecret = crypto.randomUUID();
+    this.setConfigValue('system.sessionSecret', sessionSecret);
+    return sessionSecret;
   }
 
   getConfig() {

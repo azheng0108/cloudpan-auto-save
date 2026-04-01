@@ -338,6 +338,16 @@
                             <small class="form-text">任务重试的时间间隔</small>
                         </div>
                         <div class="push-item">
+                            <label for="cloud139Concurrency">139并发上限</label>
+                            <input type="number" id="cloud139Concurrency" min="1" placeholder="默认3">
+                            <small class="form-text">控制移动云盘（139）请求并发，避免触发限流</small>
+                        </div>
+                        <div class="push-item">
+                            <label for="cloud189Concurrency">189并发上限</label>
+                            <input type="number" id="cloud189Concurrency" min="1" placeholder="默认5">
+                            <small class="form-text">控制天翼云盘（189）请求并发，便于兼容旧链路</small>
+                        </div>
+                        <div class="push-item">
                             <label>任务定时检查</label>
                             <input type="text" id="taskCheckCron" placeholder="Cron表达式">
                             <small class="form-text">默认：0 19-23 * * * (每天19点到23点整点执行一次) 允许多个表达式, 使用|分隔, 例如: 0 19-23 * * *|0 16-23 * * *</small>

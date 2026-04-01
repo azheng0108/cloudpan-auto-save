@@ -100,6 +100,18 @@ class SchedulerService {
         }
     }
 
+    static stopAllJobs() {
+        for (const [key, job] of this.taskJobs.entries()) {
+            try {
+                job.stop();
+            } catch (_) {
+                // ignore stop errors during shutdown
+            }
+            this.taskJobs.delete(key);
+        }
+        logTaskEvent('所有定时任务已停止');
+    }
+
     // 处理默认定时任务配置
     static handleScheduleTasks(settings,taskService) {
         // 如果定时任务和清空回收站任务与配置文件不一致, 则修改定时任务
