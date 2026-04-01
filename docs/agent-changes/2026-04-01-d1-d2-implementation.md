@@ -76,3 +76,33 @@
   - UI 对齐与静态资源版本参数。
   - 文档补齐与截图证据。
   - PR 描述完善与最终门禁复核。
+
+## 6. D4 第一批实施（路由接线 + 主链路收敛）
+
+### 6.1 目标
+
+- 让 D1/D3 的路由改造从“代码存在”变为“运行链路生效”。
+- 收敛 cloud139 转存主流程，统一走重试退避与可见性轮询实现。
+
+### 6.2 变更文件
+
+- `src/index.js`
+  - 接入 `registerRoutes(app, deps)`，启用模块化路由。
+  - 移除旧的内联登录/鉴权/静态资源暴露逻辑，避免与 `src/routes/*` 双轨漂移。
+- `src/services/task.js`
+  - `_processCloud139Task` 改为委托 `processCloud139Task(this, task, account)`，统一主链路实现来源。
+- `src/public/js/accounts.js`
+  - 添加/编辑账号弹窗打开方式统一为 `display: flex`，与创建/编辑任务弹窗语义对齐。
+- `test/test-ui-asset-version.js`
+  - 增加账号弹窗 `flex` 打开方式的静态回归断言。
+
+### 6.3 验证结果
+
+执行命令：
+- `npm run build`
+- `node test/test-health.js`
+- `node test/test-cloud139-retry.js`
+- `node test/test-legacy-isolation.js`
+- `node test/test-ui-asset-version.js`
+
+结果：全部通过。
