@@ -17,8 +17,11 @@
 
 const got = require('got');
 const crypto = require('crypto');
+const pLimit = require('p-limit');
 const { logTaskEvent } = require('../utils/logUtils');
 const ProxyUtil = require('../utils/ProxyUtil');
+const ConfigService = require('./ConfigService');
+const logger = require('../utils/logger');
 
 // ─── mcloud-sign 签名工具 ──────────────────────────────────────────────────────
 
@@ -140,7 +143,7 @@ class Cloud139Service {
         }
         
         if (oldestKey) {
-            console.log(`[Cloud139Service] LRU淘汰实例: ${oldestKey}`);
+            logger.info(`[Cloud139Service] LRU淘汰实例: ${oldestKey}`);
             this.instances.delete(oldestKey);
             this.instanceAccess.delete(oldestKey);
         }
@@ -159,7 +162,7 @@ class Cloud139Service {
         const count = this.instances.size;
         this.instances.clear();
         this.instanceAccess.clear();
-        console.log(`[Cloud139Service] 清除了 ${count} 个实例`);
+        logger.info(`[Cloud139Service] 清除了 ${count} 个实例`);
     }
 
     constructor(account) {
@@ -214,6 +217,8 @@ class Cloud139Service {
             retry: { limit: 1 },
             ...proxyOptions,
         });
+        const concurrency = Number(ConfigService.getConfigValue('task.cloud139Concurrency', 3)) || 3;
+        this.limit = pLimit(Math.max(1, concurrency));
     }
 
     /** 公共账号信息 */
@@ -225,6 +230,10 @@ class Cloud139Service {
      * 调用 share-kd-njs.yun.139.com 接口（分享相关，无需 mcloud-sign）
      */
     async _shareKdNjsPost(path, body) {
+        return this.limit(() => this._shareKdNjsPostImpl(path, body));
+    }
+
+    async _shareKdNjsPostImpl(path, body) {
         const SHARE_HEADERS = {
             'caller': 'web',
             'x-m4c-caller': 'PC',
@@ -262,6 +271,10 @@ class Cloud139Service {
      * 调用 user-njs.yun.139.com 接口（不同 host，需额外 mcloud 头）
      */
     async _userNjsPost(path, body) {
+        return this.limit(() => this._userNjsPostImpl(path, body));
+    }
+
+    async _userNjsPostImpl(path, body) {
         const USER_NJS_HEADERS = {
             'caller': 'web',
             'x-m4c-caller': 'PC',
@@ -353,6 +366,10 @@ class Cloud139Service {
 
 
     async _post(url, body) {
+        return this.limit(() => this._postImpl(url, body));
+    }
+
+    async _postImpl(url, body) {
         try {
             const res = await this.http.post(url, { json: body }).json();
             // 内部 API 通常在顶层返回 code 字段（可能是数字或字符串）
@@ -872,6 +889,10 @@ class Cloud139Service {
      * @returns {Promise<object|null>}
      */
     async _personalKdNjsPost(path, body, signCatalogID) {
+        return this.limit(() => this._personalKdNjsPostImpl(path, body, signCatalogID));
+    }
+
+    async _personalKdNjsPostImpl(path, body, signCatalogID) {
         const sign = this._computeMcloudSign(signCatalogID);
         const hcyHeaders = {
             'caller': 'web',

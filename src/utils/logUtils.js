@@ -1,8 +1,9 @@
 const fs = require('fs').promises;
+const logger = require('./logger');
 
 // 存储所有的 SSE 客户端
 const clients = new Set();
-const LOG_FILE = '/tmp/cloud189-app.log';
+const LOG_FILE = 'data/logs/cloud189-app.log';
 const MAX_LOG_SIZE = 1024 * 100; // 100kb
 // 初始化 SSE
 const initSSE = (app) => {
@@ -26,6 +27,17 @@ const initSSE = (app) => {
     });
 };
 
+const cleanupSSEConnections = () => {
+    clients.forEach((client) => {
+        try {
+            client.end();
+        } catch (_) {
+            // ignore client close errors
+        }
+    });
+    clients.clear();
+};
+
 // 发送历史日志
 const sendHistoryLogs = async (res) => {
     try {
@@ -41,7 +53,7 @@ const sendHistoryLogs = async (res) => {
         const logs = buffer.toString('utf8');
         res.write(`data: ${JSON.stringify({type: 'history', logs: logs.split('\n').filter(Boolean)})}\n\n`);
     } catch (error) {
-        console.error('读取历史日志失败:', error);
+        logger.error('读取历史日志失败', { error: error.message, stack: error.stack });
     }
 };
  // 记录任务日志
@@ -53,7 +65,7 @@ const sendHistoryLogs = async (res) => {
     const currentTime = new Date();
     // 构建日志消息
     let logMessage = `[${currentTime.toLocaleString()}] ${message}`;
-    console.log(logMessage);
+    logger.info(logMessage);
 
     try {
         await fs.appendFile(LOG_FILE, logMessage + '\n');
@@ -63,7 +75,7 @@ const sendHistoryLogs = async (res) => {
             client.write(`data: ${JSON.stringify({type: 'log', message: logMessage})}\n\n`);
         });
     } catch (error) {
-        console.error('写入日志失败:', error);
+        logger.error('写入日志失败', { error: error.message, stack: error.stack });
     }
 }
 
@@ -78,5 +90,6 @@ const sendAIMessage = (message) => {
 module.exports = {
     logTaskEvent,
     initSSE,
-    sendAIMessage
+    sendAIMessage,
+    cleanupSSEConnections
 }

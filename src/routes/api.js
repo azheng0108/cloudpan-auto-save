@@ -8,6 +8,8 @@ const CustomPushService = require('../services/message/CustomPushService');
 const { logTaskEvent } = require('../utils/logUtils');
 const { clearCloudSaverToken } = require('../sdk/cloudsaver');
 const { AppDataSource } = require('../database');
+const logger = require('../utils/logger');
+const { Cloud189Service } = require('../services/cloud189');
 
 const ensureCloud139Account = (account, action) => {
     if (!account) {
@@ -217,7 +219,7 @@ const registerApiRoutes = (app, deps) => {
             const task = await taskService.createTask(req.body);
             res.json({ success: true, data: task });
         } catch (error) {
-            console.log(error);
+            logger.error('任务创建失败', { error: error.message, stack: error.stack });
             res.json({ success: false, error: error.message });
         }
     });
@@ -532,6 +534,8 @@ const registerApiRoutes = (app, deps) => {
 
         SchedulerService.handleScheduleTasks(settings, taskService);
         ConfigService.setConfig(settings);
+        Cloud139Service.clearAllInstances();
+        Cloud189Service.clearAllInstances();
         await botManager.handleBotStatus(
             settings.telegram?.bot?.botToken,
             settings.telegram?.bot?.chatId,

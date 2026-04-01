@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('express-async-errors');
 const express = require('express');
 const { AppDataSource } = require('./database');
 const { Account, Task, CommonFolder, TransferredFile } = require('./entities');
@@ -10,22 +11,38 @@ const packageJson = require('../package.json');
 const session = require('express-session');
 const FileStore = require('session-file-store')(session);
 const { SchedulerService } = require('./services/scheduler');
-const { initSSE } = require('./utils/logUtils');
+const { initSSE, cleanupSSEConnections } = require('./utils/logUtils');
 const TelegramBotManager = require('./utils/TelegramBotManager');
 const { registerRoutes } = require('./routes');
 const path = require('path');
 const { setupCloudSaverRoutes } = require('./sdk/cloudsaver');
-const cors = require('cors'); 
+const cors = require('cors');
+const logger = require('./utils/logger');
 
 const app = express();
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : ['http://localhost:3001'];
+
 app.use(cors({
-    origin: '*', // 允许所有来源
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        const error = new Error('CORS策略禁止此来源');
+        error.status = 403;
+        error.statusCode = 403;
+        return callback(error);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
-    credentials: true
+    credentials: true,
 }));
 app.use(express.json());
 
+const sessionSecret = ConfigService.getOrCreateSessionSecret();
 app.use(session({
     store: new FileStore({
         path: './data/sessions',  // session文件存储路径
@@ -35,19 +52,58 @@ app.use(session({
         logFn: () => {},      // 禁用内部日志
         reapAsync: true,      // 异步清理过期session
     }),
-    secret: 'LhX2IyUcMAz2',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { 
-        maxAge: 24 * 60 * 60 * 1000 * 30 // 30天
-    }
+    cookie: {
+        maxAge: 24 * 60 * 60 * 1000 * 30, // 30天
+    },
 }));
+
+let server = null;
+let isShuttingDown = false;
+
+const gracefulShutdown = async (signal, botManager) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    logger.info(`收到退出信号 ${signal}，开始优雅停机...`);
+
+    try {
+        if (server) {
+            await new Promise((resolve) => {
+                server.close(() => {
+                    logger.info('HTTP服务器已关闭');
+                    resolve();
+                });
+                setTimeout(resolve, 10000);
+            });
+        }
+
+        cleanupSSEConnections();
+        SchedulerService.stopAllJobs();
+
+        if (botManager) {
+            await botManager.handleBotStatus('', '', false);
+        }
+
+        if (AppDataSource.isInitialized) {
+            await AppDataSource.destroy();
+            logger.info('数据库连接已关闭');
+        }
+
+        process.exit(0);
+    } catch (error) {
+        logger.error('优雅停机失败', { error: error.message, stack: error.stack });
+        process.exit(1);
+    }
+};
+
 // 初始化数据库连接
 AppDataSource.initialize().then(async () => {
     // 当前版本:
     const currentVersion = packageJson.version;
-    console.log(`当前系统版本: ${currentVersion}`);
-    console.log('数据库连接成功');
+    logger.info(`当前系统版本: ${currentVersion}`);
+    logger.info('数据库连接成功');
 
     const accountRepo = AppDataSource.getRepository(Account);
     const taskRepo = AppDataSource.getRepository(Task);
@@ -80,23 +136,40 @@ AppDataSource.initialize().then(async () => {
         botManager,
         folderCache,
     });
-    
-    // 全局错误处理中间件
-    app.use((err, req, res, next) => {
-        console.error('捕获到全局异常:', err.message);
-        res.status(500).json({ success: false, error: err.message });
-    });
-
-
     initSSE(app)
 
     // 初始化cloudsaver
     setupCloudSaverRoutes(app);
+
+    // 全局错误处理中间件（必须在路由之后）
+    app.use((err, req, res, next) => {
+        if (err.status === 403 || err.statusCode === 403) {
+            logger.warn(`访问被拒绝: ${err.message}`, {
+                url: req.url,
+                method: req.method,
+            });
+        } else {
+            logger.error('捕获到全局异常', {
+                error: err.message,
+                stack: err.stack,
+                url: req.url,
+                method: req.method,
+            });
+        }
+        res.status(err.status || 500).json({
+            success: false,
+            error: process.env.NODE_ENV === 'production' ? '服务器内部错误' : err.message,
+        });
+    });
+
     // 启动服务器
     const port = process.env.PORT || 3000;
-    app.listen(port, () => {
-        console.log(`服务器运行在 http://localhost:${port}`);
+    server = app.listen(port, () => {
+        logger.info(`服务器运行在 http://localhost:${port}`);
     });
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM', botManager));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT', botManager));
 }).catch(error => {
-    console.error('数据库连接失败:', error);
+    logger.error('数据库连接失败', { error: error.message, stack: error.stack });
 });
