@@ -57,6 +57,36 @@
 
 结果：全部通过。
 
+## 7. D4 第二批实施（Phase E 测试补齐）
+
+### 7.1 目标
+
+- 按计划进入 Phase E，补齐 cloud139 关键路径测试覆盖。
+- 在不引入新测试框架的前提下，延续现有脚本化门禁并提升运行时行为验证深度。
+
+### 7.2 变更文件
+
+- `test/test-cloud139-unit.js`
+  - 新增 cloud139 单元检查：
+    - `_isRetryableError` 分类行为。
+    - `saveShareFilesWithRetry` 空结果重试与 fatal 立即失败。
+    - `waitForFilesVisible` 成功与超时缺失分支。
+- `test/test-cloud139-task-processor.js`
+  - 新增 cloud139TaskProcessor 集成检查：
+    - `root-files` 路径验证重试转存 + 可见性轮询触发。
+    - 分组路径验证按目录分组转存与轮询触发次数。
+- `package.json`
+  - `test:checks` 聚合链路接入：
+    - `test:cloud139-unit`
+    - `test:cloud139-task-processor`
+
+### 7.3 验证结果
+
+执行命令：
+- `npm test`
+
+结果：全部通过。
+
 ## 4. 提交与 PR
 
 - 分支：`refactor/139-upgrade`
