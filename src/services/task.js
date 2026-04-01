@@ -20,12 +20,14 @@ const { TaskExecutorService } = require('./taskExecutorService');
 const { TaskRetryService } = require('./taskRetryService');
 const { TaskRecycleService } = require('./taskRecycleService');
 const { TaskStorageService } = require('./taskStorageService');
+const TaskErrorService = require('./taskErrorService');
 
 class TaskService {
-    constructor(taskRepo, accountRepo, transferredFileRepo) {
+    constructor(taskRepo, accountRepo, transferredFileRepo, taskErrorRepo) {
         this.taskRepo = taskRepo;
         this.accountRepo = accountRepo;
         this.transferredFileRepo = transferredFileRepo || null;
+        this.taskErrorRepo = taskErrorRepo || null;
         this.messageUtil = new MessageUtil();
         this.eventService = EventService.getInstance();
         this.taskNamingService = new TaskNamingService();
@@ -34,6 +36,7 @@ class TaskService {
         this.taskRetryService = new TaskRetryService(this);
         this.taskRecycleService = new TaskRecycleService(this);
         this.taskStorageService = new TaskStorageService(this);
+        this.taskErrorService = taskErrorRepo ? new TaskErrorService(taskErrorRepo) : null;
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
             const taskEventHandler = new TaskEventHandler(this.messageUtil);
