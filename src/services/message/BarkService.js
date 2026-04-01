@@ -1,5 +1,6 @@
 const got = require('got');
 const MessageService = require('./MessageService');
+const logger = require('../../utils/logger');
 
 class BarkService extends MessageService {
     /**
@@ -28,7 +29,7 @@ class BarkService extends MessageService {
             }).json();
             return true;
         } catch (error) {
-            console.error('Bark消息推送异常:', error);
+            logger.error('Bark消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }
@@ -49,7 +50,7 @@ class BarkService extends MessageService {
             await got.get(url.toString()).json();
             return true;
         } catch (error) {
-            console.error('Bark图片消息推送异常:', error);
+            logger.error('Bark图片消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }

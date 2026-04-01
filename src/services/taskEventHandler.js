@@ -1,4 +1,5 @@
 const { logTaskEvent } = require('../utils/logUtils');
+const logger = require('../utils/logger');
 
 class TaskEventHandler {
     constructor(messageUtil) {
@@ -14,7 +15,7 @@ class TaskEventHandler {
         try {
             await this._handleAutoRename(taskCompleteEventDto);
         } catch (error) {
-            console.error(error);
+            logger.error('任务完成后处理失败', { error: error.message, stack: error.stack });
             logTaskEvent(`任务完成后处理失败: ${error.message}`);
         }
         logTaskEvent(`================事件处理完成================`);
@@ -26,7 +27,7 @@ class TaskEventHandler {
                 taskCompleteEventDto.fileList = newFiles;
             }
         } catch (error) {
-            console.error(error);
+            logger.error('自动重命名失败', { error: error.message, stack: error.stack });
             logTaskEvent(`自动重命名失败: ${error.message}`);
         }
     }

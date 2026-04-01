@@ -1,6 +1,7 @@
 const ConfigService = require('../services/ConfigService');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { HttpProxyAgent } = require('http-proxy-agent');
+const logger = require('./logger');
 
 class ProxyUtil {
     static getProxy(service) {
@@ -29,7 +30,7 @@ class ProxyUtil {
     static _checkServiceEnabled(service) {
         const services = ['tmdb', 'cloud189', 'telegram', 'customPush'];
         if (!services.includes(service)) {
-            console.log(`[ProxyUtil] 未知的服务: ${service}`);
+            logger.warn(`[ProxyUtil] 未知的服务: ${service}`);
             return false;
         }
         return ConfigService.getConfigValue(`proxy.services.${service}`);

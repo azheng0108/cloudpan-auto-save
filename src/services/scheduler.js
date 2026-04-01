@@ -6,6 +6,9 @@ const { MessageUtil } = require('./message');
 class SchedulerService {
     static taskJobs = new Map();
     static messageUtil = new MessageUtil();
+    static DEFAULT_TASK_CHECK_CRON = '0 19-23 * * *';
+    static DEFAULT_RETRY_TASK_CRON = '*/1 * * * *';
+    static DEFAULT_CLEAN_RECYCLE_CRON = '0 */8 * * *';
 
     static async initTaskJobs(taskRepo, taskService) {
         // 初始化所有启用定时任务的任务
@@ -14,33 +17,8 @@ class SchedulerService {
             this.saveTaskJob(task, taskService);
         });
 
-        logTaskEvent("初始化系统定时任务...")
-        // 初始化系统定时任务
-        // 1. 默认定时任务检查 默认19-23点执行一次
-        let taskCheckCrons = ConfigService.getConfigValue('task.taskCheckCron')
-        if (taskCheckCrons) {
-            // 根据|分割
-            taskCheckCrons = taskCheckCrons.split('|');
-            // 遍历每个cron表达式
-            taskCheckCrons.forEach((cronExpression, index) => {
-                this.saveDefaultTaskJob(`任务定时检查-${index}`, cronExpression, async () => {
-                    taskService.processAllTasks();
-                });
-            });
-        }
-        
-        // 2. 重试任务检查 默认每分钟执行一次
-        this.saveDefaultTaskJob('重试任务检查', '*/1 * * * *', async () => {
-            await taskService.processRetryTasks();
-        });
-        // 3. 清空回收站 默认每8小时执行一次
-        const enableAutoClearRecycle = ConfigService.getConfigValue('task.enableAutoClearRecycle');
-        const enableAutoClearFamilyRecycle = ConfigService.getConfigValue('task.enableAutoClearFamilyRecycle');
-        if (enableAutoClearRecycle || enableAutoClearFamilyRecycle) {
-            this.saveDefaultTaskJob('自动清空回收站',  ConfigService.getConfigValue('task.cleanRecycleCron'), async () => {
-                await taskService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle);
-            })   
-        }
+        logTaskEvent('初始化系统定时任务...');
+        this.applySystemJobs(taskService, ConfigService.getConfigValue('task') || {});
     }
 
     static saveTaskJob(task, taskService) {
@@ -100,6 +78,84 @@ class SchedulerService {
         }
     }
 
+    static _removeJobsByPrefix(prefix) {
+        const keys = [...this.taskJobs.keys()];
+        keys.forEach((key) => {
+            if (String(key).startsWith(prefix)) {
+                this.removeTaskJob(key);
+            }
+        });
+    }
+
+    static _parseCronList(value, fallback) {
+        const source = (typeof value === 'string' && value.trim())
+            ? value
+            : fallback;
+        return source
+            .split('|')
+            .map(item => item.trim())
+            .filter(Boolean);
+    }
+
+    static validateTaskScheduleSettings(taskSettings = {}) {
+        const taskCheckCrons = this._parseCronList(
+            taskSettings.taskCheckCron,
+            this.DEFAULT_TASK_CHECK_CRON
+        );
+        taskCheckCrons.forEach((expression) => {
+            if (!cron.validate(expression)) {
+                throw new Error(`任务定时检查 Cron 无效: ${expression}`);
+            }
+        });
+
+        const retryTaskCron = (typeof taskSettings.retryTaskCron === 'string' && taskSettings.retryTaskCron.trim())
+            ? taskSettings.retryTaskCron.trim()
+            : this.DEFAULT_RETRY_TASK_CRON;
+        if (!cron.validate(retryTaskCron)) {
+            throw new Error(`重试任务检查 Cron 无效: ${retryTaskCron}`);
+        }
+
+        const cleanRecycleCron = (typeof taskSettings.cleanRecycleCron === 'string' && taskSettings.cleanRecycleCron.trim())
+            ? taskSettings.cleanRecycleCron.trim()
+            : this.DEFAULT_CLEAN_RECYCLE_CRON;
+        if (!cron.validate(cleanRecycleCron)) {
+            throw new Error(`回收站清理 Cron 无效: ${cleanRecycleCron}`);
+        }
+
+        return {
+            taskCheckCron: taskCheckCrons.join('|'),
+            retryTaskCron,
+            cleanRecycleCron,
+        };
+    }
+
+    static applySystemJobs(taskService, taskSettings = {}) {
+        const normalized = this.validateTaskScheduleSettings(taskSettings);
+        const taskCheckCrons = this._parseCronList(normalized.taskCheckCron, this.DEFAULT_TASK_CHECK_CRON);
+        this._removeJobsByPrefix('任务定时检查-');
+        taskCheckCrons.forEach((cronExpression, index) => {
+            this.saveDefaultTaskJob(`任务定时检查-${index}`, cronExpression, async () => {
+                taskService.processAllTasks();
+            });
+        });
+
+        this.saveDefaultTaskJob('重试任务检查', normalized.retryTaskCron, async () => {
+            await taskService.processRetryTasks();
+        });
+
+        const enableAutoClearRecycle = taskSettings.enableAutoClearRecycle === true;
+        const enableAutoClearFamilyRecycle = taskSettings.enableAutoClearFamilyRecycle === true;
+        if (enableAutoClearRecycle || enableAutoClearFamilyRecycle) {
+            this.saveDefaultTaskJob('自动清空回收站', normalized.cleanRecycleCron, async () => {
+                await taskService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle);
+            });
+        } else {
+            this.removeTaskJob('自动清空回收站');
+        }
+
+        return normalized;
+    }
+
     static stopAllJobs() {
         for (const [key, job] of this.taskJobs.entries()) {
             try {
@@ -114,42 +170,8 @@ class SchedulerService {
 
     // 处理默认定时任务配置
     static handleScheduleTasks(settings,taskService) {
-        // 如果定时任务和清空回收站任务与配置文件不一致, 则修改定时任务
-        if (settings.task.taskCheckCron && settings.task.taskCheckCron != ConfigService.getConfigValue('task.taskCheckCron')) {
-            let taskCheckCrons = settings.task.taskCheckCron.split('|');
-            // 遍历每个cron表达式
-            taskCheckCrons.forEach((cronExpression, index) => {
-                this.saveDefaultTaskJob(`任务定时检查-${index}`, cronExpression, async () => {
-                    taskService.processAllTasks();
-                });
-            });
-        }
-        // 处理定时任务配置
-        const handleScheduleTask = (currentEnabled, newEnabled, currentCron, newCron, jobName, taskFn) => {
-            if (!currentEnabled && newEnabled && newCron) {
-                // 情况1: 当前未开启 -> 开启
-                this.saveDefaultTaskJob(jobName, newCron, taskFn);
-            } else if (currentEnabled && newEnabled && currentCron !== newCron) {
-                // 情况2: 当前开启 -> 开启，但cron不同
-                this.saveDefaultTaskJob(jobName, newCron, taskFn);
-            } else if (!newEnabled) {
-                // 情况3: 提交为关闭
-                this.removeTaskJob(jobName);
-            }
-        };
-        const currentCron = ConfigService.getConfigValue('task.cleanRecycleCron');
-        const enableAutoClearRecycle = settings.task.enableAutoClearRecycle
-        const enableAutoClearFamilyRecycle = settings.task.enableAutoClearFamilyRecycle
-        // 处理普通回收站任务
-        handleScheduleTask(
-            ConfigService.getConfigValue('task.enableAutoClearRecycle'),
-            enableAutoClearRecycle || enableAutoClearFamilyRecycle,
-            currentCron,
-            settings.task.cleanRecycleCron,
-            '自动清空回收站',
-            async () => taskService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle)
-        );
-        return true;
+        const taskSettings = settings?.task || {};
+        return this.applySystemJobs(taskService, taskSettings);
     }
 }
 

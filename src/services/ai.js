@@ -1,6 +1,7 @@
 const got = require('got');
 const ConfigService = require('./ConfigService');
 const { logTaskEvent } = require('../utils/logUtils');
+const logger = require('../utils/logger');
 
 class AIService {
     constructor() {
@@ -57,7 +58,7 @@ class AIService {
                 errorDetails += `\n响应体: ${JSON.stringify(error.response.body)}`;
             }
 
-            console.error('AI 服务调用失败:', errorDetails);
+            logger.error('AI 服务调用失败', { error: errorDetails });
             return {
                 success: false,
                 error: errorDetails,
@@ -135,7 +136,7 @@ class AIService {
                     data: result
                 };
             } catch (error) {
-                console.log("AI 解析结果格式错误: " + response.data)
+                logger.warn('AI 解析结果格式错误', { response: response.data })
                 return {
                     success: false,
                     error: '解析结果格式错误'
@@ -291,7 +292,7 @@ class AIService {
 
             // 验证最终结果
             if (!this._validateResponse(finalResult)) {
-                console.log("最终 AI 解析结果格式错误: " + JSON.stringify(finalResult, null, 2))
+                logger.warn('最终 AI 解析结果格式错误', { finalResult })
                 throw new Error('最终 AI 返回格式不符合要求');
             }
 
@@ -301,8 +302,8 @@ class AIService {
             };
 
         } catch (error) {
-            console.log(error)
-            console.error("AI simpleChatCompletion 处理出错:", error.message);
+            logger.error('AI simpleChatCompletion 异常详情', { error: error.message, stack: error.stack })
+            logger.error('AI simpleChatCompletion 处理出错', { error: error.message, stack: error.stack });
             return {
                 success: false,
                 error: error.message || '处理文件名解析时发生未知错误'
@@ -430,7 +431,7 @@ class AIService {
 
                 } catch (error) {
                     logTaskEvent(`AI过滤：解析块 ${chunkNumber} 响应失败 - ${error.message}。原始数据: ${response.data}`);
-                    console.error(`AI filterMediaFiles 解析块 ${chunkNumber} 结果格式错误:`, error.message, "原始数据:", response.data);
+                    logger.error('AI filterMediaFiles 解析块结果格式错误', { chunkNumber, error: error.message, response: response.data });
                     // 抛出错误中断整个过滤过程
                     throw new Error(`解析AI过滤结果格式错误 (块 ${chunkNumber}): ${error.message}`);
                 }
@@ -447,7 +448,7 @@ class AIService {
         } catch (error) {
             // 捕获循环中或 chat 调用中的错误
             logTaskEvent(`AI过滤：处理过程中发生错误 - ${error.message}`);
-            console.error("AI filterMediaFiles 处理出错:", error.message);
+            logger.error('AI filterMediaFiles 处理出错', { error: error.message, stack: error.stack });
             return {
                 success: false,
                 error: error.message || '处理文件过滤时发生未知错误'
@@ -501,13 +502,13 @@ class AIService {
                         }
                     }
                 } catch (error) {
-                    console.error('处理响应块时出错:', error);
+                    logger.warn('处理AI流响应块出错', { error: error.message, stack: error.stack });
                 }
             }
             // 所有块处理完成后，发送结束标识
             onChunk('[END]');
         } catch (error) {
-            console.error('AI 流式服务调用失败:', error.message);
+            logger.error('AI 流式服务调用失败', { error: error.message, stack: error.stack });
             throw error;
         }
     }
