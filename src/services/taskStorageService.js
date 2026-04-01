@@ -93,7 +93,7 @@ class TaskStorageService {
         if (!task.enableSystemProxy) {
             if (task.account?.accountType === 'cloud139') {
                 const cloud139 = Cloud139Service.getInstance(task.account);
-                await this.deleteCloudFile139(cloud139, files, 0);
+                await this.deleteCloudFile139(cloud139, files);
             } else {
                 const cloud189 = Cloud189Service.getInstance(task.account);
                 await this.deleteCloudFile(cloud189, files, 0);

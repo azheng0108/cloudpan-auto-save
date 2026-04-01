@@ -1,4 +1,4 @@
-const { LessThan, IsNull } = require('typeorm');
+const { LessThan, IsNull, Or } = require('typeorm');
 const ConfigService = require('./ConfigService');
 const { logTaskEvent } = require('../utils/logUtils');
 
@@ -49,7 +49,7 @@ class TaskRetryService {
                 status: 'pending',
                 nextRetryTime: LessThan(now),
                 retryCount: LessThan(ConfigService.getConfigValue('task.maxRetries')),
-                enableSystemProxy: IsNull()
+                enableSystemProxy: Or(IsNull(), false)
             }
         });
     }
@@ -70,7 +70,7 @@ class TaskRetryService {
                     saveResults.push(result);
                 }
             } catch (error) {
-                logTaskEvent(`重试任务${task.name}执行失败: ${error.message}`);
+                logTaskEvent(`重试任务[${taskName}]执行失败: ${error.message}`);
             } finally {
                 logTaskEvent(`任务[${taskName}]重试完成`);
             }

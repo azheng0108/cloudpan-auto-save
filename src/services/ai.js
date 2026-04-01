@@ -302,7 +302,6 @@ class AIService {
             };
 
         } catch (error) {
-            logger.error('AI simpleChatCompletion 异常详情', { error: error.message, stack: error.stack })
             logger.error('AI simpleChatCompletion 处理出错', { error: error.message, stack: error.stack });
             return {
                 success: false,

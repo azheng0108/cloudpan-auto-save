@@ -137,3 +137,7 @@ _test_*.mjs
 *.crx
 package-lock.json
 /vender/
+
+# 本地保留，不上传 GitHub
+docs/
+test/
