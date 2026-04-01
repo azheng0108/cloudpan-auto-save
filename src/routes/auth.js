@@ -60,20 +60,21 @@ const registerAuthRoutes = (app, publicDir, assetVersion) => {
         res.json({ success: false, error: '用户名或密码错误' });
     });
 
-    app.use(express.static(publicDir));
-
     app.use((req, res, next) => {
         if (
             req.path === '/' ||
             req.path === '/login' ||
             req.path === '/api/health' ||
             req.path === '/api/auth/login' ||
-            req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico)$/)
+            req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico|svg|webmanifest)$/)
         ) {
             return next();
         }
         authenticateSession(req, res, next);
     });
+
+    // 认证检查后再提供静态资源，避免直接访问 /index.html 绕过会话校验。
+    app.use(express.static(publicDir, { index: false }));
 };
 
 module.exports = {
