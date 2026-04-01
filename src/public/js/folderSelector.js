@@ -43,6 +43,11 @@ class FolderSelector {
         this.initModal();
     }
 
+    _assetQuery() {
+        const v = window.__ASSET_VERSION__;
+        return v ? `?v=${encodeURIComponent(v)}` : '';
+    }
+
     // 获取常用目录
     async getFavorites() {
         try {
@@ -277,7 +282,7 @@ class FolderSelector {
         const isFavorite = this.favorites.some(f => f.id === newNode.id);
         const favoriteIcon = this.enableFavorites ? `
             <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${newNode.id}" data-name="${newNode.name}">
-                <img src="/icons/star.svg" alt="star" width="16" height="16">
+                    <img src="/icons/star.svg${this._assetQuery()}" alt="star" width="16" height="16">
             </span>
         ` : '';
         const newItem = document.createElement('div');
@@ -331,7 +336,7 @@ class FolderSelector {
             return;
         }
 
-        this.modal.style.display = 'block';
+        this.modal.style.display = 'flex';
         this.modal.style.zIndex = 1001;
         this.selectedNode = null;
         this.isShowingFavorites = false;
@@ -404,7 +409,7 @@ class FolderSelector {
             const isFavorite = favorites.some(f => f.id === node.id);
             const favoriteIcon = this.enableFavorites ? `
                 <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${node.id}" data-name="${node.name}">
-                    <img src="/icons/star.svg" alt="star" width="16" height="16">
+                    <img src="/icons/star.svg${this._assetQuery()}" alt="star" width="16" height="16">
                 </span>
             ` : '';
 

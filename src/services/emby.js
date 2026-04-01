@@ -4,7 +4,7 @@ const ConfigService = require('./ConfigService');
 const { MessageUtil } = require('./message');
 const { AppDataSource } = require('../database'); 
 const { Task, Account } = require('../entities'); 
-const { Cloud189Service } = require('./cloud189');
+const { Cloud189Service } = require('../legacy189/services/cloud189');
 const path = require('path');
 const { StrmService } = require('./strm');
 
@@ -23,6 +23,10 @@ class EmbyService {
         this._accountRepo = AppDataSource.getRepository(Account);
         this._taskService = taskService;
         this._strmService = new StrmService();
+    }
+
+    _isLegacy189RuntimeEnabled() {
+        return ConfigService.getConfigValue('legacy.enableCloud189Runtime') === true;
     }
 
 
@@ -272,6 +276,10 @@ class EmbyService {
                 if (!isFolder) {
                     // 如果是剧集文件，只删除对应的单个文件
                     logTaskEvent(`删除单个剧集文件, 任务id: ${task.id}, 文件路径: ${itemPath}`);
+                    if (!this._isLegacy189RuntimeEnabled()) {
+                        logTaskEvent('当前默认运行链路已禁用 189，跳过 legacy189 文件删除逻辑');
+                        continue;
+                    }
                     const cloud189 = Cloud189Service.getInstance(task.account);
                     const folderInfo = await cloud189.listFiles(task.realFolderId);
                     if (!folderInfo || !folderInfo.fileListAO) {
