@@ -39,7 +39,8 @@ WORKDIR /home
 RUN apk add --no-cache ca-certificates tzdata && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
-    mkdir -p /home/data /home/strm
+    mkdir -p /home/data /home/strm && \
+    chown -R node:node /home
 
 # 直接复制 Builder 中已裁剪的 node_modules（同为 Alpine，原生库完全兼容）
 # 无需在生产阶段重新执行 yarn install，节省镜像层和构建时间
@@ -50,7 +51,13 @@ COPY --from=builder /home/src/public ./dist/public
 COPY --from=builder /home/package.json ./
 
 ENV TZ=Asia/Shanghai
+ENV NODE_ENV=production
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
+
+USER node
 
 VOLUME ["/home/data", "/home/strm"]
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["npm", "run", "start:prod"]
