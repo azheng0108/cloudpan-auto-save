@@ -7,28 +7,28 @@
     <meta name="theme-color" content="#ffffff">
     <meta name="color-scheme" content="light dark">
 
-    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
-    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
-    <link rel="shortcut icon" href="/favicon/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=__ASSET_VERSION__" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=__ASSET_VERSION__" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico?v=__ASSET_VERSION__" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png?v=__ASSET_VERSION__" />
     <meta name="apple-mobile-web-app-title" content="自动转存" />
-    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="manifest" href="/favicon/site.webmanifest?v=__ASSET_VERSION__" />
 
-    <link rel="stylesheet" href="/css/base.css">
-    <link rel="stylesheet" href="/css/folder-tree.css">
-    <link rel="stylesheet" href="/css/modal.css">
-    <link rel="stylesheet" href="/css/card-view.css">
-    <link rel="stylesheet" href="/css/components.css">
-    <link rel="stylesheet" href="/css/table-view.css">
-    <link rel="stylesheet" href="/css/table.css">
-    <link rel="stylesheet" href="/css/tabs.css">
-    <link rel="stylesheet" href="/css/theme.css">
-    <link rel="stylesheet" href="/css/logs.css">
-    <link rel="stylesheet" href="/css/loading.css">
-    <link rel="stylesheet" href="/css/message.css">
-    <link rel="stylesheet" href="/css/floating-btn.css">
-    <link rel="stylesheet" href="/css/cloudsaver.css">
-    <link rel="stylesheet" href="/css/chat.css">
+    <link rel="stylesheet" href="/css/base.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/folder-tree.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/modal.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/card-view.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/components.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/table-view.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/table.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/tabs.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/theme.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/logs.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/loading.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/message.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/floating-btn.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/cloudsaver.css?v=__ASSET_VERSION__">
+    <link rel="stylesheet" href="/css/chat.css?v=__ASSET_VERSION__">
 </head>
 <body>
     <div class="header">
@@ -83,7 +83,6 @@
                             <div class="form-group">
                                 <label for="accountType">账号类型</label>
                                 <select id="accountType" onchange="onAccountTypeChange(this.value)">
-                                    <option value="cloud189">天翼云盘（189）</option>
                                     <option value="cloud139">移动云盘（139）</option>
                                 </select>
                             </div>
@@ -165,7 +164,7 @@
                             <div class="search-input">
                                 <input type="text" id="taskSearch" placeholder="搜索资源名称/账号/备注">
                                 <button type="button" onclick="fetchTasks()" class="btn-icon" title="刷新任务列表">
-                                    <img src="/icons/refresh.svg" alt="刷新" class="refresh-icon">
+                                    <img src="/icons/refresh.svg?v=__ASSET_VERSION__" alt="刷新" class="refresh-icon">
                                 </button>
                             </div>
                         </div>
@@ -500,20 +499,21 @@
     </div>
 
 <!-- 在 body 结束标签前添加以下脚本引用 -->
-<script src="/js/folderSelector.js"></script>
-<script src="/js/theme.js"></script>
-<script src="/js/tabs.js"></script>
-<script src="/js/accounts.js"></script>
-<script src="/js/tasks.js"></script>
-<script src="/js/edit-task.js"></script>
-<script src="/js/main.js"></script>
-<script src="/js/settings.js"></script>
-<script src="/js/media.js"></script>
-<script src="/js/logs.js"></script>
-<script src="/js/loading.js"></script>
-<script src="/js/message.js"></script>
-<script src="/js/cloudsaver.js"></script>
-<script src="/js/customPush.js"></script> 
+<script>window.__ASSET_VERSION__ = '__ASSET_VERSION__';</script>
+<script src="/js/folderSelector.js?v=__ASSET_VERSION__"></script>
+<script src="/js/theme.js?v=__ASSET_VERSION__"></script>
+<script src="/js/tabs.js?v=__ASSET_VERSION__"></script>
+<script src="/js/accounts.js?v=__ASSET_VERSION__"></script>
+<script src="/js/tasks.js?v=__ASSET_VERSION__"></script>
+<script src="/js/edit-task.js?v=__ASSET_VERSION__"></script>
+<script src="/js/main.js?v=__ASSET_VERSION__"></script>
+<script src="/js/settings.js?v=__ASSET_VERSION__"></script>
+<script src="/js/media.js?v=__ASSET_VERSION__"></script>
+<script src="/js/logs.js?v=__ASSET_VERSION__"></script>
+<script src="/js/loading.js?v=__ASSET_VERSION__"></script>
+<script src="/js/message.js?v=__ASSET_VERSION__"></script>
+<script src="/js/cloudsaver.js?v=__ASSET_VERSION__"></script>
+<script src="/js/customPush.js?v=__ASSET_VERSION__"></script> 
 
 
 </body>
@@ -651,14 +651,14 @@
 <div class="floating-btn-group">
     <div class="floating-btns-container collapsed" id="floatingBtnsContainer">
         <div class="floating-btn" onclick="openCustomPushManagementModal()" title="自定义推送">
-            <img src="/icons/push.svg" alt="自定义推送">
+            <img src="/icons/push.svg?v=__ASSET_VERSION__" alt="自定义推送">
         </div>
         <div class="floating-btn" id="showLogsBtn" title="查看日志">
-            <img src="/icons/logs.svg" alt="查看日志">
+            <img src="/icons/logs.svg?v=__ASSET_VERSION__" alt="查看日志">
         </div>
     </div>
     <div class="floating-btn" onclick="toggleFloatingBtns()" title="更多">
-        <img src="/icons/toggle.svg" alt="更多" id="toggleIcon">
+        <img src="/icons/toggle.svg?v=__ASSET_VERSION__" alt="更多" id="toggleIcon">
     </div>
 </div>
 

@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs').promises;
+const path = require('path');
 const ConfigService = require('../services/ConfigService');
 
 const authenticateSession = (req, res, next) => {
@@ -18,16 +20,31 @@ const authenticateSession = (req, res, next) => {
     res.redirect('/login');
 };
 
-const registerAuthRoutes = (app, publicDir) => {
-    app.get('/', (req, res) => {
+const renderHtmlWithVersion = async (res, filePath, assetVersion) => {
+    let html = await fs.readFile(filePath, 'utf8');
+    html = html.replace(/__ASSET_VERSION__/g, String(assetVersion || 'dev'));
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+};
+
+const registerAuthRoutes = (app, publicDir, assetVersion) => {
+    app.get('/', async (req, res) => {
         if (!req.session.authenticated) {
             return res.redirect('/login');
         }
-        res.sendFile(`${publicDir}\\index.html`);
+        try {
+            await renderHtmlWithVersion(res, path.join(publicDir, 'index.html'), assetVersion);
+        } catch (error) {
+            res.status(500).send('页面加载失败');
+        }
     });
 
-    app.get('/login', (req, res) => {
-        res.sendFile(`${publicDir}\\login.html`);
+    app.get('/login', async (req, res) => {
+        try {
+            await renderHtmlWithVersion(res, path.join(publicDir, 'login.html'), assetVersion);
+        } catch (error) {
+            res.status(500).send('页面加载失败');
+        }
     });
 
     app.post('/api/auth/login', (req, res) => {

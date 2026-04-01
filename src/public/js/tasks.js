@@ -175,7 +175,7 @@ function openCreateTaskModal() {
     document.getElementById('targetFolderId').value = '';
     document.getElementById('targetFolder').value = '';
     document.getElementsByClassName('cronExpression-box')[0].style.display = 'none';
-    document.getElementById('createTaskModal').style.display = 'block';
+    document.getElementById('createTaskModal').style.display = 'flex';
 }
 
 function closeCreateTaskModal() {
