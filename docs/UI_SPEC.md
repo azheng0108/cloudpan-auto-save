@@ -70,6 +70,7 @@
 |----|------|
 | Tailwind / Lucide | 原型用 CDN；生产已采用 **CSS 变量 + 手写布局**，不直接依赖 Tailwind/Lucide CDN。 |
 | 创建任务容器 | 已按 §2.1 调整为 `modal-content` + `form-body` 可滚动 + `form-actions` 底部固定，创建/编辑任务弹窗统一 `display:flex` 打开。 |
+| 账号弹窗容器 | 添加/编辑账号弹窗已统一为 `display:flex` 打开，避免长表单在小屏下底部操作按钮不可达。 |
 | 静态资源版本参数 | 已在 `index.html/login.html` 关键资源引用增加 `?v=__ASSET_VERSION__`，由后端路由按应用版本注入，降低缓存陈旧概率。 |
 | Emby / 媒体设置 | `settings.js` 是否含全部 Emby 字段以 **grep `emby`** 为准。 |
 
@@ -87,3 +88,4 @@
 
 - 首版：随文档计划生成；UI 重构实施时请同步更新 §5。
 - 2026-04-01：D3 第一批完成，新增静态资源版本参数注入与关键任务弹窗布局对齐说明。
+- 2026-04-01：D4 第一批完成，账号弹窗打开方式统一为 `display:flex`，并补充静态回归断言。

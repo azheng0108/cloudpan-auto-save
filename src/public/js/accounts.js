@@ -73,7 +73,7 @@ function initAccountForm() {
 function openAddAccountModal() {
     chooseAccount = null
     const modal = document.getElementById('addAccountModal');
-    modal.style.display = 'block';
+    modal.style.display = 'flex';
 }
 
 function closeAddAccountModal() {
@@ -107,7 +107,7 @@ async function editAccount(id) {
 
     // 打开模态框
     const modal = document.getElementById('addAccountModal');
-    modal.style.display = 'block';
+    modal.style.display = 'flex';
 
     // 修改标题
     const modalTitle = modal.querySelector('h3');
