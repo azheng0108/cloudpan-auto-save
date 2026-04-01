@@ -13,9 +13,10 @@ const path = require('path');
 const { EventService } = require('./eventService');
 const { TaskEventHandler } = require('./taskEventHandler');
 const harmonizedFilter = require('../utils/BloomFilter');
-const cloud189Utils = require('../utils/Cloud189Utils');
-const Cloud139Utils = require('../utils/Cloud139Utils');
 const { processCloud139Task } = require('./cloud139TaskProcessor');
+const { TaskNamingService } = require('./taskNamingService');
+const { TaskParserService } = require('./taskParserService');
+const { TaskExecutorService } = require('./taskExecutorService');
 
 class TaskService {
     constructor(taskRepo, accountRepo, transferredFileRepo) {
@@ -24,6 +25,9 @@ class TaskService {
         this.transferredFileRepo = transferredFileRepo || null;
         this.messageUtil = new MessageUtil();
         this.eventService = EventService.getInstance();
+        this.taskNamingService = new TaskNamingService();
+        this.taskParserService = new TaskParserService();
+        this.taskExecutorService = new TaskExecutorService(this);
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
             const taskEventHandler = new TaskEventHandler(this.messageUtil);
@@ -172,7 +176,7 @@ class TaskService {
 
         // Cloud139 分支 — 先从分享文本中提取纯 URL 和访问码
         if (account.accountType === 'cloud139') {
-            const parsed = Cloud139Utils.extractFromShareText(taskDto.shareLink);
+            const parsed = this.taskParserService.extractCloud139ShareText(taskDto.shareLink);
             if (parsed) {
                 taskDto.shareLink = parsed.url;
                 if (parsed.passwd && !taskDto.accessCode) taskDto.accessCode = parsed.passwd;
@@ -180,14 +184,13 @@ class TaskService {
             return await this._createCloud139Tasks(params, account, taskDto);
         }
 
-        // 解析url
-        const {url: parseShareLink, accessCode} = cloud189Utils.parseCloudShare(taskDto.shareLink)
-        if (accessCode) {
-            taskDto.accessCode = accessCode;
+        const cloud189Parsed = this.taskParserService.parseCloud189ShareInput(taskDto.shareLink);
+        if (cloud189Parsed.parsedAccessCode) {
+            taskDto.accessCode = cloud189Parsed.parsedAccessCode;
         }
-        taskDto.shareLink = parseShareLink;
+        taskDto.shareLink = cloud189Parsed.normalizedUrl;
         const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(taskDto.shareLink);
+        const { shareCode } = cloud189Parsed;
         const shareInfo = await this.getShareInfo(cloud189, shareCode);
         // 如果分享链接是加密链接, 且没有提供访问码, 则抛出错误
         if (shareInfo.shareMode == 1 ) {
@@ -415,7 +418,7 @@ class TaskService {
                     targetFolderId: task.realFolderId,
                     shareId: task.shareId
                 });
-                await this.createBatchTask(cloud189, batchTaskDto);
+                await this.taskExecutorService.createBatchTask(cloud189, batchTaskDto);
                 // 转存成功后将源文件 ID 写入统一漏斗表
                 await this._recordTransferredFiles(task.id, taskInfoList);
             }else{
@@ -667,95 +670,14 @@ class TaskService {
      *           videoFormat, videoSource, videoCodec, audioCodec, fileExt
      */
     _parseMediaFileName(filename) {
-        const ext = path.extname(filename);
-        let base = path.basename(filename, ext);
-        const vars = {
-            fileExt: ext.toLowerCase(),
-            title: '',
-            year: '',
-            season: '',
-            episode: '',
-            season_episode: '',
-            part: '',
-            videoFormat: '',
-            videoSource: '',
-            videoCodec: '',
-            audioCodec: '',
-        };
-
-        // ① 分辨率/画质
-        const resMap = { '4k': '4K', 'uhd': '4K', '2160p': '2160p', '1440p': '1440p', '1080p': '1080p', '720p': '720p', '480p': '480p', '1080i': '1080i', '576p': '576p' };
-        const resMatch = base.match(/\b(4k|uhd|2160p|1440p|1080p|720p|480p|1080i|576p)\b/i);
-        if (resMatch) vars.videoFormat = resMap[resMatch[1].toLowerCase()] || resMatch[1];
-
-        // ② 来源
-        const srcMatch = base.match(/\b(WEB-DL|WEBRip|BluRay|Blu-Ray|BDRemux|BDRip|BRRip|HDTV|DVDRip|DVD|AMZN|NF|HULU|DSNP|ATVP|iT|REMUX)\b/i);
-        if (srcMatch) vars.videoSource = srcMatch[1];
-
-        // ③ 视频编码
-        const vcMatch = base.match(/\b(x264|x265|H\.?264|H\.?265|HEVC|AVC|XviD|MPEG-?2|VP9|AV1)\b/i);
-        if (vcMatch) vars.videoCodec = vcMatch[1];
-
-        // ④ 音频编码
-        const acMatch = base.match(/\b(DTS-HD|DTS|TrueHD|Atmos|E-?AC-?3|EAC3|AC-?3|AAC|FLAC|DD5\.1|DD7\.1|DDP5\.1|MP3|LPCM)\b/i);
-        if (acMatch) vars.audioCodec = acMatch[1];
-
-        // ⑤ Part
-        const partMatch = base.match(/\bPart\.?\s*(\d+|[IVX]+)\b/i);
-        if (partMatch) vars.part = `Part${partMatch[1]}`;
-
-        // ⑥ 剧集 SxxExx
-        const seMatch = base.match(/[._\s-]*[Ss](\d{1,3})[._\s-]?[Ee](\d{1,3})/);
-        if (seMatch) {
-            vars.season = String(parseInt(seMatch[1]));
-            vars.episode = String(parseInt(seMatch[2]));
-            vars.season_episode = `S${seMatch[1].padStart(2, '0')}E${seMatch[2].padStart(2, '0')}`;
-        } else {
-            // 纯数字集数，如 EP01 / E01
-            const epMatch = base.match(/\b[Ee][Pp]?(\d{2,3})\b/);
-            if (epMatch) {
-                vars.season = '1';
-                vars.episode = String(parseInt(epMatch[1]));
-                vars.season_episode = `S01E${epMatch[1].padStart(2, '0')}`;
-            }
-        }
-
-        // ⑦ 年份
-        const yearMatch = base.match(/\b((?:19|20)\d{2})\b/);
-        if (yearMatch) vars.year = yearMatch[1];
-
-        // ⑧ 标题：截取最早出现的技术信息之前的部分
-        const titleEndPatterns = [
-            /[._\s-]+[Ss]\d{1,3}[._\s-]?[Ee]\d{1,3}/,
-            /[._\s-]+[Ee][Pp]?\d{2,3}\b/,
-            /[._\s-]*\((?:19|20)\d{2}\)/,
-            /[._\s-]+(?:19|20)\d{2}[._\s-]/,
-            /[._\s-]+(?:2160p|1440p|1080p|720p|480p|4k|uhd)\b/i,
-            /[._\s-]+(?:WEB-DL|WEBRip|BluRay|Blu-Ray|BDRemux|BDRip|HDTV|DVDRip|REMUX)\b/i,
-        ];
-        let titleEnd = base.length;
-        for (const pat of titleEndPatterns) {
-            const m = base.search(pat);
-            if (m > 0 && m < titleEnd) titleEnd = m;
-        }
-        let title = base.substring(0, titleEnd);
-        title = title.replace(/[._]/g, ' ').replace(/\s*[-–]\s*$/, '').replace(/\s+/g, ' ').trim();
-        vars.title = title || path.basename(filename, ext);
-        return vars;
+        return this.taskNamingService.parseMediaFileName(filename);
     }
 
     /**
      * 使用 nunjucks 渲染 Jinja2 模板
      */
     _renderJinjaTemplate(template, vars) {
-        const nunjucks = require('nunjucks');
-        const env = new nunjucks.Environment(null, { autoescape: false });
-        try {
-            return env.renderString(template, vars);
-        } catch (e) {
-            logTaskEvent(`Jinja2 模板渲染失败: ${e.message}`);
-            return null;
-        }
+        return this.taskNamingService.renderJinjaTemplate(template, vars);
     }
 
     /**
@@ -851,27 +773,7 @@ class TaskService {
 
     // 根据AI分析结果生成新文件名
     _generateFileName(file, aiFile, resourceInfo, template) {
-        if (!aiFile) return file.name;
-        
-        // 构建文件名替换映射
-        const replaceMap = {
-            '{name}': aiFile.name || resourceInfo.name,
-            '{year}': resourceInfo.year || '',
-            '{s}': aiFile.season?.padStart(2, '0') || '01',
-            '{e}': aiFile.episode?.padStart(2, '0') || '01',
-            '{sn}': parseInt(aiFile.season) || '1',                    // 不补零的季数
-            '{en}': parseInt(aiFile.episode) || '1',                   // 不补零的集数
-            '{ext}': aiFile.extension || path.extname(file.name),
-            '{se}': `S${aiFile.season?.padStart(2, '0') || '01'}E${aiFile.episode?.padStart(2, '0') || '01'}`
-        };
-
-        // 替换模板中的占位符
-        let newName = template;
-        for (const [key, value] of Object.entries(replaceMap)) {
-            newName = newName.replace(new RegExp(key, 'g'), value);
-        }
-        // 清理文件名中的非法字符
-        return this._sanitizeFileName(newName);
+        return this.taskNamingService.generateFileName(file, aiFile, resourceInfo, template);
     }
     // 处理重命名过程
     async _processRename(cloud189, task, files, resourceInfo, message, newFiles) {
@@ -904,10 +806,7 @@ class TaskService {
 
     // 清理文件名中的非法字符
     _sanitizeFileName(fileName) {
-        // 移除文件名中的非法字符
-        return fileName.replace(/[<>:"/\\|?*]/g, '')
-            .replace(/\s+/g, ' ')  // 合并多个空格
-            .trim();
+        return this.taskNamingService.sanitizeFileName(fileName);
     }
     // 处理正则表达式重命名
     async _processRegexRename(cloud189, task, files, message, newFiles) {
@@ -949,62 +848,8 @@ class TaskService {
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // 检查任务状态
     async checkTaskStatus(cloud189, taskId, count = 0, batchTaskDto) {
-        if (count > 5) {
-             return false;
-        }
-        let type = batchTaskDto.type || 'SHARE_SAVE';
-        // 轮询任务状态
-        const task = await cloud189.checkTaskStatus(taskId, batchTaskDto)
-        if (!task) {
-            return false;
-        }
-        logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}`)
-        if (task.taskStatus == 3 || task.taskStatus == 1) {
-            // 暂停200毫秒
-            await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189,taskId, count++, batchTaskDto)
-        }
-        if (task.taskStatus == 4) {
-            // 如果failedCount > 0 说明有失败或者被和谐的文件, 需要查一次文件列表
-            if (task.failedCount > 0 && type == 'SHARE_SAVE') {
-                const targetFolderId = batchTaskDto.targetFolderId;
-                const fileList = await this.getAllFolderFiles(cloud189, {
-                    enableSystemProxy: false,
-                    realFolderId: targetFolderId
-                });
-                //  当前转存的文件列表为taskInfos 需反序列化
-                const taskInfos = JSON.parse(batchTaskDto.taskInfos);
-                // fileList和taskInfos进行对比 拿到不在fileList中的文件
-                const conflictFiles = taskInfos.filter(taskInfo => {
-                    return !fileList.some(file => file.md5 === taskInfo.md5);
-                });
-                if (conflictFiles.length > 0) {
-                    // 打印日志
-                    logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}, 有${conflictFiles.length}个文件冲突, 已忽略: ${conflictFiles.map(file => file.fileName).join(',')}`);
-                    // 加入和谐文件中
-                    harmonizedFilter.addHarmonizedList(conflictFiles.map(file => file.md5))
-                }
-            }
-            return true;
-        }
-        // 如果status == 2 说明有冲突
-        if (task.taskStatus == 2) {
-            const conflictTaskInfo = await cloud189.getConflictTaskInfo(taskId);
-            if (!conflictTaskInfo) {
-                return false
-            }
-            // 忽略冲突
-            const taskInfos = conflictTaskInfo.taskInfos;
-            for (const taskInfo of taskInfos) {
-                taskInfo.dealWay = 1;
-            }
-            await cloud189.manageBatchTask(taskId, conflictTaskInfo.targetFolderId, taskInfos);
-            await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189, taskId, count++, batchTaskDto)
-        }
-        return false;
+        return this.taskExecutorService.checkTaskStatus(cloud189, taskId, count, batchTaskDto);
     }
 
     // 执行所有任务
@@ -1152,7 +997,7 @@ class TaskService {
                     saveResults.push(result);
                 }
             } catch (error) {
-                console.error(`重试任务${task.name}执行失败:`, error);
+                logTaskEvent(`重试任务${task.name}执行失败: ${error.message}`);
             }finally {
                 logTaskEvent(`任务[${taskName}]重试完成`);
             }
@@ -1168,18 +1013,7 @@ class TaskService {
     }
     // 创建批量任务
     async createBatchTask(cloud189, batchTaskDto) {
-        const resp = await cloud189.createBatchTask(batchTaskDto);
-        if (!resp) {
-            throw new Error('批量任务处理失败');
-        }
-        if (resp.res_code != 0) {
-            throw new Error(resp.res_msg);
-        }
-        logTaskEvent(`批量任务处理中: ${JSON.stringify(resp)}`)
-        if (!await this.checkTaskStatus(cloud189,resp.taskId, 0 , batchTaskDto)) {
-            throw new Error('检查批量任务状态: 批量任务处理失败');
-        }
-        logTaskEvent(`批量任务处理完成`)
+        return this.taskExecutorService.createBatchTask(cloud189, batchTaskDto);
     }
     // 定时清空回收站
     async clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
@@ -1274,7 +1108,7 @@ class TaskService {
                 isFolder: isFolder
             })
         }
-        console.log(taskInfos)
+        logTaskEvent(`准备删除云盘内容: ${JSON.stringify(taskInfos)}`)
         
         const batchTaskDto = new BatchTaskDto({
             taskInfos: JSON.stringify(taskInfos),
@@ -1388,7 +1222,7 @@ class TaskService {
 
     async _createCloud139Tasks(params, account, taskDto) {
         const cloud139 = Cloud139Service.getInstance(account);
-        const { linkID, passwd } = Cloud139Utils.parseShareLink(taskDto.shareLink);
+        const { linkID, passwd } = this.taskParserService.parseCloud139ShareLink(taskDto.shareLink);
         const effectivePasswd = taskDto.accessCode || passwd;
 
         // 获取分享根目录信息
@@ -1603,78 +1437,17 @@ class TaskService {
 
         // Cloud139 分支
         if (account.accountType === 'cloud139') {
-            // 支持直接粘贴分享文本，从中提取纯 URL 和提取码
-            const extracted = Cloud139Utils.extractFromShareText(shareLink);
-            const cleanLink = extracted ? extracted.url : shareLink;
-            const effectivePasswd = accessCode || (extracted ? extracted.passwd : '');
-            const { linkID } = Cloud139Utils.parseShareLink(cleanLink);
             const cloud139 = Cloud139Service.getInstance(account);
-            const result = await cloud139.listShareDir(linkID, effectivePasswd);
-            if (!result) throw new Error('获取分享信息失败');
-
-            const rootFiles = result.fileList ?? [];
-            let subFolders = result.folderList ?? [];
-            let rootName = result.linkName || linkID;
-            // 追踪「有效根层」的直属文件，用于判断是否需要「根目录文件」选项
-            let effectiveRootFiles = rootFiles;
-
-            // 若 root 下只有唯一一个文件夹且无文件，说明分享的实际内容在该文件夹内；
-            // 将该文件夹作为根节点，并下探一层展示其子目录。
-            if (subFolders.length === 1 && rootFiles.length === 0) {
-                const singleFolder = subFolders[0];
-                const singleFolderID = singleFolder.catalogID ?? singleFolder.caID;
-                rootName = singleFolder.catalogName ?? singleFolder.caName;
-                const childResult = await cloud139.listShareDir(linkID, effectivePasswd, singleFolderID);
-                subFolders = childResult?.folderList ?? [];
-                // 下探后，有效根层的直属文件来自子文件夹内
-                effectiveRootFiles = childResult?.fileList ?? [];
-            }
-
-            // 根目录 level=0，子目录 level=1，便于前端渲染缩进层级树
-            // 子目录 name 拼接父目录前缀，与 189 保持一致（"资源名/子目录1"）
-            // hasRootFiles：前端据此决定是否展示「根目录文件」checkbox
-            const folders = [{ id: -1, name: rootName, level: 0, hasRootFiles: effectiveRootFiles.length > 0 }];
-            for (const folder of subFolders) {
-                folders.push({
-                    id: folder.catalogID ?? folder.caID,
-                    name: path.join(rootName, folder.catalogName ?? folder.caName),
-                    level: 1,
-                });
-            }
-            return folders;
+            return this.taskParserService.buildCloud139ShareFolders(cloud139, shareLink, accessCode);
         }
 
         const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(shareLink)
-        const shareInfo = await this.getShareInfo(cloud189, shareCode)
-        if (shareInfo.shareMode == 1) {
-            if (!accessCode) {
-                throw new Error('分享链接为私密链接, 请输入提取码')
-            }
-            // 校验访问码是否有效
-            const accessCodeResponse = await cloud189.checkAccessCode(shareCode, accessCode);
-            if (!accessCodeResponse) {
-                throw new Error('校验访问码失败');
-            }
-            if (!accessCodeResponse.shareId) {
-                throw new Error('访问码无效');
-            }
-            shareInfo.shareId = accessCodeResponse.shareId;
-        }
-        const folders = []
-        // 根目录为分享链接的名称
-        folders.push({id: -1 ,name: shareInfo.fileName})
-        if (!shareInfo.isFolder) {
-            return folders;
-        }
-        // 遍历分享链接的目录
-        const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, accessCode);
-        if (!result?.fileListAO) return folders;
-        const { folderList: subFolders = [] } = result.fileListAO;
-        subFolders.forEach(folder => {
-            folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
-        });
-        return folders;
+        return this.taskParserService.buildCloud189ShareFolders(
+            cloud189,
+            shareLink,
+            accessCode,
+            this.getShareInfo.bind(this)
+        );
     }
 
     // 校验目录是否在目录列表中

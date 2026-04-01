@@ -32,6 +32,7 @@ function run() {
     const apiJs = read('src/routes/api.js');
     const authJs = read('src/routes/auth.js');
     const indexJs = read('src/index.js');
+    const settingsJs = read('src/public/js/settings.js');
     const dockerfile = read('Dockerfile');
     const packageJson = JSON.parse(read('package.json'));
 
@@ -45,7 +46,13 @@ function run() {
     assert(authJs.includes("req.path === '/api/health'"), '健康检查未加入免登录白名单');
     assert(authJs.includes('index: false'), '静态资源服务未禁用 index，存在直接访问 HTML 风险');
     assert(indexJs.includes('registerRoutes(app,'), '入口未接入 routes 模块注册');
+    assert(indexJs.includes("require('express-async-errors')"), '入口未接入 express-async-errors');
+    assert(indexJs.includes("process.on('SIGTERM'"), '入口未配置 SIGTERM 优雅停机');
+    assert(indexJs.includes("process.on('SIGINT'"), '入口未配置 SIGINT 优雅停机');
+    assert(indexJs.includes('getOrCreateSessionSecret'), '入口未使用动态 session secret');
     assert(!(new RegExp("app\\.(get|post|put|patch|delete)\\('/api/")).test(indexJs), 'index.js 仍存在内联 /api 路由定义，未完成单轨化');
+    assert(settingsJs.includes('cloud139Concurrency'), '设置页缺少 cloud139 并发配置');
+    assert(settingsJs.includes('cloud189Concurrency'), '设置页缺少 cloud189 并发配置');
 
     assert(dockerfile.includes('HEALTHCHECK'), 'Dockerfile 缺少 HEALTHCHECK');
     assert(dockerfile.includes('USER node'), 'Dockerfile 缺少 USER node');

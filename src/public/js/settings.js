@@ -13,6 +13,8 @@ async function loadSettings() {
             document.getElementById('cleanRecycleCron').value = settings.task?.cleanRecycleCron || '0 */8 * * * ';
             document.getElementById('taskMaxRetries').value = settings.task?.maxRetries || 3;
             document.getElementById('taskRetryInterval').value = settings.task?.retryInterval || 300;
+            document.getElementById('cloud139Concurrency').value = settings.task?.cloud139Concurrency || 3;
+            document.getElementById('cloud189Concurrency').value = settings.task?.cloud189Concurrency || 5;
             document.getElementById('enableAutoClearRecycle').checked = settings.task?.enableAutoClearRecycle || false;
             document.getElementById('enableAutoClearFamilyRecycle').checked = settings.task?.enableAutoClearFamilyRecycle || false;
             document.getElementById('mediaSuffix').value = settings.task?.mediaSuffix || '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov';
@@ -87,6 +89,8 @@ async function saveSettings() {
             cleanRecycleCron: document.getElementById('cleanRecycleCron').value || '0 */8 * * *',
             maxRetries: parseInt(document.getElementById('taskMaxRetries').value) || 3,
             retryInterval: parseInt(document.getElementById('taskRetryInterval').value) || 300,
+            cloud139Concurrency: parseInt(document.getElementById('cloud139Concurrency').value) || 3,
+            cloud189Concurrency: parseInt(document.getElementById('cloud189Concurrency').value) || 5,
             enableAutoClearRecycle: document.getElementById('enableAutoClearRecycle').checked,
             enableAutoClearFamilyRecycle: document.getElementById('enableAutoClearFamilyRecycle').checked,
             mediaSuffix: document.getElementById('mediaSuffix').value,
@@ -148,10 +152,14 @@ async function saveSettings() {
         },
         customPush: customPushConfigs
     };
-    // taskRetryInterval不能少于60秒
-    if (settings.task.taskRetryInterval < 60) {
+    // retryInterval不能少于60秒
+    if (settings.task.retryInterval < 60) {
         message.warning("任务重试间隔不能小于60秒")
         return 
+    }
+    if (settings.task.cloud139Concurrency < 1 || settings.task.cloud189Concurrency < 1) {
+        message.warning('并发上限必须大于等于1');
+        return;
     }
 
     try {

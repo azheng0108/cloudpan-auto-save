@@ -2,7 +2,10 @@ const { CloudClient, FileTokenStore } = require('cloud189-sdk');
 const { logTaskEvent } = require('../utils/logUtils');
 const crypto = require('crypto');
 const got = require('got');
+const pLimit = require('p-limit');
 const ProxyUtil = require('../utils/ProxyUtil');
+const ConfigService = require('./ConfigService');
+const logger = require('../utils/logger');
 class Cloud189Service {
     static instances = new Map();
 
@@ -26,6 +29,8 @@ class Cloud189Service {
         }
         _options.proxy = ProxyUtil.getProxy('cloud189')
         this.client = new CloudClient(_options);
+        const concurrency = Number(ConfigService.getConfigValue('task.cloud189Concurrency', 5)) || 5;
+        this.limit = pLimit(Math.max(1, concurrency));
     }
 
     // 重新给所有实例设置代理
@@ -36,8 +41,16 @@ class Cloud189Service {
         });
     }
 
+    static clearAllInstances() {
+        this.instances.clear();
+    }
+
     // 封装统一请求
     async request(action, body) {
+        return this.limit(() => this.requestImpl(action, body));
+    }
+
+    async requestImpl(action, body) {
         body.headers = {'Accept': 'application/json;charset=UTF-8'}
         try {
             const noCache = Math.random().toString()
@@ -69,7 +82,7 @@ class Cloud189Service {
             }else{
                 logTaskEvent('其他异常:' + error.message)
             }
-            console.log(error)
+            logger.error('Cloud189 请求失败', { action, error: error.message, stack: error.stack });
             return null
         }
     }
@@ -89,7 +102,7 @@ class Cloud189Service {
                 // 捕获其他类型的错误
                 logTaskEvent('获取用户空间信息失败:' +  error.message);
             }
-            console.log(error)
+            logger.error('Cloud189 获取空间信息失败', { error: error.message, stack: error.stack });
             return null
         }
     
@@ -321,7 +334,7 @@ class Cloud189Service {
                     data: error.data.image // 包含验证码图片和相关token信息
                 }
             }
-            console.log(error)
+            logger.error('Cloud189 登录失败', { error: error.message, stack: error.stack });
             // 处理其他错误
             return {
                 success: false,
