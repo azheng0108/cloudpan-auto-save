@@ -7,6 +7,7 @@ const { Task, Account } = require('../entities');
 const { Cloud189Service } = require('../legacy189/services/cloud189');
 const path = require('path');
 const { StrmService } = require('./strm');
+const logger = require('../utils/logger');
 
 const { Not, IsNull, Like } = require('typeorm'); 
 
@@ -309,7 +310,7 @@ class EmbyService {
 
         } catch (error) {
             logTaskEvent(`处理 Emby Webhook 时发生错误: ${error.message}`);
-            console.error('处理 Emby Webhook 异常:', error);
+            logger.error('处理 Emby Webhook 异常', { error: error.message, stack: error.stack });
         }
     }
 

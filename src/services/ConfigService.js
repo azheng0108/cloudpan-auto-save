@@ -8,10 +8,11 @@ class ConfigService {
     this._configPath = path.join(__dirname, '../../data');
     this._configFile = this._configPath + '/config.json';
     this._config = {
-      task: {
-        taskExpireDays: 3,
-        taskCheckCron: '0 19-23 * * *',
-        cleanRecycleCron: '0 */8 * * *',
+        task: {
+          taskExpireDays: 3,
+          taskCheckCron: '0 19-23 * * *',
+          retryTaskCron: '*/1 * * * *',
+          cleanRecycleCron: '0 */8 * * *',
         cloud139Concurrency: 3,
         cloud189Concurrency: 5,
         maxRetries: 3,        // 最大重试次数

@@ -35,9 +35,9 @@ const AppDataSource = new DataSource({
 const initDatabase = async () => {
     try {
         await AppDataSource.initialize();
-        console.log('数据库连接成功');
+        logger.info('数据库连接成功');
     } catch (error) {
-        console.error('数据库连接失败:', error);
+        logger.error('数据库连接失败', { error: error.message, stack: error.stack });
         process.exit(1);
     }
 };

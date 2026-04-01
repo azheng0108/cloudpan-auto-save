@@ -1,6 +1,7 @@
 const got = require('got');
 const ConfigService = require('./ConfigService');
 const ProxyUtil = require('../utils/ProxyUtil');
+const logger = require('../utils/logger');
 class TMDBService {
     constructor() {
         this.apiKey = ConfigService.getConfigValue('tmdb.tmdbApiKey');
@@ -22,22 +23,20 @@ class TMDBService {
             }).json();
             return response;
         } catch (error) {
-            console.error(`TMDB请求失败 [${endpoint}]:`, {
-                message: error.message
-            });
+            logger.error(`TMDB请求失败 [${endpoint}]`, { error: error.message, stack: error.stack });
             throw error;
         }
     }
     
     async search(title, year = '') {
         try {
-            console.log(`TMDB搜索：${title}，年份：${year}`);
+            logger.info(`TMDB搜索：${title}，年份：${year}`);
             const response = await this._request('/search/multi', {
                 query: title,
                 year: year
             });
 
-            console.log(`TMDB搜索结果数量：${response.results.length}`);
+            logger.info(`TMDB搜索结果数量：${response.results.length}`);
             
             // 分离电影和电视剧结果
             const movies = response.results
@@ -94,7 +93,7 @@ class TMDBService {
     }
 
     async _searchMedia(type, title, year, currentEpisodes = 0) {
-        console.log(`TMDB搜索${type}：${title}，年份：${year}，已有集数：${currentEpisodes}`);
+        logger.info(`TMDB搜索${type}：${title}，年份：${year}，已有集数：${currentEpisodes}`);
         // 发起搜索请求
         const response = await this._request(`/search/${type}`, {
             query: title,
@@ -102,7 +101,7 @@ class TMDBService {
         });
         
         const count = response.results.length;
-        console.log(`TMDB搜索${type}结果数量：${count}`);
+        logger.info(`TMDB搜索${type}结果数量：${count}`);
         if (!count) {
             return  null;
         }
@@ -154,15 +153,15 @@ class TMDBService {
                 if (currentEpisodes > current.lastEpisodeToAir.episode_number) {
                     score -= 3;
                 }
-                console.log(`匹配分析 - ${current.title}: 分数=${score}, 最近一次集数=${current.lastEpisodeToAir.episode_number}, 已有集数=${currentEpisodes}, 状态=${current.status}`);
+                logger.info(`匹配分析 - ${current.title}: 分数=${score}, 最近一次集数=${current.lastEpisodeToAir.episode_number}, 已有集数=${currentEpisodes}, 状态=${current.status}`);
             }
 
             return (!best || score > best.score) ? {...current, score} : best;
         }, null);
 
-        console.log(`最佳匹配结果: ${bestMatch?.title}, 分数: ${bestMatch?.score}`);
+        logger.info(`最佳匹配结果: ${bestMatch?.title}, 分数: ${bestMatch?.score}`);
         
-        console.log("根据TMDBID获取详情")
+        logger.info('根据TMDBID获取详情')
         if (type == 'tv') {
             return this.getTVDetails(bestMatch.id)
         }
@@ -200,7 +199,7 @@ class TMDBService {
             };
             
         } catch (error) {
-            console.error(`获取电视剧详情失败: ${error.message}`);
+            logger.error('获取电视剧详情失败', { error: error.message, stack: error.stack });
             return null;
         }
     }
@@ -230,14 +229,14 @@ class TMDBService {
                 type: 'movie'
             };
         } catch (error) {
-            console.error(`获取电影详情失败: ${error.message}`);
+            logger.error('获取电影详情失败', { error: error.message, stack: error.stack });
             return null;
         }
     }
 
     async getEpisodeDetails(showId, season, episode) {
         try {
-            console.log('获取剧集信息:', showId, season, episode);
+            logger.info('获取剧集信息', { showId, season, episode });
             const response = await this._request(
                 `/tv/${showId}/season/${season}/episode/${episode}`,
                 { append_to_response: 'credits' }
@@ -248,7 +247,7 @@ class TMDBService {
                 cast: response.credits?.cast || []
             };
         } catch (error) {
-            console.error(`获取剧集详情失败: ${error.message}`);
+            logger.error('获取剧集详情失败', { error: error.message, stack: error.stack });
             return null;
         }
     }

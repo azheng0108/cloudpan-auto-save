@@ -6,6 +6,7 @@ const got = require('got');
 const { logTaskEvent } = require('../utils/logUtils');
 const crypto = require('crypto');
 const ConfigService = require('./ConfigService');
+const logger = require('../utils/logger');
 
 class ScrapeService {
     constructor() {
@@ -65,7 +66,7 @@ class ScrapeService {
                 seasonEpisodes
             };
         } catch (error) {
-            console.error('目录刮削失败:', error);
+            logger.error('目录刮削失败', { error: error.message, stack: error.stack });
         }
     }
 
@@ -110,7 +111,7 @@ class ScrapeService {
                 return ext === '.strm' || mediaSuffixs.includes(ext);
             });
         } catch (error) {
-            console.error('读取目录失败:', error);
+            logger.error('读取目录失败', { error: error.message, stack: error.stack });
             return [];
         }
     }
@@ -142,7 +143,7 @@ class ScrapeService {
             // logTaskEvent('所有文件都存在，跳过根目录刮削');
             return true;
         } catch (error) {
-            console.error('检查刮削数据失败:', error);
+            logger.error('检查刮削数据失败', { error: error.message, stack: error.stack });
             return false;
         }
     }
@@ -348,7 +349,7 @@ class ScrapeService {
             const response = await got(imageUrl, { responseType: 'buffer' });
             return response.body; // 返回图片的二进制数据
         } catch (error) {
-            console.error(`下载图片失败 ${imageUrl}:`, error);
+            logger.error(`下载图片失败 ${imageUrl}`, { error: error.message, stack: error.stack });
         }
     }
 }

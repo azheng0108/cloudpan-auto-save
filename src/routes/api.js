@@ -527,32 +527,42 @@ const registerApiRoutes = (app, deps) => {
     });
 
     app.post('/api/settings', async (req, res) => {
-        const settings = req.body;
-        const oldPassword = ConfigService.getConfigValue('system.password');
-        const newPassword = settings?.system?.password;
-        const passwordChanged = typeof newPassword === 'string' && newPassword.length > 0 && newPassword !== oldPassword;
+        try {
+            const settings = req.body;
+            const oldPassword = ConfigService.getConfigValue('system.password');
+            const newPassword = settings?.system?.password;
+            const passwordChanged = typeof newPassword === 'string' && newPassword.length > 0 && newPassword !== oldPassword;
 
-        SchedulerService.handleScheduleTasks(settings, taskService);
-        ConfigService.setConfig(settings);
-        Cloud139Service.clearAllInstances();
-        Cloud189Service.clearAllInstances();
-        await botManager.handleBotStatus(
-            settings.telegram?.bot?.botToken,
-            settings.telegram?.bot?.chatId,
-            settings.telegram?.bot?.enable
-        );
-        messageUtil.updateConfig();
+            const normalizedTaskSchedules = SchedulerService.validateTaskScheduleSettings(settings?.task || {});
+            settings.task = {
+                ...(settings.task || {}),
+                ...normalizedTaskSchedules,
+            };
 
-        if (passwordChanged) {
-            await clearAllSessionFiles();
-            if (req.session) {
-                req.session.authenticated = false;
-                req.session.destroy(() => {});
+            SchedulerService.handleScheduleTasks(settings, taskService);
+            ConfigService.setConfig(settings);
+            Cloud139Service.clearAllInstances();
+            Cloud189Service.clearAllInstances();
+            await botManager.handleBotStatus(
+                settings.telegram?.bot?.botToken,
+                settings.telegram?.bot?.chatId,
+                settings.telegram?.bot?.enable
+            );
+            messageUtil.updateConfig();
+
+            if (passwordChanged) {
+                await clearAllSessionFiles();
+                if (req.session) {
+                    req.session.authenticated = false;
+                    req.session.destroy(() => {});
+                }
+                logTaskEvent('[system] 检测到系统密码变更，已清理会话并要求重新登录');
             }
-            logTaskEvent('[system] 检测到系统密码变更，已清理会话并要求重新登录');
-        }
 
-        res.json({ success: true, data: null });
+            res.json({ success: true, data: null });
+        } catch (error) {
+            res.status(400).json({ success: false, error: error.message });
+        }
     });
 
     app.post('/api/settings/media', async (req, res) => {
