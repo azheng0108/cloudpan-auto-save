@@ -7,7 +7,7 @@
     "start": "node dist/index.js",
     "start:prod": "npm run migration:run:prod && node dist/index.js",
     "build": "tsc && xcopy /E /I /Y src\\public dist\\public",
-    "test": "npm run build && node -e \"console.log('仓库测试目录已按策略改为本地保留，不在GitHub执行公开测试。')\"",
+    "test": "npm run build && node -e \"require('./dist/routes/api.js');require('./dist/services/scheduler.js');require('./dist/services/task.js');console.log('Smoke test passed: core modules can be required.');console.log('仓库测试目录已按策略改为本地保留，不在GitHub执行公开测试。')\"",
     "dev": "ts-node src/index.js",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/index.js",
     "migration:create": "typeorm-ts-node-commonjs migration:create",
