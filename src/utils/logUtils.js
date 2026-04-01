@@ -60,7 +60,17 @@ const sendHistoryLogs = async (res) => {
         
         // 向所有连接的客户端发送日志
         clients.forEach(client => {
-            client.write(`data: ${JSON.stringify({type: 'log', message: logMessage})}\n\n`);
+            // 检查连接是否仍然有效
+            if (client.writable && !client.destroyed) {
+                try {
+                    client.write(`data: ${JSON.stringify({type: 'log', message: logMessage})}\n\n`);
+                } catch (err) {
+                    console.error('写入SSE客户端失败:', err.message);
+                    clients.delete(client);
+                }
+            } else {
+                clients.delete(client);
+            }
         });
     } catch (error) {
         console.error('写入日志失败:', error);
@@ -70,13 +80,39 @@ const sendHistoryLogs = async (res) => {
 // 添加发送AI消息的函数
 const sendAIMessage = (message) => {
     clients.forEach(client => {
-        client.write(`data: ${JSON.stringify({type: 'aimessage', message})}\n\n`);
+        if (client.writable && !client.destroyed) {
+            try {
+                client.write(`data: ${JSON.stringify({type: 'aimessage', message})}\n\n`);
+            } catch (err) {
+                console.error('发送AI消息失败:', err.message);
+                clients.delete(client);
+            }
+        } else {
+            clients.delete(client);
+        }
     });
 };
 
+// 关闭所有SSE客户端连接
+const closeAllSSEClients = () => {
+    console.log(`关闭 ${clients.size} 个SSE客户端连接...`);
+    clients.forEach(client => {
+        try {
+            if (client.writable && !client.destroyed) {
+                client.write(`data: ${JSON.stringify({type: 'system', message: '服务器正在关闭'})}\n\n`);
+                client.end();
+            }
+        } catch (err) {
+            console.error('关闭SSE客户端失败:', err.message);
+        }
+    });
+    clients.clear();
+    console.log('所有SSE客户端已关闭');
+};
 
 module.exports = {
     logTaskEvent,
     initSSE,
-    sendAIMessage
+    sendAIMessage,
+    closeAllSSEClients
 }

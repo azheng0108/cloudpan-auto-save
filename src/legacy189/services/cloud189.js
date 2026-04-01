@@ -5,13 +5,56 @@ const got = require('got');
 const ProxyUtil = require('../utils/ProxyUtil');
 class Cloud189Service {
     static instances = new Map();
+    static MAX_INSTANCES = 50; // 最大实例数
+    static instanceAccess = new Map(); // 记录实例访问时间
 
     static getInstance(account) {
         const key = account.username;
+        
+        // 更新访问时间
+        this.instanceAccess.set(key, Date.now());
+        
         if (!this.instances.has(key)) {
+            // 检查实例数量，如果超过最大值，删除最旧的实例
+            if (this.instances.size >= this.MAX_INSTANCES) {
+                this._evictLRU();
+            }
             this.instances.set(key, new Cloud189Service(account));
         }
         return this.instances.get(key);
+    }
+
+    // LRU淘汰：删除最久未使用的实例
+    static _evictLRU() {
+        let oldestKey = null;
+        let oldestTime = Infinity;
+        
+        for (const [key, time] of this.instanceAccess.entries()) {
+            if (time < oldestTime) {
+                oldestTime = time;
+                oldestKey = key;
+            }
+        }
+        
+        if (oldestKey) {
+            console.log(`[Cloud189Service] LRU淘汰实例: ${oldestKey}`);
+            this.instances.delete(oldestKey);
+            this.instanceAccess.delete(oldestKey);
+        }
+    }
+
+    // 清除指定账号的实例
+    static clearInstance(username) {
+        this.instances.delete(username);
+        this.instanceAccess.delete(username);
+    }
+
+    // 清除所有实例
+    static clearAllInstances() {
+        const count = this.instances.size;
+        this.instances.clear();
+        this.instanceAccess.clear();
+        console.log(`[Cloud189Service] 清除了 ${count} 个实例`);
     }
 
     constructor(account) {

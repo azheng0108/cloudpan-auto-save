@@ -4,8 +4,32 @@ const { logTaskEvent } = require('../utils/logUtils');
 const { MessageUtil } = require('./message');
 
 class SchedulerService {
+    static instance = null;
     static taskJobs = new Map();
     static messageUtil = new MessageUtil();
+
+    // 单例模式获取实例
+    static getInstance() {
+        if (!this.instance) {
+            this.instance = new SchedulerService();
+        }
+        return this.instance;
+    }
+
+    // 停止所有定时任务
+    static stopAll() {
+        console.log(`[SchedulerService] 停止 ${this.taskJobs.size} 个定时任务...`);
+        for (const [name, job] of this.taskJobs.entries()) {
+            try {
+                job.stop();
+                logTaskEvent(`定时任务 [${name}] 已停止`);
+            } catch (err) {
+                console.error(`停止定时任务 [${name}] 失败:`, err.message);
+            }
+        }
+        this.taskJobs.clear();
+        console.log('[SchedulerService] 所有定时任务已停止');
+    }
 
     static async initTaskJobs(taskRepo, taskService) {
         // 初始化所有启用定时任务的任务
@@ -40,6 +64,24 @@ class SchedulerService {
             this.saveDefaultTaskJob('自动清空回收站',  ConfigService.getConfigValue('task.cleanRecycleCron'), async () => {
                 await taskService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle);
             })   
+        }
+
+        // 4. SQLite VACUUM 优化 默认每周日凌晨3点执行一次
+        const vacuumCron = ConfigService.getConfigValue('database.vacuumCron') || '0 3 * * 0';
+        const enableVacuum = ConfigService.getConfigValue('database.enableVacuum') !== false; // 默认启用
+        if (enableVacuum) {
+            this.saveDefaultTaskJob('数据库VACUUM优化', vacuumCron, async () => {
+                const { AppDataSource } = require('../database');
+                try {
+                    logTaskEvent('[SQLite维护] 开始执行 VACUUM...');
+                    const startTime = Date.now();
+                    await AppDataSource.query('VACUUM');
+                    const duration = Date.now() - startTime;
+                    logTaskEvent(`[SQLite维护] VACUUM 完成，耗时 ${duration}ms，已回收删除数据占用的空间`);
+                } catch (error) {
+                    logTaskEvent(`[SQLite维护] VACUUM 失败: ${error.message}`);
+                }
+            });
         }
     }
 

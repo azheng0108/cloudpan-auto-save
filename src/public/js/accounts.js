@@ -85,8 +85,8 @@ function closeAddAccountModal() {
     submitBtn.textContent = '添加';
     document.getElementById('username').removeAttribute('readonly')
     // 重置账号类型
-    document.getElementById('accountType').value = 'cloud189';
-    onAccountTypeChange('cloud189');
+    document.getElementById('accountType').value = 'cloud139';
+    onAccountTypeChange('cloud139');
     // 清空表单
     document.getElementById('accountForm').reset();
     // 移除可能存在的验证码容器
@@ -114,7 +114,7 @@ async function editAccount(id) {
     modalTitle.textContent = '修改账号';
 
     // 填充表单数据
-    const accountType = chooseAccount.accountType || 'cloud189';
+    const accountType = chooseAccount.accountType || 'cloud139';
     document.getElementById('accountType').value = accountType;
     onAccountTypeChange(accountType);
     document.getElementById('username').value = chooseAccount.username;
@@ -135,7 +135,7 @@ function onAccountTypeChange(type) {
         if (loginHint) loginHint.textContent = '移动云盘（139）只支持 Cookie 登录，请填写 Cookie';
     } else {
         passwordGroup.style.display = '';
-        if (loginHint) loginHint.textContent = '密码和Cookie至少填写一个, 如果都填写, 则只有账号密码生效';
+        if (loginHint) loginHint.textContent = 'R2阶段已停用天翼云盘（189）主流程，仅支持移动云盘（139）账号';
     }
 }
 
@@ -158,8 +158,8 @@ async function createAccount() {
             message.warning('移动云盘（139）只支持 Cookie 登录，Cookie 不能为空');
             return;
         }
-    } else if (!password && !cookies) {
-        message.warning('密码和Cookie不能同时为空');
+    } else {
+        message.warning('R2阶段已停用天翼云盘（189）主流程，仅支持移动云盘（139）账号');
         return;
     }
     if (chooseAccount?.id) {

@@ -1,20 +1,19 @@
 const { LessThan, In, IsNull } = require('typeorm');
-const { Cloud189Service } = require('./cloud189');
 const { Cloud139Service } = require('./cloud139');
 const { MessageUtil } = require('./message');
 const { logTaskEvent } = require('../utils/logUtils');
 const ConfigService = require('./ConfigService');
 const { CreateTaskDto } = require('../dto/TaskDto');
-const { BatchTaskDto } = require('../dto/BatchTaskDto');
-const { TaskCompleteEventDto } = require('../dto/TaskCompleteEventDto');
 const { SchedulerService } = require('./scheduler');
 
 const path = require('path');
 const { EventService } = require('./eventService');
 const { TaskEventHandler } = require('./taskEventHandler');
 const harmonizedFilter = require('../utils/BloomFilter');
-const cloud189Utils = require('../utils/Cloud189Utils');
 const Cloud139Utils = require('../utils/Cloud139Utils');
+const { parseCloud139ShareFolders } = require('./cloud139ShareParser');
+const { createCloud139Tasks } = require('./cloud139TaskCreator');
+const { clearLegacy189RecycleBin, saveShareBatchLegacy, deleteCloudFileLegacy, deleteCloudByAccountLegacy } = require('../legacy189/services/recycleAdapter');
 
 class TaskService {
     constructor(taskRepo, accountRepo, transferredFileRepo) {
@@ -176,61 +175,10 @@ class TaskService {
                 taskDto.shareLink = parsed.url;
                 if (parsed.passwd && !taskDto.accessCode) taskDto.accessCode = parsed.passwd;
             }
-            return await this._createCloud139Tasks(params, account, taskDto);
+            return await createCloud139Tasks(this, params, account, taskDto);
         }
 
-        // 解析url
-        const {url: parseShareLink, accessCode} = cloud189Utils.parseCloudShare(taskDto.shareLink)
-        if (accessCode) {
-            taskDto.accessCode = accessCode;
-        }
-        taskDto.shareLink = parseShareLink;
-        const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(taskDto.shareLink);
-        const shareInfo = await this.getShareInfo(cloud189, shareCode);
-        // 如果分享链接是加密链接, 且没有提供访问码, 则抛出错误
-        if (shareInfo.shareMode == 1 ) {
-            if (!taskDto.accessCode) {
-                throw new Error('分享链接为加密链接, 请提供访问码');
-            }
-            // 校验访问码是否有效
-            const accessCodeResponse = await cloud189.checkAccessCode(shareCode, taskDto.accessCode);
-            if (!accessCodeResponse) {
-                throw new Error('校验访问码失败');
-            }
-            if (!accessCodeResponse.shareId) {
-                throw new Error('访问码无效');
-            }
-            shareInfo.shareId = accessCodeResponse.shareId;
-        }
-        if (!shareInfo.shareId) {
-            throw new Error('获取分享信息失败');
-        }
-        // 如果任务名称存在 且和shareInfo的name不一致
-        if (taskDto.taskName && taskDto.taskName != shareInfo.fileName) {
-            shareInfo.fileName = taskDto.taskName;
-        }
-        taskDto.isFolder = true
-        await this.increaseShareFileAccessCount(cloud189, shareInfo.shareId)
-        // 检查并创建目标目录
-        const rootFolder = await this._validateAndCreateTargetFolder(cloud189, taskDto, shareInfo);
-        const tasks = [];
-        rootFolder.name = path.join(taskDto.targetFolder, rootFolder.name)
-        if (shareInfo.isFolder) {
-            await this._handleFolderShare(cloud189, shareInfo, taskDto, rootFolder, tasks);
-        }
-
-         // 处理单文件
-         if (!shareInfo.isFolder) {
-            taskDto.isFolder = false
-            await this._handleSingleShare(cloud189, shareInfo, taskDto, rootFolder, tasks);
-        }
-        if (taskDto.enableCron) {
-            for(const task of tasks) {
-                SchedulerService.saveTaskJob(task, this)   
-            }
-        }
-        return tasks;
+        throw new Error('R2阶段已停用天翼云盘（189）任务创建流程，仅支持移动云盘（139）账号');
     }
     async increaseShareFileAccessCount(cloud189, shareId ) {
         await cloud189.increaseShareFileAccessCount(shareId)
@@ -247,8 +195,7 @@ class TaskService {
                 const cloud139 = Cloud139Service.getInstance(account);
                 await this.deleteCloudFile139(cloud139, await this.getRootFolder(task), 1);
             } else {
-                const cloud189 = Cloud189Service.getInstance(account);
-                await this.deleteCloudFile(cloud189, await this.getRootFolder(task), 1);
+                await deleteCloudByAccountLegacy(this, account, await this.getRootFolder(task), 1);
             }
         }
         if (task.enableSystemProxy) {
@@ -408,13 +355,7 @@ class TaskService {
         }
         if (taskInfoList.length > 0) {
             if (!task.enableSystemProxy) {
-                const batchTaskDto = new BatchTaskDto({
-                    taskInfos: JSON.stringify(taskInfoList),
-                    type: 'SHARE_SAVE',
-                    targetFolderId: task.realFolderId,
-                    shareId: task.shareId
-                });
-                await this.createBatchTask(cloud189, batchTaskDto);
+                await saveShareBatchLegacy(this, cloud189, taskInfoList, task.realFolderId, task.shareId);
                 // 转存成功后将源文件 ID 写入统一漏斗表
                 await this._recordTransferredFiles(task.id, taskInfoList);
             }else{
@@ -466,94 +407,16 @@ class TaskService {
             task.account = account;
             // Cloud139 分支
             if (account.accountType === 'cloud139') {
-                const result = await this._processCloud139Task(task, account);
+                const result = await processCloud139Task(this, task, account);
                 saveResults.push(result);
                 return saveResults.filter(Boolean).join('\n');
             }
-            const cloud189 = Cloud189Service.getInstance(account);
-             // 获取分享文件列表并进行增量转存
-             const shareDir = await cloud189.listShareDir(task.shareId, task.shareFolderId, task.shareMode,task.accessCode, task.isFolder);
-             if(shareDir.res_code == "ShareAuditWaiting") {
-                logTaskEvent("分享链接审核中, 等待下次执行")
-                return ''
-             }
-             if (!shareDir?.fileListAO?.fileList) {
-                logTaskEvent("获取文件列表失败: " + JSON.stringify(shareDir));
-                throw new Error('获取文件列表失败');
-            }
-            let shareFiles = [...shareDir.fileListAO.fileList];            
-            const folderFiles = await this.getAllFolderFiles(cloud189, task);
-            const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
-            // mediaSuffixs转为小写
-            const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
-            const { existingFiles, existingFileNames, existingMediaCount } = folderFiles.reduce((acc, file) => {
-                if (!file.isFolder) {
-                    acc.existingFiles.add(file.md5);
-                    acc.existingFileNames.add(file.name);
-                    if ((task.totalEpisodes == null || task.totalEpisodes <= 0) || this._checkFileSuffix(file, true, mediaSuffixs)) {
-                        acc.existingMediaCount++;
-                    }
-                }
-                return acc;
-            }, { 
-                existingFiles: new Set(), 
-                existingFileNames: new Set(), 
-                existingMediaCount: 0 
-            });
-            // 统一漏斗：从数据库加载该任务已成功转存的文件 ID 集合，杜绝重复转存
-            const transferredIds = this.transferredFileRepo
-                ? new Set((await this.transferredFileRepo.find({ where: { taskId: task.id } })).map(r => r.fileId))
-                : new Set();
-            
-            const newFiles = shareFiles
-                .filter(file => 
-                    !file.isFolder && !existingFiles.has(file.md5) 
-                   && !existingFileNames.has(file.name)
-                   && !transferredIds.has(String(file.id))
-                   && this._checkFileSuffix(file, enableOnlySaveMedia, mediaSuffixs)
-                   && this._handleMatchMode(task, file)
-                   && !this.isHarmonized(file)
-                );
-
-            // 处理新文件并保存到数据库和云盘
-            if (newFiles.length > 0) {
-                const { fileNameList, fileCount } = await this._handleNewFiles(task, newFiles, cloud189, mediaSuffixs);
-                const resourceName = task.shareFolderName? `${task.resourceName}/${task.shareFolderName}` : task.resourceName;
-                saveResults.push(`${resourceName}追更${fileCount}集: \n${fileNameList.join('\n')}`);
-                const firstExecution = !task.lastFileUpdateTime;
-                task.status = 'processing';
-                task.lastFileUpdateTime = new Date();
-                task.currentEpisodes = existingMediaCount + fileCount;
-                task.retryCount = 0;
-                process.nextTick(() => {
-                    this.eventService.emit('taskComplete', new TaskCompleteEventDto({
-                        task,
-                        cloud189,
-                        fileList: newFiles,
-                        overwriteStrm: false,
-                        firstExecution: firstExecution
-                    }));
-                })
-            } else if (task.lastFileUpdateTime) {
-                // 检查是否超过3天没有新文件
-                const now = new Date();
-                const lastUpdate = new Date(task.lastFileUpdateTime);
-                const daysDiff = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24);
-                if (daysDiff >= ConfigService.getConfigValue('task.taskExpireDays')) {
-                    task.status = 'completed';
-                }
-                task.currentEpisodes = existingMediaCount;
-                logTaskEvent(`${task.resourceName} 没有增量剧集`)
-            }
-            // 检查是否达到总数
-            if (task.totalEpisodes && task.currentEpisodes >= task.totalEpisodes) {
-                task.status = 'completed';
-                logTaskEvent(`${task.resourceName} 已完结`)
-            }
-
+            task.status = 'failed';
+            task.lastError = 'R2阶段已停用天翼云盘（189）任务执行流程';
             task.lastCheckTime = new Date();
             await this.taskRepo.save(task);
-            return saveResults.join('\n');
+            logTaskEvent(`任务[${task.resourceName || task.id}]已停用189执行分支，标记失败`);
+            return '';
         } catch (error) {
             return await this._handleTaskFailure(task, error);
         }
@@ -948,63 +811,6 @@ class TaskService {
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // 检查任务状态
-    async checkTaskStatus(cloud189, taskId, count = 0, batchTaskDto) {
-        if (count > 5) {
-             return false;
-        }
-        let type = batchTaskDto.type || 'SHARE_SAVE';
-        // 轮询任务状态
-        const task = await cloud189.checkTaskStatus(taskId, batchTaskDto)
-        if (!task) {
-            return false;
-        }
-        logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}`)
-        if (task.taskStatus == 3 || task.taskStatus == 1) {
-            // 暂停200毫秒
-            await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189,taskId, count++, batchTaskDto)
-        }
-        if (task.taskStatus == 4) {
-            // 如果failedCount > 0 说明有失败或者被和谐的文件, 需要查一次文件列表
-            if (task.failedCount > 0 && type == 'SHARE_SAVE') {
-                const targetFolderId = batchTaskDto.targetFolderId;
-                const fileList = await this.getAllFolderFiles(cloud189, {
-                    enableSystemProxy: false,
-                    realFolderId: targetFolderId
-                });
-                //  当前转存的文件列表为taskInfos 需反序列化
-                const taskInfos = JSON.parse(batchTaskDto.taskInfos);
-                // fileList和taskInfos进行对比 拿到不在fileList中的文件
-                const conflictFiles = taskInfos.filter(taskInfo => {
-                    return !fileList.some(file => file.md5 === taskInfo.md5);
-                });
-                if (conflictFiles.length > 0) {
-                    // 打印日志
-                    logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}, 有${conflictFiles.length}个文件冲突, 已忽略: ${conflictFiles.map(file => file.fileName).join(',')}`);
-                    // 加入和谐文件中
-                    harmonizedFilter.addHarmonizedList(conflictFiles.map(file => file.md5))
-                }
-            }
-            return true;
-        }
-        // 如果status == 2 说明有冲突
-        if (task.taskStatus == 2) {
-            const conflictTaskInfo = await cloud189.getConflictTaskInfo(taskId);
-            if (!conflictTaskInfo) {
-                return false
-            }
-            // 忽略冲突
-            const taskInfos = conflictTaskInfo.taskInfos;
-            for (const taskInfo of taskInfos) {
-                taskInfo.dealWay = 1;
-            }
-            await cloud189.manageBatchTask(taskId, conflictTaskInfo.targetFolderId, taskInfos);
-            await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189, taskId, count++, batchTaskDto)
-        }
-        return false;
-    }
 
     // 执行所有任务
     async processAllTasks(ignore = false, taskIds = []) {
@@ -1165,65 +971,9 @@ class TaskService {
         logTaskEvent(`================================`);
         return saveResults;
     }
-    // 创建批量任务
-    async createBatchTask(cloud189, batchTaskDto) {
-        const resp = await cloud189.createBatchTask(batchTaskDto);
-        if (!resp) {
-            throw new Error('批量任务处理失败');
-        }
-        if (resp.res_code != 0) {
-            throw new Error(resp.res_msg);
-        }
-        logTaskEvent(`批量任务处理中: ${JSON.stringify(resp)}`)
-        if (!await this.checkTaskStatus(cloud189,resp.taskId, 0 , batchTaskDto)) {
-            throw new Error('检查批量任务状态: 批量任务处理失败');
-        }
-        logTaskEvent(`批量任务处理完成`)
-    }
     // 定时清空回收站
     async clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
-        const accounts = await this.accountRepo.find()
-        if (accounts) {
-            for (const account of accounts) {
-                // 移动云盘（cloud139）没有回收站功能，跳过
-                if (account.accountType === 'cloud139') continue;
-                let username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
-                try {
-                    const cloud189 = Cloud189Service.getInstance(account); 
-                    await this._clearRecycleBin(cloud189, username, enableAutoClearRecycle, enableAutoClearFamilyRecycle)
-                } catch (error) {
-                    logTaskEvent(`定时[${username}]清空回收站任务执行失败:${error.message}`);
-                }
-            }
-        }
-    }
-
-    // 执行清空回收站
-    async _clearRecycleBin(cloud189, username, enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
-        const params = {
-            taskInfos: '[]',
-            type: 'EMPTY_RECYCLE',
-        }   
-        const batchTaskDto = new BatchTaskDto(params);
-        if (enableAutoClearRecycle) {
-            logTaskEvent(`开始清空[${username}]个人回收站`)
-            await this.createBatchTask(cloud189, batchTaskDto)
-            logTaskEvent(`清空[${username}]个人回收站完成`)
-            // 延迟10秒
-            await new Promise(resolve => setTimeout(resolve, 10000));
-        }
-        if (enableAutoClearFamilyRecycle) {
-            // 获取家庭id
-            const familyInfo = await cloud189.getFamilyInfo()
-            if (familyInfo == null) {
-                logTaskEvent(`用户${username}没有家庭主账号, 跳过`)
-                return
-            }
-            logTaskEvent(`开始清空[${username}]家庭回收站`)
-            batchTaskDto.familyId = familyInfo.familyId
-            await this.createBatchTask(cloud189, batchTaskDto)
-            logTaskEvent(`清空[${username}]家庭回收站完成`)
-        }
+        return await clearLegacy189RecycleBin(this, enableAutoClearRecycle, enableAutoClearFamilyRecycle);
     }
     // 校验文件后缀
     _checkFileSuffix(file,enableOnlySaveMedia, mediaSuffixs) {
@@ -1253,35 +1003,6 @@ class TaskService {
         logTaskEvent(`任务[${task.resourceName}]为老版本系统创建, 无法删除网盘内容, 跳过`)
         return null
     }
-    // 删除网盘文件
-    async deleteCloudFile(cloud189, file, isFolder) {
-        if (!file) return;
-        const taskInfos = []
-        // 如果file是数组, 则遍历删除
-        if (Array.isArray(file)) {
-            for (const f of file) {
-                taskInfos.push({
-                    fileId: f.id,
-                    fileName: f.name,
-                    isFolder: isFolder
-                })
-            }
-        }else{
-            taskInfos.push({
-                fileId: file.id,
-                fileName: file.name,
-                isFolder: isFolder
-            })
-        }
-        console.log(taskInfos)
-        
-        const batchTaskDto = new BatchTaskDto({
-            taskInfos: JSON.stringify(taskInfos),
-            type: 'DELETE',
-            targetFolderId: ''
-        });
-        await this.createBatchTask(cloud189, batchTaskDto)
-    }
 
     // 根据accountId获取账号
     async _getAccountById(accountId) {
@@ -1293,373 +1014,11 @@ class TaskService {
     }
 
     /**
-     * 处理移动云盘（cloud139）任务转存
-     * 调用 share-kd-njs 接口，无需 mcloud-sign
-     */
-    async _processCloud139Task(task, account) {
-        const cloud139 = Cloud139Service.getInstance(account);
-        try {
-        const linkID = task.shareId;
-        const passwd = task.accessCode || '';
-
-        // ── 根目录文件模式（root-files）────────────────────────────────────────────
-        // 用户在「选择子目录」中勾选了「根目录文件」选项时，此任务只同步根层直属文件，
-        // 不递归进入任何子目录，与 cloud189 的 (根) 任务行为对齐。
-        if (task.shareFolderId === 'root-files') {
-            // 确定有效根目录（与 _createCloud139Tasks 单文件夹穿透逻辑一致）
-            const rootDirInfo = await cloud139.listShareDir(linkID, passwd, 'root');
-            const rootFolderList = rootDirInfo?.folderList ?? [];
-            const rootFileListRaw = rootDirInfo?.fileList ?? [];
-            let effectiveRootDir = 'root';
-            let directFilesRaw = rootFileListRaw;
-            if (rootFolderList.length === 1 && rootFileListRaw.length === 0) {
-                // 分享根下只有唯一文件夹，实际内容在其内，下探一层
-                effectiveRootDir = String(rootFolderList[0].catalogID ?? rootFolderList[0].caID);
-                const childDirInfo = await cloud139.listShareDir(linkID, passwd, effectiveRootDir);
-                directFilesRaw = childDirInfo?.fileList ?? [];
-            }
-            // 添加 pCaID 字段供后续统一引用
-            const directFiles = directFilesRaw.map(f => ({ ...f, pCaID: effectiveRootDir }));
-
-            const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(s => s.toLowerCase());
-            const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
-
-            // 媒体类型过滤 + 自定义匹配规则
-            const allFiles = directFiles.filter(f => {
-                const fileId = f.path || String(f.coID ?? '');
-                if (!fileId) return false;
-                const name = (f.coName || '').toLowerCase();
-                if (enableOnlySaveMedia && !mediaSuffixs.some(s => name.endsWith(s))) return false;
-                if (!this._handleMatchMode(task, { name: f.coName || '' })) return false;
-                return true;
-            });
-
-            // 目标目录检查，必要时自动重建
-            const realFolderCheck = await cloud139.listDiskDir(task.realFolderId).catch(() => null);
-            if (!realFolderCheck) {
-                logTaskEvent('[139] 根文件目标目录不存在!');
-                if (ConfigService.getConfigValue('task.enableAutoCreateFolder')) {
-                    await this._autoCreateFolder139(cloud139, task);
-                } else {
-                    throw new Error('目标目录不存在，请检查任务配置或开启自动创建目录');
-                }
-            }
-
-            // 磁盘已有文件名（目录级去重）
-            let existingNames = new Set();
-            try {
-                const existingOnDisk = await cloud139.listAllDiskFiles(task.realFolderId);
-                existingNames = new Set(existingOnDisk.map(f => f.name));
-            } catch (e) {
-                logTaskEvent(`[139] 根文件目标目录文件列取失败，降级使用DB记录去重`);
-            }
-
-            // DB 转存记录去重
-            const transferredIds = this.transferredFileRepo
-                ? new Set((await this.transferredFileRepo.find({ where: { taskId: task.id } })).map(r => r.fileId))
-                : new Set();
-
-            // 预记录已在磁盘但未入库的文件
-            const alreadyOnDisk = allFiles.filter(f => existingNames.has(f.coName || ''));
-            if (alreadyOnDisk.length > 0) {
-                const toRecord = alreadyOnDisk.filter(f => !transferredIds.has(f.path || String(f.coID ?? '')));
-                if (toRecord.length > 0) {
-                    await this._recordTransferredFiles(task.id, toRecord.map(f => ({
-                        fileId: f.path || String(f.coID ?? ''),
-                        fileName: f.coName || '',
-                        md5: null,
-                    })));
-                    toRecord.forEach(f => transferredIds.add(f.path || String(f.coID ?? '')));
-                }
-            }
-
-            // 新文件：DB 记录 + 磁盘文件名双重去重
-            const newFiles = allFiles.filter(f => {
-                const fileId = f.path || String(f.coID ?? '');
-                if (transferredIds.has(fileId)) return false;
-                if (existingNames.size > 0) return !existingNames.has(f.coName || '');
-                return true;
-            });
-
-            if (newFiles.length === 0) {
-                logTaskEvent(`${task.resourceName}(根目录文件) 没有新文件`);
-                task.currentEpisodes = transferredIds.size;
-                task.lastCheckTime = new Date();
-                await this.taskRepo.save(task);
-                return '';
-            }
-
-            // 转存至目标目录
-            const coPathLst = newFiles.filter(f => f.path).map(f => f.path);
-            if (coPathLst.length > 0) {
-                const saveRes = await cloud139.saveShareFiles(linkID, coPathLst, [], task.realFolderId, !!passwd);
-                if (!saveRes) throw new Error('转存失败');
-            }
-
-            // 记录已转存
-            await this._recordTransferredFiles(task.id, newFiles.map(f => ({
-                fileId: f.path || String(f.coID ?? ''),
-                fileName: f.coName || '',
-                md5: null,
-            })));
-
-            const fileCount = newFiles.length;
-            task.currentEpisodes = (task.currentEpisodes || 0) + fileCount;
-            task.lastFileUpdateTime = new Date();
-            task.lastCheckTime = new Date();
-            await this.taskRepo.save(task);
-
-            const fileNameList = newFiles.map(f => f.coName || f.path);
-            return `${task.resourceName}(根目录文件) 新增${fileCount}个:\n${fileNameList.join('\n')}`;
-        }
-        // ── 根目录文件模式结束 ──────────────────────────────────────────────────────
-
-        let rootPCaID = (!task.shareFolderId || task.shareFolderId === 'root' ||
-            task.shareFolderId === -1 || task.shareFolderId === '-1')
-            ? 'root'
-            : task.shareFolderId;
-
-        // 与 _createCloud139Tasks 保持一致：若分享根目录只有单个文件夹且无直接文件，
-        // 则实际内容在该文件夹内，跳过这一层，否则路径片段会多出一级目录名。
-        if (rootPCaID === 'root') {
-            const rootDirInfo = await cloud139.listShareDir(linkID, passwd, 'root');
-            const rootFolders = rootDirInfo?.folderList ?? [];
-            const rootFiles = rootDirInfo?.fileList ?? [];
-            if (rootFolders.length === 1 && rootFiles.length === 0) {
-                rootPCaID = String(rootFolders[0].catalogID ?? rootFolders[0].caID);
-            }
-        }
-
-        // 递归获取分享文件列表，同时收集目录层级映射（保留子目录结构）
-        const { files: coLst, catalogMap } = await cloud139.listAllShareFilesWithFolderMap(linkID, passwd, rootPCaID);
-        if (!coLst) throw new Error('获取分享信息失败');
-        const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(s => s.toLowerCase());
-        const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
-
-        // 筛选符合媒体后缀 + 任务自定义匹配规则的全部分享文件
-        const allFiles = coLst.filter(f => {
-            const fileId = f.path || String(f.coID ?? '');
-            if (!fileId) return false;
-            const name = (f.coName || '').toLowerCase();
-            if (enableOnlySaveMedia && !mediaSuffixs.some(s => name.endsWith(s))) return false;
-            // 应用自定义匹配规则（与 189 保持一致）
-            if (!this._handleMatchMode(task, { name: f.coName || '' })) return false;
-            return true;
-        });
-
-        // 目标目录不存在时，按配置自动重建
-        const realFolderCheck = await cloud139.listDiskDir(task.realFolderId).catch(() => null);
-        if (!realFolderCheck) {
-            logTaskEvent('[139] 目标目录不存在!');
-            const enableAutoCreateFolder = ConfigService.getConfigValue('task.enableAutoCreateFolder');
-            if (enableAutoCreateFolder) {
-                logTaskEvent('[139] 正在重新创建目录');
-                await this._autoCreateFolder139(cloud139, task);
-            } else {
-                throw new Error('目标目录不存在，请检查任务配置或开启自动创建目录');
-            }
-        }
-
-        // 为每个唯一 pCaID 并行计算对应的物理目录 ID（按需创建子目录，保留层级结构）
-        const uniquePCaIDs = [...new Set(allFiles.map(f => String(f.pCaID)))];
-        const physicalFolderMap = new Map(); // shareFolder caID → physicalFolderId
-        await Promise.all(uniquePCaIDs.map(async caID => {
-            const segments = this._getCatalogPathSegments(caID, rootPCaID, catalogMap);
-            const physicalId = await this._ensureCloud139FolderPath(cloud139, task.realFolderId, segments);
-            physicalFolderMap.set(caID, physicalId);
-        }));
-
-        // 为每个物理目录独立获取已有文件名（目录级降级，互不影响）
-        const diskFilesMap = new Map(); // physicalFolderId → Set<name> | null(失败)
-        await Promise.all([...new Set(physicalFolderMap.values())].map(async physicalId => {
-            try {
-                const existing = await cloud139.listAllDiskFiles(physicalId);
-                diskFilesMap.set(physicalId, new Set(existing.map(f => f.name)));
-            } catch (e) {
-                // 仅标记该目录失败，不影响其他目录
-                diskFilesMap.set(physicalId, null);
-                logTaskEvent(`[139] 目录 ${physicalId} 文件列取失败，降级使用DB记录去重`);
-            }
-        }));
-
-        // 始终从数据库加载已转存记录（分享文件 ID 稳定，不受网盘端改名影响）
-        const transferredIds = this.transferredFileRepo
-            ? new Set((await this.transferredFileRepo.find({ where: { taskId: task.id } })).map(r => r.fileId))
-            : new Set();
-
-        // 磁盘已存在的文件 → 预记录（本次跳过）
-        const alreadyOnDisk = allFiles.filter(f => {
-            const physicalId = physicalFolderMap.get(String(f.pCaID));
-            const names = diskFilesMap.get(physicalId); // null 表示该目录列取失败
-            return names !== null && names !== undefined && names.has(f.coName || '');
-        });
-        if (alreadyOnDisk.length > 0) {
-            const toRecord = alreadyOnDisk.filter(f => !transferredIds.has(f.path || String(f.coID ?? '')));
-            if (toRecord.length > 0) {
-                await this._recordTransferredFiles(task.id, toRecord.map(f => ({
-                    fileId: f.path || String(f.coID ?? ''),
-                    fileName: f.coName || '',
-                    md5: null,
-                })));
-                toRecord.forEach(f => transferredIds.add(f.path || String(f.coID ?? '')));
-            }
-            logTaskEvent(`${task.resourceName} 目标目录已有 ${alreadyOnDisk.length} 个文件，跳过`);
-        }
-
-        // 新文件判断：DB 转存记录（防改名重转）+ 磁盘文件名（目录级独立）双重去重
-        const newFiles = allFiles.filter(f => {
-            const fileId = f.path || String(f.coID ?? '');
-            if (transferredIds.has(fileId)) return false;
-            const physicalId = physicalFolderMap.get(String(f.pCaID));
-            const names = diskFilesMap.get(physicalId);
-            // 该目录列取成功时才做文件名检查；失败时已有 DB 记录兜底
-            if (names !== null && names !== undefined) {
-                return !names.has(f.coName || '');
-            }
-            return true;
-        });
-
-        if (newFiles.length === 0) {
-            logTaskEvent(`${task.resourceName} 没有增量剧集`);
-            // 统一用媒体文件口径计数
-            const totalExisting = [...diskFilesMap.values()]
-                .filter(names => names !== null)
-                .reduce((sum, names) => {
-                    let count = 0;
-                    names.forEach(name => {
-                        if (mediaSuffixs.some(s => name.toLowerCase().endsWith(s))) count++;
-                    });
-                    return sum + count;
-                }, 0) || transferredIds.size;
-            task.currentEpisodes = totalExisting;
-            if (task.lastFileUpdateTime) {
-                const daysDiff = (Date.now() - new Date(task.lastFileUpdateTime).getTime()) / 86400000;
-                if (daysDiff >= ConfigService.getConfigValue('task.taskExpireDays')) {
-                    task.status = 'completed';
-                }
-            }
-            task.lastCheckTime = new Date();
-            await this.taskRepo.save(task);
-            return '';
-        }
-
-        // 按物理目录分组转存（保留子目录结构）
-        const groupedByFolder = new Map(); // physicalFolderId → files[]
-        for (const f of newFiles) {
-            const physicalId = physicalFolderMap.get(String(f.pCaID));
-            if (!physicalId) continue;
-            if (!groupedByFolder.has(physicalId)) groupedByFolder.set(physicalId, []);
-            groupedByFolder.get(physicalId).push(f);
-        }
-        for (const [physicalId, files] of groupedByFolder) {
-            const coPathLst = files.filter(f => f.path).map(f => f.path);
-            if (!coPathLst.length) continue;
-            const saveRes = await cloud139.saveShareFiles(linkID, coPathLst, [], physicalId, !!passwd);
-            if (!saveRes) throw new Error('转存失败');
-        }
-
-        // 记录已转存文件
-        const taskInfoList = newFiles.map(f => ({
-            fileId: f.path || String(f.coID ?? ''),
-            fileName: f.coName || '',
-            md5: null,
-        }));
-        await this._recordTransferredFiles(task.id, taskInfoList);
-
-        const fileCount = newFiles.filter(f => {
-            const name = (f.coName || '').toLowerCase();
-            return mediaSuffixs.some(s => name.endsWith(s));
-        }).length || newFiles.length;
-
-        // 按目录分组后输出，更易读
-        // 分组：key = 目录路径字符串（如 '' 表示根，'G' 表示子目录 G）
-        const groupMap = new Map(); // dirLabel → files[]
-        for (const f of newFiles) {
-            const segments = this._getCatalogPathSegments(String(f.pCaID), rootPCaID, catalogMap);
-            const label = segments.length > 0 ? segments.join('/') : '';
-            if (!groupMap.has(label)) groupMap.set(label, []);
-            groupMap.get(label).push(f);
-        }
-        const lines = [];
-        const groups = [...groupMap.entries()];
-        for (let gi = 0; gi < groups.length; gi++) {
-            const [label, files] = groups[gi];
-            lines.push(`  📁 ${task.resourceName}${label ? '/' + label : ''}/ (${files.length}个)`);
-            for (let fi = 0; fi < files.length; fi++) {
-                const tree = fi < files.length - 1 ? '  ├─' : '  └─';
-                lines.push(`${tree} ${files[fi].coName || files[fi].path}`);
-            }
-        }
-
-        const resourceName = task.shareFolderName
-            ? `${task.resourceName}/${task.shareFolderName}`
-            : task.resourceName;
-
-        const summary = `${resourceName} 追更 ${fileCount} 集:\n${lines.join('\n')}`;
-        logTaskEvent(summary);
-
-        const firstExecution = !task.lastFileUpdateTime;
-        task.status = 'processing';
-        task.lastFileUpdateTime = new Date();
-        // 统一用媒体文件口径计数（与 189 保持一致）
-        const existingMediaCount = [...diskFilesMap.values()]
-            .filter(names => names !== null)
-            .reduce((sum, names) => {
-                let count = 0;
-                names.forEach(name => {
-                    if (mediaSuffixs.some(s => name.toLowerCase().endsWith(s))) count++;
-                });
-                return sum + count;
-            }, 0);
-        task.currentEpisodes = existingMediaCount + fileCount;
-        task.retryCount = 0;
-        task.lastCheckTime = new Date();
-        await this.taskRepo.save(task);
-
-        process.nextTick(() => {
-            this.eventService.emit('taskComplete', new TaskCompleteEventDto({
-                task,
-                cloud189: null,
-                fileList: newFiles.map(f => ({ id: f.coID, name: f.coName || '', md5: null })),
-                overwriteStrm: false,
-                firstExecution,
-            }));
-        });
-
-        return `${resourceName}追更${fileCount}集: \n${lines.join('\n')}`;
-        } catch (err) {
-            // 致命错误（外链不存在/已过期/账号异常）：标记失败，不再重试
-            if (err.fatal) {
-                logTaskEvent(`[139] 分享链接已失效 [${err.apiCode}]: ${err.message}`);
-                task.status = 'failed';
-                task.lastError = err.message;
-                task.lastCheckTime = new Date();
-                await this.taskRepo.save(task);
-                return '';
-            }
-            // 非致命错误：走标准重试逻辑
-            return await this._handleTaskFailure(task, err);
-        }
-    }
-
-    /**
-     * 创建移动云盘（cloud139）转存任务
-     */
-    /**
      * 在 139 云盘指定目录下按名称查找子目录，返回匹配的 catalogID；未找到返回 null。
      * @param {Cloud139Service} cloud139
      * @param {string} parentCatalogID - 父目录 ID
      * @param {string} folderName - 要查找的目录名
      * @returns {Promise<string|null>}
-     */
-    /**
-     * 在 parentCatalogID 目录下按名称查找子文件夹，返回其 fileId，找不到返回 null。
-     *
-     * 原实现使用 listDiskDir（每页仅 100 条、无分页），当目录下子文件夹数量超过 100 时
-     * 无法找到已有同名目录，最终调 createFolderHcy，139 API 会自动给新建目录追加时间戳
-     * 和随机后缀（如 _20260313_000440_1795），导致同名目录不断堆积。
-     *
-     * 现改用 cloud139.findFolderByName 分页遍历所有子目录，彻底解决此问题。
      */
     async _findMatchingFolder139(cloud139, parentCatalogID, folderName) {
         if (!parentCatalogID || parentCatalogID === '-1' || parentCatalogID === 'root') return null;
@@ -1728,211 +1087,7 @@ class TaskService {
     }
 
     async _createCloud139Tasks(params, account, taskDto) {
-        const cloud139 = Cloud139Service.getInstance(account);
-        const { linkID, passwd } = Cloud139Utils.parseShareLink(taskDto.shareLink);
-        const effectivePasswd = taskDto.accessCode || passwd;
-
-        // 获取分享根目录信息
-        const rootInfo = await cloud139.listShareDir(linkID, effectivePasswd, 'root');
-        if (!rootInfo) throw new Error('获取分享信息失败');
-
-        // 若 root 只有一个文件夹且无文件，实际内容在该文件夹内；
-        // 用该文件夹名作为 linkName，并从其子目录列表查找 selectedFolders
-        let folderListForLookup = rootInfo.folderList ?? [];
-        {
-            const rootFiles = rootInfo.fileList ?? [];
-            if (folderListForLookup.length === 1 && rootFiles.length === 0) {
-                const singleFolderID = folderListForLookup[0].catalogID ?? folderListForLookup[0].caID;
-                const childInfo = await cloud139.listShareDir(linkID, effectivePasswd, singleFolderID);
-                folderListForLookup = childInfo?.folderList ?? [];
-            }
-        }
-
-        const linkName = rootInfo.linkName || linkID;
-        const taskName = taskDto.taskName || linkName;
-        const tasks = [];
-        const selectedFolders = taskDto.selectedFolders || [];
-
-        // 验证目标目录是否可访问；若 fileId 已失效（可能是旧格式 ID），则通过路径重新解析
-        let effectiveTargetFolderId = taskDto.targetFolderId;
-        const targetFolderCheck = await cloud139.listDiskDir(effectiveTargetFolderId).catch(() => null);
-        if (!targetFolderCheck) {
-            const folderPath = taskDto.targetFolder || '';
-            logTaskEvent(`[139] 目标目录 fileId(${effectiveTargetFolderId}) 无效，尝试通过路径 "${folderPath}" 重新解析`);
-            try {
-                effectiveTargetFolderId = await this._resolveCloud139FolderByPath(cloud139, folderPath);
-                logTaskEvent(`[139] 路径解析成功，新 fileId: ${effectiveTargetFolderId}`);
-            } catch (resolveErr) {
-                throw new Error(`目标目录不存在或已失效，请重新在账号页面设置常用目录（路径: ${folderPath}）`);
-            }
-        }
-
-        // 在目标目录下查找或创建同名根文件夹（与 cloud189 逻辑一致）
-        const matchedRootId = await this._findMatchingFolder139(cloud139, effectiveTargetFolderId, taskName);
-        let realRootFolderId;
-        if (matchedRootId) {
-            realRootFolderId = matchedRootId;
-            logTaskEvent(`[139] 使用已有目录: "${taskName}" (${matchedRootId})`);
-        } else {
-            // 目标目录下无同名文件夹，自动创建
-            logTaskEvent(`[139] 目标目录下无 "${taskName}"，自动创建`);
-            const created = await cloud139.createFolderHcy(effectiveTargetFolderId, taskName);
-            if (!created?.fileId) throw new Error(`创建目录 "${taskName}" 失败`);
-            realRootFolderId = created.fileId;
-            logTaskEvent(`[139] 已创建根目录: "${taskName}" (${realRootFolderId})`);
-        }
-
-        // 根目录任务（id = -1 或未选择特定子目录）
-        const wantsRoot = !selectedFolders.length ||
-            selectedFolders.includes('-1') ||
-            selectedFolders.includes(-1) ||
-            (typeof selectedFolders[0] === 'number' && selectedFolders[0] === -1);
-
-        if (wantsRoot) {
-            const task = this.taskRepo.create({
-                accountId: taskDto.accountId,
-                shareLink: taskDto.shareLink,
-                shareId: linkID,
-                shareFolderId: 'root',
-                shareFolderName: '',
-                shareMode: 0,
-                targetFolderId: effectiveTargetFolderId,
-                realFolderId: realRootFolderId,
-                realFolderName: path.join(taskDto.targetFolder || '', taskName),
-                realRootFolderId: realRootFolderId,
-                resourceName: taskName,
-                status: 'pending',
-                totalEpisodes: taskDto.totalEpisodes,
-                currentEpisodes: 0,
-                accessCode: effectivePasswd,
-                matchPattern: taskDto.matchPattern,
-                matchOperator: taskDto.matchOperator,
-                matchValue: taskDto.matchValue,
-                remark: taskDto.remark,
-                enableCron: taskDto.enableCron,
-                cronExpression: taskDto.cronExpression,
-                sourceRegex: taskDto.sourceRegex,
-                targetRegex: taskDto.targetRegex,
-                movieRenameFormat: taskDto.movieRenameFormat || '',
-                tvRenameFormat: taskDto.tvRenameFormat || '',
-                isFolder: true,
-            });
-            tasks.push(await this.taskRepo.save(task));
-        }
-
-        // 子目录任务（针对每个选中的 caID）
-        // 若已选根目录，根任务会递归获取所有文件，无需再创建子目录任务（否则会重复转存）
-        if (wantsRoot) {
-            if (tasks.length === 0) {
-                throw new Error('未选择任何目录，请至少选择一个目录');
-            }
-            if (taskDto.enableCron) {
-                for (const task of tasks) {
-                    SchedulerService.saveTaskJob(task, this);
-                }
-            }
-            return tasks;
-        }
-
-        // 根目录文件任务：用户在「选择子目录」模式下勾选了「根目录文件」选项
-        // shareFolderId='root-files' 标记此任务只同步根层直属文件，不递归子目录
-        if (selectedFolders.map(String).includes('root-files')) {
-            const rootFilesTask = this.taskRepo.create({
-                accountId: taskDto.accountId,
-                shareLink: taskDto.shareLink,
-                shareId: linkID,
-                shareFolderId: 'root-files',
-                // 空字符串：让卡片只显示 resourceName（taskName），不拼子目录路径
-                shareFolderName: '',
-                shareMode: 0,
-                targetFolderId: effectiveTargetFolderId,
-                realFolderId: realRootFolderId,
-                realFolderName: path.join(taskDto.targetFolder || '', taskName),
-                realRootFolderId: realRootFolderId,
-                resourceName: taskName,
-                status: 'pending',
-                totalEpisodes: taskDto.totalEpisodes,
-                currentEpisodes: 0,
-                accessCode: effectivePasswd,
-                matchPattern: taskDto.matchPattern,
-                matchOperator: taskDto.matchOperator,
-                matchValue: taskDto.matchValue,
-                remark: taskDto.remark,
-                enableCron: taskDto.enableCron,
-                cronExpression: taskDto.cronExpression,
-                sourceRegex: taskDto.sourceRegex,
-                targetRegex: taskDto.targetRegex,
-                movieRenameFormat: taskDto.movieRenameFormat || '',
-                tvRenameFormat: taskDto.tvRenameFormat || '',
-                isFolder: true,
-            });
-            tasks.push(await this.taskRepo.save(rootFilesTask));
-            logTaskEvent(`[139] 已创建根目录文件任务（仅同步直属文件，不递归子目录）`);
-        }
-
-        // 子目录任务循环：排除 '-1' 和 'root-files' 两个特殊标记
-        for (const caID of selectedFolders.filter(id => String(id) !== '-1' && String(id) !== 'root-files')) {
-            const folder = folderListForLookup.find(f => {
-                const id = f.catalogID || f.caID;
-                return String(id) === String(caID);
-            });
-            const folderName = folder ? (folder.catalogName || folder.caName || String(caID)) : String(caID);
-
-            // 在 realRootFolderId 下查找或创建子目录（与 cloud189 逻辑一致）
-            const matchedSubId = await this._findMatchingFolder139(cloud139, realRootFolderId, folderName);
-            let realFolderId;
-            if (matchedSubId) {
-                realFolderId = matchedSubId;
-                logTaskEvent(`[139] 使用已有子目录: "${folderName}" (${matchedSubId})`);
-            } else {
-                logTaskEvent(`[139] 创建子目录: "${folderName}" 在 (${realRootFolderId})`);
-                const createdSub = await cloud139.createFolderHcy(realRootFolderId, folderName);
-                if (!createdSub?.fileId) throw new Error(`创建子目录 "${folderName}" 失败`);
-                realFolderId = createdSub.fileId;
-                logTaskEvent(`[139] 已创建子目录: "${folderName}" (${realFolderId})`);
-            }
-
-            const task = this.taskRepo.create({
-                accountId: taskDto.accountId,
-                shareLink: taskDto.shareLink,
-                shareId: linkID,
-                shareFolderId: String(caID),
-                shareFolderName: folderName,
-                shareMode: 0,
-                targetFolderId: effectiveTargetFolderId,
-                realFolderId: realFolderId,
-                realFolderName: path.join(taskDto.targetFolder || '', taskName, folderName),
-                realRootFolderId: realRootFolderId,
-                resourceName: taskName,
-                status: 'pending',
-                totalEpisodes: taskDto.totalEpisodes,
-                currentEpisodes: 0,
-                accessCode: effectivePasswd,
-                matchPattern: taskDto.matchPattern,
-                matchOperator: taskDto.matchOperator,
-                matchValue: taskDto.matchValue,
-                remark: taskDto.remark,
-                enableCron: taskDto.enableCron,
-                cronExpression: taskDto.cronExpression,
-                sourceRegex: taskDto.sourceRegex,
-                targetRegex: taskDto.targetRegex,
-                movieRenameFormat: taskDto.movieRenameFormat || '',
-                tvRenameFormat: taskDto.tvRenameFormat || '',
-                isFolder: true,
-            });
-            tasks.push(await this.taskRepo.save(task));
-        }
-
-        if (tasks.length === 0) {
-            throw new Error('未选择任何目录，请至少选择一个目录');
-        }
-
-        if (taskDto.enableCron) {
-            for (const task of tasks) {
-                SchedulerService.saveTaskJob(task, this);
-            }
-        }
-        return tasks;
+        return await createCloud139Tasks(this, params, account, taskDto);
     }
 
     // 根据分享链接获取文件目录组合 资源名 资源名/子目录1 资源名/子目录2
@@ -1944,78 +1099,10 @@ class TaskService {
 
         // Cloud139 分支
         if (account.accountType === 'cloud139') {
-            // 支持直接粘贴分享文本，从中提取纯 URL 和提取码
-            const extracted = Cloud139Utils.extractFromShareText(shareLink);
-            const cleanLink = extracted ? extracted.url : shareLink;
-            const effectivePasswd = accessCode || (extracted ? extracted.passwd : '');
-            const { linkID } = Cloud139Utils.parseShareLink(cleanLink);
-            const cloud139 = Cloud139Service.getInstance(account);
-            const result = await cloud139.listShareDir(linkID, effectivePasswd);
-            if (!result) throw new Error('获取分享信息失败');
-
-            const rootFiles = result.fileList ?? [];
-            let subFolders = result.folderList ?? [];
-            let rootName = result.linkName || linkID;
-            // 追踪「有效根层」的直属文件，用于判断是否需要「根目录文件」选项
-            let effectiveRootFiles = rootFiles;
-
-            // 若 root 下只有唯一一个文件夹且无文件，说明分享的实际内容在该文件夹内；
-            // 将该文件夹作为根节点，并下探一层展示其子目录。
-            if (subFolders.length === 1 && rootFiles.length === 0) {
-                const singleFolder = subFolders[0];
-                const singleFolderID = singleFolder.catalogID ?? singleFolder.caID;
-                rootName = singleFolder.catalogName ?? singleFolder.caName;
-                const childResult = await cloud139.listShareDir(linkID, effectivePasswd, singleFolderID);
-                subFolders = childResult?.folderList ?? [];
-                // 下探后，有效根层的直属文件来自子文件夹内
-                effectiveRootFiles = childResult?.fileList ?? [];
-            }
-
-            // 根目录 level=0，子目录 level=1，便于前端渲染缩进层级树
-            // 子目录 name 拼接父目录前缀，与 189 保持一致（"资源名/子目录1"）
-            // hasRootFiles：前端据此决定是否展示「根目录文件」checkbox
-            const folders = [{ id: -1, name: rootName, level: 0, hasRootFiles: effectiveRootFiles.length > 0 }];
-            for (const folder of subFolders) {
-                folders.push({
-                    id: folder.catalogID ?? folder.caID,
-                    name: path.join(rootName, folder.catalogName ?? folder.caName),
-                    level: 1,
-                });
-            }
-            return folders;
+            return await parseCloud139ShareFolders({ shareLink, account, accessCode });
         }
 
-        const cloud189 = Cloud189Service.getInstance(account);
-        const shareCode = cloud189Utils.parseShareCode(shareLink)
-        const shareInfo = await this.getShareInfo(cloud189, shareCode)
-        if (shareInfo.shareMode == 1) {
-            if (!accessCode) {
-                throw new Error('分享链接为私密链接, 请输入提取码')
-            }
-            // 校验访问码是否有效
-            const accessCodeResponse = await cloud189.checkAccessCode(shareCode, accessCode);
-            if (!accessCodeResponse) {
-                throw new Error('校验访问码失败');
-            }
-            if (!accessCodeResponse.shareId) {
-                throw new Error('访问码无效');
-            }
-            shareInfo.shareId = accessCodeResponse.shareId;
-        }
-        const folders = []
-        // 根目录为分享链接的名称
-        folders.push({id: -1 ,name: shareInfo.fileName})
-        if (!shareInfo.isFolder) {
-            return folders;
-        }
-        // 遍历分享链接的目录
-        const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, accessCode);
-        if (!result?.fileListAO) return folders;
-        const { folderList: subFolders = [] } = result.fileListAO;
-        subFolders.forEach(folder => {
-            folders.push({id: folder.id, name: path.join(shareInfo.fileName, folder.name)});
-        });
-        return folders;
+        throw new Error('R2阶段已停用天翼云盘（189）分享目录解析流程，仅支持移动云盘（139）账号');
     }
 
     // 校验目录是否在目录列表中
@@ -2038,7 +1125,7 @@ class TaskService {
                 throw new Error('folder already exists');
             }
             // 如果用户需要覆盖, 则删除目标目录
-            await this.deleteCloudFile(cloud189, existFolder, 1)
+            await deleteCloudFileLegacy(this, cloud189, existFolder, 1)
         }
     }
 
@@ -2080,8 +1167,7 @@ class TaskService {
                 const cloud139 = Cloud139Service.getInstance(task.account);
                 await this.deleteCloudFile139(cloud139, files, 0);
             } else {
-                const cloud189 = Cloud189Service.getInstance(task.account);
-                await this.deleteCloudFile(cloud189, files, 0);
+                await deleteCloudByAccountLegacy(this, task.account, files, 0);
             }
         }
     }
