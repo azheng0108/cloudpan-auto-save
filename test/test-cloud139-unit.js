@@ -97,7 +97,7 @@ async function testWaitForFilesVisibleTimeout() {
     svc._sleep = async () => {};
 
     const res = await svc.waitForFilesVisible('target', ['ep01.mkv', 'ep02.mkv'], {
-        timeoutMs: 0,
+        timeoutMs: 1,
         intervalMs: 1,
     });
 
