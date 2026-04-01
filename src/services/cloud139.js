@@ -104,6 +104,8 @@ const DEFAULT_HEADERS = {
 
 class Cloud139Service {
     static instances = new Map();
+    static MAX_INSTANCES = 50; // 最大实例数
+    static instanceAccess = new Map(); // 记录实例访问时间
 
     /**
      * 获取单例（按手机号缓存）
@@ -111,10 +113,37 @@ class Cloud139Service {
      */
     static getInstance(account) {
         const key = account.phone || account.username;
+        
+        // 更新访问时间
+        this.instanceAccess.set(key, Date.now());
+        
         if (!this.instances.has(key)) {
+            // 检查实例数量，如果超过最大值，删除最旧的实例
+            if (this.instances.size >= this.MAX_INSTANCES) {
+                this._evictLRU();
+            }
             this.instances.set(key, new Cloud139Service(account));
         }
         return this.instances.get(key);
+    }
+
+    // LRU淘汰：删除最久未使用的实例
+    static _evictLRU() {
+        let oldestKey = null;
+        let oldestTime = Infinity;
+        
+        for (const [key, time] of this.instanceAccess.entries()) {
+            if (time < oldestTime) {
+                oldestTime = time;
+                oldestKey = key;
+            }
+        }
+        
+        if (oldestKey) {
+            console.log(`[Cloud139Service] LRU淘汰实例: ${oldestKey}`);
+            this.instances.delete(oldestKey);
+            this.instanceAccess.delete(oldestKey);
+        }
     }
 
     /**
@@ -122,6 +151,15 @@ class Cloud139Service {
      */
     static clearInstance(phone) {
         this.instances.delete(phone);
+        this.instanceAccess.delete(phone);
+    }
+
+    // 清除所有实例
+    static clearAllInstances() {
+        const count = this.instances.size;
+        this.instances.clear();
+        this.instanceAccess.clear();
+        console.log(`[Cloud139Service] 清除了 ${count} 个实例`);
     }
 
     constructor(account) {
@@ -467,6 +505,88 @@ class Cloud139Service {
             },
         });
         return res || null;
+    }
+
+    _sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    _computeBackoffMs(baseMs, attempt) {
+        const jitter = Math.floor(Math.random() * 150);
+        return Math.min(baseMs * Math.pow(2, Math.max(0, attempt - 1)) + jitter, 10000);
+    }
+
+    _isRetryableError(error) {
+        if (!error) return true;
+        if (error.fatal) return false;
+        if (error.name === 'TimeoutError') return true;
+        const statusCode = error.response?.statusCode;
+        if (statusCode === 429 || (statusCode >= 500 && statusCode < 600)) return true;
+        const msg = String(error.message || '').toLowerCase();
+        if (msg.includes('timeout') || msg.includes('429') || msg.includes('network')) return true;
+        return false;
+    }
+
+    async saveShareFilesWithRetry(linkID, coPathLst = [], caPathLst = [], targetCatalogID = '', needPassword = false, options = {}) {
+        const maxAttempts = Number(options.maxAttempts || 3);
+        const baseDelayMs = Number(options.baseDelayMs || 600);
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const res = await this.saveShareFiles(linkID, coPathLst, caPathLst, targetCatalogID, needPassword);
+                if (res) {
+                    if (attempt > 1) {
+                        logTaskEvent(`[139] 转存任务重试成功: attempt=${attempt}, target=${targetCatalogID}`);
+                    }
+                    return res;
+                }
+                if (attempt === maxAttempts) {
+                    throw new Error('转存接口返回空结果');
+                }
+                const waitMs = this._computeBackoffMs(baseDelayMs, attempt);
+                logTaskEvent(`[139] 转存任务返回空，准备重试: attempt=${attempt}/${maxAttempts}, wait=${waitMs}ms`);
+                await this._sleep(waitMs);
+            } catch (error) {
+                const retryable = this._isRetryableError(error);
+                if (!retryable || attempt === maxAttempts) {
+                    throw error;
+                }
+                const waitMs = this._computeBackoffMs(baseDelayMs, attempt);
+                logTaskEvent(`[139] 转存任务失败，重试中: attempt=${attempt}/${maxAttempts}, reason=${error.message}, wait=${waitMs}ms`);
+                await this._sleep(waitMs);
+            }
+        }
+
+        return null;
+    }
+
+    async waitForFilesVisible(targetCatalogID, expectedFileNames = [], options = {}) {
+        const normalized = [...new Set((expectedFileNames || []).filter(Boolean))];
+        if (normalized.length === 0) {
+            return { allVisible: true, visibleCount: 0, missing: [] };
+        }
+
+        const timeoutMs = Number(options.timeoutMs || 30000);
+        const intervalMs = Number(options.intervalMs || 1500);
+        const startedAt = Date.now();
+        let lastNames = new Set();
+
+        while (Date.now() - startedAt <= timeoutMs) {
+            const files = await this.listAllDiskFiles(targetCatalogID).catch(() => []);
+            lastNames = new Set(files.map((f) => f.name));
+            const missing = normalized.filter((name) => !lastNames.has(name));
+            if (missing.length === 0) {
+                return { allVisible: true, visibleCount: normalized.length, missing: [] };
+            }
+            await this._sleep(intervalMs);
+        }
+
+        const missing = normalized.filter((name) => !lastNames.has(name));
+        return {
+            allVisible: false,
+            visibleCount: normalized.length - missing.length,
+            missing,
+        };
     }
 
     // ─── 个人网盘 ─────────────────────────────────────────────────────────────

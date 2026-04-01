@@ -68,6 +68,9 @@ class ConfigService {
         baseUrl: '',
         apiKey: ''
       },
+      legacy: {
+        enableCloud189Runtime: false
+      },
       cloudSaver: {
         baseUrl: '',
         username: '',

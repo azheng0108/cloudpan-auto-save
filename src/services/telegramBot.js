@@ -2,13 +2,13 @@ const TelegramBot = require('node-telegram-bot-api');
 const { AppDataSource } = require('../database');
 const { Task, Account, CommonFolder, TransferredFile } = require('../entities');
 const { TaskService } = require('./task');
-const { Cloud189Service } = require('./cloud189');
+const { Cloud189Service } = require('../legacy189/services/cloud189');
 const { Cloud139Service } = require('./cloud139');
 const { TMDBService } = require('./tmdb');
 const path = require('path');
 const { default: cloudSaverSDK } = require('../sdk/cloudsaver/sdk');
 const ProxyUtil = require('../utils/ProxyUtil');
-const cloud189Utils = require('../utils/Cloud189Utils');
+const cloud189Utils = require('../legacy189/utils/Cloud189Utils');
 const Cloud139Utils = require('../utils/Cloud139Utils');
 
 class TelegramBotService {
@@ -43,6 +43,10 @@ class TelegramBotService {
         this.cloudSaverSearchMap = new Map();
 
         this.tmdbService = new TMDBService();
+    }
+
+    _isLegacy189RuntimeEnabled() {
+        return ConfigService.getConfigValue('legacy.enableCloud189Runtime') === true;
     }
 
     async start() {
@@ -178,6 +182,10 @@ class TelegramBotService {
                             shareLink = extracted ? extracted.url : cacheShareLink;
                             accessCode = extracted?.passwd || '';
                         } else if (/cloud\.189\.cn/i.test(cacheShareLink)) {
+                            if (!this._isLegacy189RuntimeEnabled()) {
+                                await this.bot.sendMessage(chatId, '当前默认运行链路已禁用 189，请使用 139 分享链接');
+                                return;
+                            }
                             const parsed = cloud189Utils.parseCloudShare(cacheShareLink);
                             shareLink = parsed?.url;
                             accessCode = parsed?.accessCode || '';
@@ -201,6 +209,10 @@ class TelegramBotService {
         this.bot.onText(/cloud\.189\.cn/, async (msg) => {
             const chatId = msg.chat.id;
             if (!this._checkChatId(chatId)){
+                return;
+            }
+            if (!this._isLegacy189RuntimeEnabled()) {
+                await this.bot.sendMessage(chatId, '当前默认运行链路已禁用 189，请使用 139 分享链接');
                 return;
             }
             // 如果处于搜索模式，则不处理
@@ -602,6 +614,10 @@ class TelegramBotService {
      * @returns {boolean} true=账号就绪，false=无可用账号（已发送错误提示）
      */
     async _ensureAccountType(chatId, requiredType) {
+        if (requiredType === 'cloud189' && !this._isLegacy189RuntimeEnabled()) {
+            await this.bot.sendMessage(chatId, '当前默认运行链路已禁用 189，请切换到 139 账号');
+            return false;
+        }
         if (this.currentAccount?.accountType === requiredType) return true;
         const accounts = await this.accountRepo.find({ where: { accountType: requiredType } });
         if (accounts.length === 0) {
@@ -899,6 +915,9 @@ class TelegramBotService {
                     .filter(f => f.type === 'folder')
                     .map(f => ({ id: f.fileId, name: f.name, pId: folderId }));
             } else {
+                if (!this._isLegacy189RuntimeEnabled()) {
+                    throw new Error('当前默认运行链路已禁用 189 目录浏览');
+                }
                 const cloud189 = Cloud189Service.getInstance(this.currentAccount);
                 folders = await cloud189.getFolderNodes(folderId);
                 if (!folders) {
