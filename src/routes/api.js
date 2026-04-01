@@ -8,6 +8,7 @@ const CustomPushService = require('../services/message/CustomPushService');
 const { logTaskEvent } = require('../utils/logUtils');
 const { clearCloudSaverToken } = require('../sdk/cloudsaver');
 const { AppDataSource } = require('../database');
+const logger = require('../utils/logger');
 
 const ensureCloud139Account = (account, action) => {
     if (!account) {
@@ -217,7 +218,7 @@ const registerApiRoutes = (app, deps) => {
             const task = await taskService.createTask(req.body);
             res.json({ success: true, data: task });
         } catch (error) {
-            console.log(error);
+            logger.error('任务创建失败', { error: error.message, stack: error.stack });
             res.json({ success: false, error: error.message });
         }
     });

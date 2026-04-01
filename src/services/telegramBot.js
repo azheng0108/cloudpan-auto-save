@@ -122,7 +122,8 @@ class TelegramBotService {
             this.globalCommonFolderListMessageId = null;
             return true;
         } catch (error) {
-            console.error('停止机器人失败:', error);
+            const logger = require('../utils/logger');
+            logger.error('停止机器人失败', { error: error.message, stack: error.stack });
             return false;
         }
     }
