@@ -10,6 +10,7 @@ const { default: cloudSaverSDK } = require('../sdk/cloudsaver/sdk');
 const ProxyUtil = require('../utils/ProxyUtil');
 const cloud189Utils = require('../legacy189/utils/Cloud189Utils');
 const Cloud139Utils = require('../utils/Cloud139Utils');
+const logger = require('../utils/logger');
 
 class TelegramBotService {
     constructor(token, chatId) {
@@ -72,11 +73,11 @@ class TelegramBotService {
 
         // 添加错误处理
         this.bot.on('polling_error', (error) => {
-            console.error('Telegram Bot polling error:', error.message);
+            logger.error('Telegram Bot polling error', { error: error.message, stack: error.stack });
         });
 
         this.bot.on('error', (error) => {
-            console.error('Telegram Bot error:', error.message);
+            logger.error('Telegram Bot error', { error: error.message, stack: error.stack });
         });
         
         // 设置命令菜单
@@ -122,7 +123,6 @@ class TelegramBotService {
             this.globalCommonFolderListMessageId = null;
             return true;
         } catch (error) {
-            const logger = require('../utils/logger');
             logger.error('停止机器人失败', { error: error.message, stack: error.stack });
             return false;
         }
@@ -226,7 +226,7 @@ class TelegramBotService {
                 const { url: shareLink, accessCode } = cloud189Utils.parseCloudShare(msg.text);
                 await this.handleFolderSelection(chatId, shareLink, null, accessCode);
             } catch (error) {
-                console.log(error)
+                logger.error('处理189分享链接失败', { error: error.message, stack: error.stack })
                 this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
             }
         });
@@ -245,7 +245,7 @@ class TelegramBotService {
                 const accessCode = extracted?.passwd || '';
                 await this.handleFolderSelection(chatId, shareLink, null, accessCode);
             } catch (error) {
-                console.log(error);
+                logger.error('处理139分享链接失败', { error: error.message, stack: error.stack });
                 this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
             }
         });
@@ -370,7 +370,7 @@ class TelegramBotService {
                     this.lastButtonMessageId = null;
                 }
             } catch (error) {
-                console.error('删除消息失败:', error);
+                logger.warn('删除消息失败', { error: error.message, stack: error.stack });
             }
             
             await this.bot.sendMessage(chatId, '已取消当前操作');
@@ -455,7 +455,7 @@ class TelegramBotService {
             try {
                 const results = await this.tmdbService.search(title, year);
                 let responseText = '';
-                console.log('搜索结束')
+                logger.info('搜索结束')
                 // 先发送海报图片
                 const firstPoster = results.movies[0]?.posterPath || results.tvShows[0]?.posterPath;
 
@@ -492,7 +492,7 @@ class TelegramBotService {
                 if (!results.movies.length && !results.tvShows.length) {
                     responseText = '未找到相关影视信息';
                 }
-                console.log('获取到的海报', firstPoster)
+                logger.info('获取到的海报', { firstPoster })
                 this.bot.deleteMessage(chatId, message.message_id);
                 this.bot.sendPhoto(chatId, firstPoster, {
                     caption: responseText,
@@ -995,7 +995,7 @@ class TelegramBotService {
             }
 
         } catch (error) {
-            console.log(error);
+            logger.error('获取目录失败', { error: error.message, stack: error.stack });
             this.bot.sendMessage(chatId, `获取目录失败: ${error.message}`);
         }
     }

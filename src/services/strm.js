@@ -5,6 +5,7 @@ const { logTaskEvent } = require('../utils/logUtils');
 const CryptoUtils = require('../utils/cryptoUtils');
 const alistService = require('./alistService');
 const { MessageUtil } = require('./message');
+const logger = require('../utils/logger');
 
 class StrmService {
     constructor() {
@@ -129,7 +130,7 @@ class StrmService {
                 }
             }
         } catch (error) {
-            console.log(error)
+            logger.error('生成STRM文件异常详情', { error: error.message, stack: error.stack })
             logTaskEvent(`生成STRM文件失败: ${error.message}`);
             failed++
         }

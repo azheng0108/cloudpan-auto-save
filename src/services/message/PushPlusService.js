@@ -1,5 +1,6 @@
 const got = require('got');
 const MessageService = require('./MessageService');
+const logger = require('../../utils/logger');
 
 class PushPlusService extends MessageService {
     /**
@@ -32,7 +33,7 @@ class PushPlusService extends MessageService {
             }).json();
             return true;
         } catch (error) {
-            console.error('PushPlus消息推送异常:', error);
+            logger.error('PushPlus消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }
@@ -65,7 +66,7 @@ class PushPlusService extends MessageService {
             }).json();
             return true;
         } catch (error) {
-            console.error('PushPlus图片消息推送异常:', error);
+            logger.error('PushPlus图片消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }

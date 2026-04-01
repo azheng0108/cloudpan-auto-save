@@ -159,6 +159,13 @@ async function run() {
         const req = {
             body: {
                 system: { password: 'new-password' },
+                task: {
+                    taskCheckCron: '0 19-23 * * *',
+                    retryTaskCron: '*/1 * * * *',
+                    cleanRecycleCron: '0 */8 * * *',
+                    enableAutoClearRecycle: false,
+                    enableAutoClearFamilyRecycle: false,
+                },
                 telegram: {
                     bot: {
                         botToken: 'token',
@@ -181,6 +188,7 @@ async function run() {
         assert(settingsRes.body && settingsRes.body.success === true, '/api/settings 返回应为 success=true');
         assert(scheduleHandled, '/api/settings 未触发调度任务处理');
         assert(savedConfig !== null, '/api/settings 未触发配置写入');
+        assert(savedConfig.task.retryTaskCron === '*/1 * * * *', '/api/settings 未正确保存 retryTaskCron');
         assert(cloud139Cleared, '/api/settings 未清理 Cloud139Service 实例缓存');
         assert(cloud189Cleared, '/api/settings 未清理 Cloud189Service 实例缓存');
         assert(botUpdated, '/api/settings 未触发 bot 配置更新');
@@ -188,6 +196,27 @@ async function run() {
         assert(req.session.authenticated === false, '改密后当前会话未标记失效');
         assert(destroyed, '改密后当前会话未销毁');
         assert(unlinkedFiles.includes('tmp-session.json'), '改密后未触发会话文件清理');
+
+        // Cron 非法应返回 400 且不写配置
+        savedConfig = null;
+        const invalidReq = {
+            body: {
+                system: { password: 'old-password' },
+                task: {
+                    taskCheckCron: 'invalid-cron',
+                    retryTaskCron: '*/1 * * * *',
+                    cleanRecycleCron: '0 */8 * * *',
+                    enableAutoClearRecycle: false,
+                    enableAutoClearFamilyRecycle: false,
+                },
+            },
+            session: null,
+        };
+        const invalidRes = createMockRes();
+        await settingsHandler(invalidReq, invalidRes);
+        assert(invalidRes.statusCode === 400, 'Cron 非法时 /api/settings 应返回 400');
+        assert(invalidRes.body && invalidRes.body.success === false, 'Cron 非法时应返回 success=false');
+        assert(savedConfig === null, 'Cron 非法时不应写入配置');
 
         console.log('✅ Runtime route checks passed');
     } finally {

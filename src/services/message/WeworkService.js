@@ -1,5 +1,6 @@
 const got = require('got');
 const MessageService = require('./MessageService');
+const logger = require('../../utils/logger');
 
 class WeworkService extends MessageService {
     /**
@@ -27,7 +28,7 @@ class WeworkService extends MessageService {
             }).json();
             return true;
         } catch (error) {
-            console.error('企业微信消息推送异常:', error);
+            logger.error('企业微信消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }
@@ -52,7 +53,7 @@ class WeworkService extends MessageService {
             }).json();
             return true;
         } catch (error) {
-            console.error('企业微信图片消息推送异常:', error);
+            logger.error('企业微信图片消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }

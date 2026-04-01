@@ -1,4 +1,4 @@
-const { LessThan, In, IsNull } = require('typeorm');
+const { In, IsNull } = require('typeorm');
 const { Cloud189Service } = require('./cloud189');
 const { Cloud139Service } = require('./cloud139');
 const { MessageUtil } = require('./message');
@@ -17,6 +17,9 @@ const { processCloud139Task } = require('./cloud139TaskProcessor');
 const { TaskNamingService } = require('./taskNamingService');
 const { TaskParserService } = require('./taskParserService');
 const { TaskExecutorService } = require('./taskExecutorService');
+const { TaskRetryService } = require('./taskRetryService');
+const { TaskRecycleService } = require('./taskRecycleService');
+const { TaskStorageService } = require('./taskStorageService');
 
 class TaskService {
     constructor(taskRepo, accountRepo, transferredFileRepo) {
@@ -28,6 +31,9 @@ class TaskService {
         this.taskNamingService = new TaskNamingService();
         this.taskParserService = new TaskParserService();
         this.taskExecutorService = new TaskExecutorService(this);
+        this.taskRetryService = new TaskRetryService(this);
+        this.taskRecycleService = new TaskRecycleService(this);
+        this.taskStorageService = new TaskStorageService(this);
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
             const taskEventHandler = new TaskEventHandler(this.messageUtil);
@@ -241,43 +247,12 @@ class TaskService {
     }
     // 删除任务
     async deleteTask(taskId, deleteCloud) {
-        const task = await this.getTaskById(taskId);
-        if (!task) throw new Error('任务不存在');
-        const folderName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1);
-        if (!task.enableSystemProxy && deleteCloud) {
-            const account = await this.accountRepo.findOneBy({ id: task.accountId });
-            if (!account) throw new Error('账号不存在');
-            if (account.accountType === 'cloud139') {
-                const cloud139 = Cloud139Service.getInstance(account);
-                await this.deleteCloudFile139(cloud139, await this.getRootFolder(task), 1);
-            } else {
-                const cloud189 = Cloud189Service.getInstance(account);
-                await this.deleteCloudFile(cloud189, await this.getRootFolder(task), 1);
-            }
-        }
-        if (task.enableSystemProxy) {
-            // enableSystemProxy已移除
-        }
-        // 删除定时任务
-        if (task.enableCron) {
-            SchedulerService.removeTaskJob(task.id)
-        }
-        // 删除已转存文件记录（统一漏斗）
-        if (this.transferredFileRepo) {
-            await this.transferredFileRepo.delete({ taskId: task.id });
-        }
-        await this.taskRepo.remove(task);
+        return this.taskStorageService.deleteTask(taskId, deleteCloud);
     }
 
     // 批量删除
     async deleteTasks(taskIds, deleteCloud) {
-        for(const taskId of taskIds) {
-            try{
-                await this.deleteTask(taskId, deleteCloud)
-            }catch (error){
-
-            }
-        }
+        return this.taskStorageService.deleteTasks(taskIds, deleteCloud);
     }
 
     // 获取文件夹下的所有文件
@@ -559,7 +534,7 @@ class TaskService {
             await this.taskRepo.save(task);
             return saveResults.join('\n');
         } catch (error) {
-            return await this._handleTaskFailure(task, error);
+            return await this.taskRetryService.handleTaskFailure(task, error);
         }
     }
 
@@ -929,87 +904,8 @@ class TaskService {
         return [matchResult, matchValue];
     }
 
-    // 任务失败处理逻辑
-    async _handleTaskFailure(task, error) {
-        logTaskEvent(error);
-        const maxRetries = ConfigService.getConfigValue('task.maxRetries');
-        const retryInterval = ConfigService.getConfigValue('task.retryInterval');
-        // 初始化重试次数
-        if (!task.retryCount) {
-            task.retryCount = 0;
-        }
-        
-        if (task.retryCount < maxRetries) {
-            task.retryCount++;
-            task.status = 'pending';
-            task.lastError = `${error.message} (重试 ${task.retryCount}/${maxRetries})`;
-            // 设置下次重试时间
-            task.nextRetryTime = new Date(Date.now() + retryInterval * 1000);
-            logTaskEvent(`任务将在 ${retryInterval} 秒后重试 (${task.retryCount}/${maxRetries})`);
-        } else {
-            task.status = 'failed';
-            task.lastError = `${error.message} (已达到最大重试次数 ${maxRetries})`;
-            logTaskEvent(`任务达到最大重试次数 ${maxRetries}，标记为失败`);
-        }
-        
-        await this.taskRepo.save(task);
-        return '';
-    }
-
-     // 获取需要重试的任务
-     async getRetryTasks() {
-        const now = new Date();
-        return await this.taskRepo.find({
-            relations: {
-                account: true
-            },
-            select: {
-                account: {
-                    username: true,
-                    localStrmPrefix: true,
-                    cloudStrmPrefix: true,
-                    embyPathReplace: true
-                }
-            },
-            where: {
-                status: 'pending',
-                nextRetryTime: LessThan(now),
-                retryCount: LessThan(ConfigService.getConfigValue('task.maxRetries')),
-                enableSystemProxy: IsNull()
-            }
-        });
-    }
-
-    // 处理重试任务
     async processRetryTasks() {
-        const retryTasks = await this.getRetryTasks();
-        if (retryTasks.length === 0) {
-            return [];
-        }
-        let saveResults = [];
-        logTaskEvent(`================================`);
-        for (const task of retryTasks) {
-            const taskName = task.shareFolderName?(task.resourceName + '/' + task.shareFolderName): task.resourceName || '未知'
-            logTaskEvent(`任务[${taskName}]开始重试`);
-            try {
-                const result = await this.processTask(task);
-                if (result) {
-                    saveResults.push(result);
-                }
-            } catch (error) {
-                logTaskEvent(`重试任务${task.name}执行失败: ${error.message}`);
-            }finally {
-                logTaskEvent(`任务[${taskName}]重试完成`);
-            }
-            // 任务间隔
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        
-        if (saveResults.length > 0) {
-            this.messageUtil.sendMessage(saveResults.join("\n\n"));
-        }
-        logTaskEvent(`================================`);
-        return saveResults;
+        return this.taskRetryService.processRetryTasks();
     }
     // 创建批量任务
     async createBatchTask(cloud189, batchTaskDto) {
@@ -1017,48 +913,7 @@ class TaskService {
     }
     // 定时清空回收站
     async clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
-        const accounts = await this.accountRepo.find()
-        if (accounts) {
-            for (const account of accounts) {
-                // 移动云盘（cloud139）没有回收站功能，跳过
-                if (account.accountType === 'cloud139') continue;
-                let username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
-                try {
-                    const cloud189 = Cloud189Service.getInstance(account); 
-                    await this._clearRecycleBin(cloud189, username, enableAutoClearRecycle, enableAutoClearFamilyRecycle)
-                } catch (error) {
-                    logTaskEvent(`定时[${username}]清空回收站任务执行失败:${error.message}`);
-                }
-            }
-        }
-    }
-
-    // 执行清空回收站
-    async _clearRecycleBin(cloud189, username, enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
-        const params = {
-            taskInfos: '[]',
-            type: 'EMPTY_RECYCLE',
-        }   
-        const batchTaskDto = new BatchTaskDto(params);
-        if (enableAutoClearRecycle) {
-            logTaskEvent(`开始清空[${username}]个人回收站`)
-            await this.createBatchTask(cloud189, batchTaskDto)
-            logTaskEvent(`清空[${username}]个人回收站完成`)
-            // 延迟10秒
-            await new Promise(resolve => setTimeout(resolve, 10000));
-        }
-        if (enableAutoClearFamilyRecycle) {
-            // 获取家庭id
-            const familyInfo = await cloud189.getFamilyInfo()
-            if (familyInfo == null) {
-                logTaskEvent(`用户${username}没有家庭主账号, 跳过`)
-                return
-            }
-            logTaskEvent(`开始清空[${username}]家庭回收站`)
-            batchTaskDto.familyId = familyInfo.familyId
-            await this.createBatchTask(cloud189, batchTaskDto)
-            logTaskEvent(`清空[${username}]家庭回收站完成`)
-        }
+        return this.taskRecycleService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle);
     }
     // 校验文件后缀
     _checkFileSuffix(file,enableOnlySaveMedia, mediaSuffixs) {
@@ -1073,49 +928,11 @@ class TaskService {
     }
     // 根据realRootFolderId获取根目录
     async getRootFolder(task) {
-        if (task.realRootFolderId) {
-            // 判断realRootFolderId下是否还有其他目录, 通过任务查询 查询realRootFolderId是否有多个任务, 如果存在多个 则使用realFolderId
-            const tasks = await this.taskRepo.find({
-                where: {
-                    realRootFolderId: task.realRootFolderId
-                }
-            })
-            if (tasks.length > 1) {
-                return {id: task.realFolderId, name: task.realFolderName}    
-            }
-            return {id: task.realRootFolderId, name: task.shareFolderName}
-        }
-        logTaskEvent(`任务[${task.resourceName}]为老版本系统创建, 无法删除网盘内容, 跳过`)
-        return null
+        return this.taskStorageService.getRootFolder(task);
     }
     // 删除网盘文件
     async deleteCloudFile(cloud189, file, isFolder) {
-        if (!file) return;
-        const taskInfos = []
-        // 如果file是数组, 则遍历删除
-        if (Array.isArray(file)) {
-            for (const f of file) {
-                taskInfos.push({
-                    fileId: f.id,
-                    fileName: f.name,
-                    isFolder: isFolder
-                })
-            }
-        }else{
-            taskInfos.push({
-                fileId: file.id,
-                fileName: file.name,
-                isFolder: isFolder
-            })
-        }
-        logTaskEvent(`准备删除云盘内容: ${JSON.stringify(taskInfos)}`)
-        
-        const batchTaskDto = new BatchTaskDto({
-            taskInfos: JSON.stringify(taskInfos),
-            type: 'DELETE',
-            targetFolderId: ''
-        });
-        await this.createBatchTask(cloud189, batchTaskDto)
+        return this.taskStorageService.deleteCloudFile(cloud189, file, isFolder);
     }
 
     // 根据accountId获取账号
@@ -1503,45 +1320,12 @@ class TaskService {
 
     // 根据文件id批量删除文件
     async deleteFiles(taskId, files) {
-        const task = await this.getTaskById(taskId)
-        if (!task) {
-            throw new Error('任务不存在')
-        }
-        if (!task.enableSystemProxy) {
-            if (task.account?.accountType === 'cloud139') {
-                const cloud139 = Cloud139Service.getInstance(task.account);
-                await this.deleteCloudFile139(cloud139, files, 0);
-            } else {
-                const cloud189 = Cloud189Service.getInstance(task.account);
-                await this.deleteCloudFile(cloud189, files, 0);
-            }
-        }
+        return this.taskStorageService.deleteFiles(taskId, files);
     }
 
     // 删除移动云盘（cloud139）文件/目录
     async deleteCloudFile139(cloud139, file, isFolder) {
-        if (!file) return;
-        const fileIds = [];
-
-        if (Array.isArray(file)) {
-            for (const f of file) {
-                if (f.id) fileIds.push(f.id);
-            }
-        } else {
-            if (file.id) fileIds.push(file.id);
-        }
-
-        if (!fileIds.length) {
-            logTaskEvent('[139] 无有效 fileId，跳过删除');
-            return;
-        }
-        logTaskEvent(`[139] 删除网盘内容: fileIds=${JSON.stringify(fileIds)}`);
-        const result = await cloud139.deleteFiles(fileIds);
-        if (!result) {
-            logTaskEvent('[139] 删除网盘内容失败，请检查文件ID是否正确');
-        } else {
-            logTaskEvent('[139] 删除网盘内容成功');
-        }
+        return this.taskStorageService.deleteCloudFile139(cloud139, file, isFolder);
     }
 }
 

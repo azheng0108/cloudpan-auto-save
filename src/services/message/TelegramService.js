@@ -1,6 +1,7 @@
 const got = require('got');
 const MessageService = require('./MessageService');
 const ProxyUtil = require('../../utils/ProxyUtil');
+const logger = require('../../utils/logger');
 
 class TelegramService extends MessageService {
     /**
@@ -47,13 +48,13 @@ class TelegramService extends MessageService {
             await got.post(`${apiUrl}/bot${this.config.botToken}/sendMessage`, requestOptions).json();
             return true;
         } catch (error) {
-            console.error('Telegram消息推送异常:', error);
+            logger.error('Telegram消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }
      // 发送刮削结果, {title: mediaDetails.title,image: mediaDetails.backdropPath,description: mediaDetails.overview,rating: mediaDetails.voteAverage}
      async _sendScrapeMessage(message) {
-        console.log("准备发送刮削结果")
+        logger.info('准备发送刮削结果')
         try {
             // 构建消息内容
             const caption = [
@@ -91,7 +92,7 @@ class TelegramService extends MessageService {
             }
             return true;
         } catch (error) {
-            console.error('Telegram消息推送异常:', error);
+            logger.error('Telegram消息推送异常', { error: error.message, stack: error.stack });
             return false;
         }
     }
