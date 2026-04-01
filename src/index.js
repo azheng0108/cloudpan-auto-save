@@ -14,6 +14,7 @@ const FileStore = require('session-file-store')(session);
 const { SchedulerService } = require('./services/scheduler');
 const { logTaskEvent, initSSE } = require('./utils/logUtils');
 const TelegramBotManager = require('./utils/TelegramBotManager');
+const { registerRoutes } = require('./routes');
 const fs = require('fs').promises;
 const path = require('path');
 const { setupCloudSaverRoutes, clearCloudSaverToken } = require('./sdk/cloudsaver');
@@ -46,65 +47,6 @@ app.use(session({
         maxAge: 24 * 60 * 60 * 1000 * 30 // 30天
     }
 }));
-
-
-// 验证会话的中间件
-const authenticateSession = (req, res, next) => {
-    const apiKey = req.headers['x-api-key'];
-    const configApiKey = ConfigService.getConfigValue('system.apiKey');
-    if (apiKey && configApiKey && apiKey === configApiKey) {
-        return next();
-    }
-    if (req.session.authenticated) {
-        next();
-    } else {
-        // API 请求返回 401，页面请求重定向到登录页
-        if (req.path.startsWith('/api/')) {
-            res.status(401).json({ success: false, error: '未登录' });
-        } else {
-            res.redirect('/login');
-        }
-    }
-};
-
-// 添加根路径处理
-app.get('/', (req, res) => {
-    if (!req.session.authenticated) {
-        res.redirect('/login');
-    } else {
-        res.sendFile(__dirname + '/public/index.html');
-    }
-});
-
-
-// 登录页面
-app.get('/login', (req, res) => {
-    res.sendFile(__dirname + '/public/login.html');
-});
-
-// 登录接口
-app.post('/api/auth/login', (req, res) => {
-    const { username, password } = req.body;
-    if (username === ConfigService.getConfigValue('system.username') && 
-        password === ConfigService.getConfigValue('system.password')) {
-        req.session.authenticated = true;
-        req.session.username = username;
-        res.json({ success: true });
-    } else {
-        res.json({ success: false, error: '用户名或密码错误' });
-    }
-});
-app.use(express.static(path.join(__dirname,'public')));
-// 为所有路由添加认证（除了登录页和登录接口）
-app.use((req, res, next) => {
-    if (req.path === '/' || req.path === '/login' 
-        || req.path === '/api/auth/login' 
-        || req.path === '/api/auth/login' 
-        || req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico)$/)) {
-        return next();
-    }
-    authenticateSession(req, res, next);
-});
 // 初始化数据库连接
 AppDataSource.initialize().then(async () => {
     // 当前版本:
@@ -130,6 +72,19 @@ AppDataSource.initialize().then(async () => {
     const folderCache = new CacheManager(parseInt(600));
     // 初始化任务定时器
     await SchedulerService.initTaskJobs(taskRepo, taskService);
+
+    registerRoutes(app, {
+        publicDir: path.join(__dirname, 'public'),
+        currentVersion,
+        accountRepo,
+        taskRepo,
+        commonFolderRepo,
+        transferredFileRepo,
+        taskService,
+        messageUtil,
+        botManager,
+        folderCache,
+    });
     
     // 账号相关API
     app.get('/api/accounts', async (req, res) => {
