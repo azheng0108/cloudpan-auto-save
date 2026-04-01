@@ -5,8 +5,14 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node dist/index.js",
+    "start:prod": "npm run migration:run:prod && node dist/index.js",
     "build": "tsc && xcopy /E /I /Y src\\public dist\\public",
-    "dev": "ts-node src/index.js"
+    "dev": "ts-node src/index.js",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/index.js",
+    "migration:create": "typeorm-ts-node-commonjs migration:create",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/index.js",
+    "migration:run:prod": "node ./node_modules/typeorm/cli.js migration:run -d dist/database/index.js",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/index.js"
   },
   "dependencies": {
     "@netdrive-sdk/log": "1.0.0",
