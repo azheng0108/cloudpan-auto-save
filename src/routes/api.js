@@ -9,6 +9,7 @@ const { logTaskEvent } = require('../utils/logUtils');
 const { clearCloudSaverToken } = require('../sdk/cloudsaver');
 const { AppDataSource } = require('../database');
 const logger = require('../utils/logger');
+const { Cloud189Service } = require('../services/cloud189');
 
 const ensureCloud139Account = (account, action) => {
     if (!account) {
@@ -533,6 +534,8 @@ const registerApiRoutes = (app, deps) => {
 
         SchedulerService.handleScheduleTasks(settings, taskService);
         ConfigService.setConfig(settings);
+        Cloud139Service.clearAllInstances();
+        Cloud189Service.clearAllInstances();
         await botManager.handleBotStatus(
             settings.telegram?.bot?.botToken,
             settings.telegram?.bot?.chatId,

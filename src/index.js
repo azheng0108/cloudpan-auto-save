@@ -31,7 +31,10 @@ app.use(cors({
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
-        return callback(new Error('CORS策略禁止此来源'));
+        const error = new Error('CORS策略禁止此来源');
+        error.status = 403;
+        error.statusCode = 403;
+        return callback(error);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
@@ -140,12 +143,19 @@ AppDataSource.initialize().then(async () => {
 
     // 全局错误处理中间件（必须在路由之后）
     app.use((err, req, res, next) => {
-        logger.error('捕获到全局异常', {
-            error: err.message,
-            stack: err.stack,
-            url: req.url,
-            method: req.method,
-        });
+        if (err.status === 403 || err.statusCode === 403) {
+            logger.warn(`访问被拒绝: ${err.message}`, {
+                url: req.url,
+                method: req.method,
+            });
+        } else {
+            logger.error('捕获到全局异常', {
+                error: err.message,
+                stack: err.stack,
+                url: req.url,
+                method: req.method,
+            });
+        }
         res.status(err.status || 500).json({
             success: false,
             error: process.env.NODE_ENV === 'production' ? '服务器内部错误' : err.message,

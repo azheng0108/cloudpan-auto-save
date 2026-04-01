@@ -19,7 +19,17 @@ const logger = winston.createLogger({
         new winston.transports.Console({
             format: winston.format.combine(
                 winston.format.colorize(),
-                winston.format.printf(({ level, message, timestamp }) => `${timestamp} ${level}: ${message}`)
+                winston.format.printf((info) => {
+                    const {
+                        timestamp, level, message, stack, ...meta
+                    } = info;
+                    const base = `${timestamp} ${level}: ${stack || message}`;
+                    const metaKeys = Object.keys(meta);
+                    if (metaKeys.length === 0) {
+                        return base;
+                    }
+                    return `${base} ${JSON.stringify(meta)}`;
+                })
             ),
         }),
         new DailyRotateFile({

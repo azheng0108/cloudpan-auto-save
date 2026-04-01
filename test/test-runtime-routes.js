@@ -15,6 +15,8 @@ const { registerApiRoutes } = require(distApiPath);
 const { AppDataSource } = require(path.join(__dirname, '..', 'dist', 'database', 'index.js'));
 const ConfigService = require(path.join(__dirname, '..', 'dist', 'services', 'ConfigService.js'));
 const { SchedulerService } = require(path.join(__dirname, '..', 'dist', 'services', 'scheduler.js'));
+const { Cloud139Service } = require(path.join(__dirname, '..', 'dist', 'services', 'cloud139.js'));
+const { Cloud189Service } = require(path.join(__dirname, '..', 'dist', 'services', 'cloud189.js'));
 
 function assert(condition, message) {
     if (!condition) {
@@ -98,6 +100,8 @@ async function run() {
     const originalGetConfigValue = ConfigService.getConfigValue;
     const originalSetConfig = ConfigService.setConfig;
     const originalHandleScheduleTasks = SchedulerService.handleScheduleTasks;
+    const originalClear139Instances = Cloud139Service.clearAllInstances;
+    const originalClear189Instances = Cloud189Service.clearAllInstances;
     const originalReaddir = fsPromises.readdir;
     const originalStat = fsPromises.stat;
     const originalUnlink = fsPromises.unlink;
@@ -107,6 +111,8 @@ async function run() {
     let messageUpdated = false;
     let scheduleHandled = false;
     let savedConfig = null;
+    let cloud139Cleared = false;
+    let cloud189Cleared = false;
 
     try {
         // 健康检查：模拟数据库可用
@@ -129,6 +135,12 @@ async function run() {
         };
         SchedulerService.handleScheduleTasks = () => {
             scheduleHandled = true;
+        };
+        Cloud139Service.clearAllInstances = () => {
+            cloud139Cleared = true;
+        };
+        Cloud189Service.clearAllInstances = () => {
+            cloud189Cleared = true;
         };
         deps.botManager.handleBotStatus = async () => {
             botUpdated = true;
@@ -169,6 +181,8 @@ async function run() {
         assert(settingsRes.body && settingsRes.body.success === true, '/api/settings 返回应为 success=true');
         assert(scheduleHandled, '/api/settings 未触发调度任务处理');
         assert(savedConfig !== null, '/api/settings 未触发配置写入');
+        assert(cloud139Cleared, '/api/settings 未清理 Cloud139Service 实例缓存');
+        assert(cloud189Cleared, '/api/settings 未清理 Cloud189Service 实例缓存');
         assert(botUpdated, '/api/settings 未触发 bot 配置更新');
         assert(messageUpdated, '/api/settings 未触发消息配置更新');
         assert(req.session.authenticated === false, '改密后当前会话未标记失效');
@@ -182,6 +196,8 @@ async function run() {
         ConfigService.getConfigValue = originalGetConfigValue;
         ConfigService.setConfig = originalSetConfig;
         SchedulerService.handleScheduleTasks = originalHandleScheduleTasks;
+        Cloud139Service.clearAllInstances = originalClear139Instances;
+        Cloud189Service.clearAllInstances = originalClear189Instances;
         fsPromises.readdir = originalReaddir;
         fsPromises.stat = originalStat;
         fsPromises.unlink = originalUnlink;
