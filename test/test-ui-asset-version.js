@@ -22,6 +22,7 @@ function run() {
     const tasksJs = read('src/public/js/tasks.js');
     const editJs = read('src/public/js/edit-task.js');
     const folderSelectorJs = read('src/public/js/folderSelector.js');
+    const accountsJs = read('src/public/js/accounts.js');
 
     assert(authJs.includes('__ASSET_VERSION__'), 'auth 路由未注入资源版本占位符');
 
@@ -31,6 +32,7 @@ function run() {
     assert(tasksJs.includes("createTaskModal').style.display = 'flex'"), '创建任务弹窗未使用 flex 打开');
     assert(editJs.includes("editTaskModal').style.display = 'flex'"), '编辑任务弹窗未使用 flex 打开');
     assert(folderSelectorJs.includes("this.modal.style.display = 'flex'"), '目录选择弹层未使用 flex 打开');
+    assert(accountsJs.includes("modal.style.display = 'flex';"), '账号弹窗未使用 flex 打开');
 
     console.log('✅ D3 asset-version/modal checks passed');
 }
