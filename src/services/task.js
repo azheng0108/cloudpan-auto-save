@@ -16,6 +16,7 @@ const harmonizedFilter = require('../utils/BloomFilter');
 const cloud189Utils = require('../utils/Cloud189Utils');
 const Cloud139Utils = require('../utils/Cloud139Utils');
 const { processCloud139Task } = require('./cloud139TaskProcessor');
+const { TaskNamingService } = require('./taskNamingService');
 
 class TaskService {
     constructor(taskRepo, accountRepo, transferredFileRepo) {
@@ -24,6 +25,7 @@ class TaskService {
         this.transferredFileRepo = transferredFileRepo || null;
         this.messageUtil = new MessageUtil();
         this.eventService = EventService.getInstance();
+        this.taskNamingService = new TaskNamingService();
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
             const taskEventHandler = new TaskEventHandler(this.messageUtil);
@@ -667,95 +669,14 @@ class TaskService {
      *           videoFormat, videoSource, videoCodec, audioCodec, fileExt
      */
     _parseMediaFileName(filename) {
-        const ext = path.extname(filename);
-        let base = path.basename(filename, ext);
-        const vars = {
-            fileExt: ext.toLowerCase(),
-            title: '',
-            year: '',
-            season: '',
-            episode: '',
-            season_episode: '',
-            part: '',
-            videoFormat: '',
-            videoSource: '',
-            videoCodec: '',
-            audioCodec: '',
-        };
-
-        // ① 分辨率/画质
-        const resMap = { '4k': '4K', 'uhd': '4K', '2160p': '2160p', '1440p': '1440p', '1080p': '1080p', '720p': '720p', '480p': '480p', '1080i': '1080i', '576p': '576p' };
-        const resMatch = base.match(/\b(4k|uhd|2160p|1440p|1080p|720p|480p|1080i|576p)\b/i);
-        if (resMatch) vars.videoFormat = resMap[resMatch[1].toLowerCase()] || resMatch[1];
-
-        // ② 来源
-        const srcMatch = base.match(/\b(WEB-DL|WEBRip|BluRay|Blu-Ray|BDRemux|BDRip|BRRip|HDTV|DVDRip|DVD|AMZN|NF|HULU|DSNP|ATVP|iT|REMUX)\b/i);
-        if (srcMatch) vars.videoSource = srcMatch[1];
-
-        // ③ 视频编码
-        const vcMatch = base.match(/\b(x264|x265|H\.?264|H\.?265|HEVC|AVC|XviD|MPEG-?2|VP9|AV1)\b/i);
-        if (vcMatch) vars.videoCodec = vcMatch[1];
-
-        // ④ 音频编码
-        const acMatch = base.match(/\b(DTS-HD|DTS|TrueHD|Atmos|E-?AC-?3|EAC3|AC-?3|AAC|FLAC|DD5\.1|DD7\.1|DDP5\.1|MP3|LPCM)\b/i);
-        if (acMatch) vars.audioCodec = acMatch[1];
-
-        // ⑤ Part
-        const partMatch = base.match(/\bPart\.?\s*(\d+|[IVX]+)\b/i);
-        if (partMatch) vars.part = `Part${partMatch[1]}`;
-
-        // ⑥ 剧集 SxxExx
-        const seMatch = base.match(/[._\s-]*[Ss](\d{1,3})[._\s-]?[Ee](\d{1,3})/);
-        if (seMatch) {
-            vars.season = String(parseInt(seMatch[1]));
-            vars.episode = String(parseInt(seMatch[2]));
-            vars.season_episode = `S${seMatch[1].padStart(2, '0')}E${seMatch[2].padStart(2, '0')}`;
-        } else {
-            // 纯数字集数，如 EP01 / E01
-            const epMatch = base.match(/\b[Ee][Pp]?(\d{2,3})\b/);
-            if (epMatch) {
-                vars.season = '1';
-                vars.episode = String(parseInt(epMatch[1]));
-                vars.season_episode = `S01E${epMatch[1].padStart(2, '0')}`;
-            }
-        }
-
-        // ⑦ 年份
-        const yearMatch = base.match(/\b((?:19|20)\d{2})\b/);
-        if (yearMatch) vars.year = yearMatch[1];
-
-        // ⑧ 标题：截取最早出现的技术信息之前的部分
-        const titleEndPatterns = [
-            /[._\s-]+[Ss]\d{1,3}[._\s-]?[Ee]\d{1,3}/,
-            /[._\s-]+[Ee][Pp]?\d{2,3}\b/,
-            /[._\s-]*\((?:19|20)\d{2}\)/,
-            /[._\s-]+(?:19|20)\d{2}[._\s-]/,
-            /[._\s-]+(?:2160p|1440p|1080p|720p|480p|4k|uhd)\b/i,
-            /[._\s-]+(?:WEB-DL|WEBRip|BluRay|Blu-Ray|BDRemux|BDRip|HDTV|DVDRip|REMUX)\b/i,
-        ];
-        let titleEnd = base.length;
-        for (const pat of titleEndPatterns) {
-            const m = base.search(pat);
-            if (m > 0 && m < titleEnd) titleEnd = m;
-        }
-        let title = base.substring(0, titleEnd);
-        title = title.replace(/[._]/g, ' ').replace(/\s*[-–]\s*$/, '').replace(/\s+/g, ' ').trim();
-        vars.title = title || path.basename(filename, ext);
-        return vars;
+        return this.taskNamingService.parseMediaFileName(filename);
     }
 
     /**
      * 使用 nunjucks 渲染 Jinja2 模板
      */
     _renderJinjaTemplate(template, vars) {
-        const nunjucks = require('nunjucks');
-        const env = new nunjucks.Environment(null, { autoescape: false });
-        try {
-            return env.renderString(template, vars);
-        } catch (e) {
-            logTaskEvent(`Jinja2 模板渲染失败: ${e.message}`);
-            return null;
-        }
+        return this.taskNamingService.renderJinjaTemplate(template, vars);
     }
 
     /**
@@ -851,27 +772,7 @@ class TaskService {
 
     // 根据AI分析结果生成新文件名
     _generateFileName(file, aiFile, resourceInfo, template) {
-        if (!aiFile) return file.name;
-        
-        // 构建文件名替换映射
-        const replaceMap = {
-            '{name}': aiFile.name || resourceInfo.name,
-            '{year}': resourceInfo.year || '',
-            '{s}': aiFile.season?.padStart(2, '0') || '01',
-            '{e}': aiFile.episode?.padStart(2, '0') || '01',
-            '{sn}': parseInt(aiFile.season) || '1',                    // 不补零的季数
-            '{en}': parseInt(aiFile.episode) || '1',                   // 不补零的集数
-            '{ext}': aiFile.extension || path.extname(file.name),
-            '{se}': `S${aiFile.season?.padStart(2, '0') || '01'}E${aiFile.episode?.padStart(2, '0') || '01'}`
-        };
-
-        // 替换模板中的占位符
-        let newName = template;
-        for (const [key, value] of Object.entries(replaceMap)) {
-            newName = newName.replace(new RegExp(key, 'g'), value);
-        }
-        // 清理文件名中的非法字符
-        return this._sanitizeFileName(newName);
+        return this.taskNamingService.generateFileName(file, aiFile, resourceInfo, template);
     }
     // 处理重命名过程
     async _processRename(cloud189, task, files, resourceInfo, message, newFiles) {
@@ -904,10 +805,7 @@ class TaskService {
 
     // 清理文件名中的非法字符
     _sanitizeFileName(fileName) {
-        // 移除文件名中的非法字符
-        return fileName.replace(/[<>:"/\\|?*]/g, '')
-            .replace(/\s+/g, ' ')  // 合并多个空格
-            .trim();
+        return this.taskNamingService.sanitizeFileName(fileName);
     }
     // 处理正则表达式重命名
     async _processRegexRename(cloud189, task, files, message, newFiles) {
