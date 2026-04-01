@@ -37,6 +37,22 @@ const clearAllSessionFiles = async () => {
     }
 };
 
+const maskUsername = (username) => {
+    const value = String(username || '');
+    const len = value.length;
+    if (len === 0) return '';
+    if (len === 1) return '*';
+    if (len <= 4) return `${value.slice(0, 1)}${'*'.repeat(len - 1)}`;
+
+    const headLen = 3;
+    const tailLen = len >= 8 ? 4 : 2;
+    const maskLen = len - headLen - tailLen;
+    if (maskLen <= 0) {
+        return `${value.slice(0, 1)}${'*'.repeat(Math.max(1, len - 1))}`;
+    }
+    return `${value.slice(0, headLen)}${'*'.repeat(maskLen)}${value.slice(-tailLen)}`;
+};
+
 const registerApiRoutes = (app, deps) => {
     const {
         accountRepo,
@@ -51,7 +67,7 @@ const registerApiRoutes = (app, deps) => {
 
     app.get('/api/accounts', async (req, res) => {
         const accounts = await accountRepo.find();
-        for (const account of accounts) {
+        await Promise.all(accounts.map(async (account) => {
             account.capacity = {
                 cloudCapacityInfo: { usedSize: 0, totalSize: 0 },
                 familyCapacityInfo: { usedSize: 0, totalSize: 0 },
@@ -69,8 +85,8 @@ const registerApiRoutes = (app, deps) => {
                 }
             }
             account.original_username = account.username;
-            account.username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
-        }
+            account.username = maskUsername(account.username);
+        }));
         res.json({ success: true, data: accounts });
     });
 
@@ -189,7 +205,7 @@ const registerApiRoutes = (app, deps) => {
             where: whereClause,
         });
         tasks.forEach((task) => {
-            task.account.username = task.account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
+            task.account.username = maskUsername(task.account.username);
         });
         res.json({ success: true, data: tasks });
     });
@@ -459,8 +475,13 @@ const registerApiRoutes = (app, deps) => {
 
     app.post('/api/tasks/executeAll', async (req, res) => {
         try {
-            await taskService.processAllTasks(true);
-            res.json({ success: true, data: null });
+            // 后台异步触发，避免长任务阻塞 HTTP 请求导致超时。
+            Promise.resolve()
+                .then(() => taskService.processAllTasks(true))
+                .catch((error) => {
+                    logTaskEvent(`[api] executeAll 异步执行失败: ${error.message}`);
+                });
+            res.json({ success: true, data: { started: true } });
         } catch (error) {
             res.json({ success: false, error: error.message });
         }
