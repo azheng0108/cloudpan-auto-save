@@ -16,6 +16,7 @@ const harmonizedFilter = require('../utils/BloomFilter');
 const { processCloud139Task } = require('./cloud139TaskProcessor');
 const { TaskNamingService } = require('./taskNamingService');
 const { TaskParserService } = require('./taskParserService');
+const { TaskExecutorService } = require('./taskExecutorService');
 
 class TaskService {
     constructor(taskRepo, accountRepo, transferredFileRepo) {
@@ -26,6 +27,7 @@ class TaskService {
         this.eventService = EventService.getInstance();
         this.taskNamingService = new TaskNamingService();
         this.taskParserService = new TaskParserService();
+        this.taskExecutorService = new TaskExecutorService(this);
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
             const taskEventHandler = new TaskEventHandler(this.messageUtil);
@@ -416,7 +418,7 @@ class TaskService {
                     targetFolderId: task.realFolderId,
                     shareId: task.shareId
                 });
-                await this.createBatchTask(cloud189, batchTaskDto);
+                await this.taskExecutorService.createBatchTask(cloud189, batchTaskDto);
                 // 转存成功后将源文件 ID 写入统一漏斗表
                 await this._recordTransferredFiles(task.id, taskInfoList);
             }else{
@@ -846,62 +848,8 @@ class TaskService {
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // 检查任务状态
     async checkTaskStatus(cloud189, taskId, count = 0, batchTaskDto) {
-        if (count > 5) {
-             return false;
-        }
-        let type = batchTaskDto.type || 'SHARE_SAVE';
-        // 轮询任务状态
-        const task = await cloud189.checkTaskStatus(taskId, batchTaskDto)
-        if (!task) {
-            return false;
-        }
-        logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}`)
-        if (task.taskStatus == 3 || task.taskStatus == 1) {
-            // 暂停200毫秒
-            await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189,taskId, count++, batchTaskDto)
-        }
-        if (task.taskStatus == 4) {
-            // 如果failedCount > 0 说明有失败或者被和谐的文件, 需要查一次文件列表
-            if (task.failedCount > 0 && type == 'SHARE_SAVE') {
-                const targetFolderId = batchTaskDto.targetFolderId;
-                const fileList = await this.getAllFolderFiles(cloud189, {
-                    enableSystemProxy: false,
-                    realFolderId: targetFolderId
-                });
-                //  当前转存的文件列表为taskInfos 需反序列化
-                const taskInfos = JSON.parse(batchTaskDto.taskInfos);
-                // fileList和taskInfos进行对比 拿到不在fileList中的文件
-                const conflictFiles = taskInfos.filter(taskInfo => {
-                    return !fileList.some(file => file.md5 === taskInfo.md5);
-                });
-                if (conflictFiles.length > 0) {
-                    // 打印日志
-                    logTaskEvent(`任务编号: ${task.taskId}, 任务状态: ${task.taskStatus}, 有${conflictFiles.length}个文件冲突, 已忽略: ${conflictFiles.map(file => file.fileName).join(',')}`);
-                    // 加入和谐文件中
-                    harmonizedFilter.addHarmonizedList(conflictFiles.map(file => file.md5))
-                }
-            }
-            return true;
-        }
-        // 如果status == 2 说明有冲突
-        if (task.taskStatus == 2) {
-            const conflictTaskInfo = await cloud189.getConflictTaskInfo(taskId);
-            if (!conflictTaskInfo) {
-                return false
-            }
-            // 忽略冲突
-            const taskInfos = conflictTaskInfo.taskInfos;
-            for (const taskInfo of taskInfos) {
-                taskInfo.dealWay = 1;
-            }
-            await cloud189.manageBatchTask(taskId, conflictTaskInfo.targetFolderId, taskInfos);
-            await new Promise(resolve => setTimeout(resolve, 200));
-            return await this.checkTaskStatus(cloud189, taskId, count++, batchTaskDto)
-        }
-        return false;
+        return this.taskExecutorService.checkTaskStatus(cloud189, taskId, count, batchTaskDto);
     }
 
     // 执行所有任务
@@ -1049,7 +997,7 @@ class TaskService {
                     saveResults.push(result);
                 }
             } catch (error) {
-                console.error(`重试任务${task.name}执行失败:`, error);
+                logTaskEvent(`重试任务${task.name}执行失败: ${error.message}`);
             }finally {
                 logTaskEvent(`任务[${taskName}]重试完成`);
             }
@@ -1065,18 +1013,7 @@ class TaskService {
     }
     // 创建批量任务
     async createBatchTask(cloud189, batchTaskDto) {
-        const resp = await cloud189.createBatchTask(batchTaskDto);
-        if (!resp) {
-            throw new Error('批量任务处理失败');
-        }
-        if (resp.res_code != 0) {
-            throw new Error(resp.res_msg);
-        }
-        logTaskEvent(`批量任务处理中: ${JSON.stringify(resp)}`)
-        if (!await this.checkTaskStatus(cloud189,resp.taskId, 0 , batchTaskDto)) {
-            throw new Error('检查批量任务状态: 批量任务处理失败');
-        }
-        logTaskEvent(`批量任务处理完成`)
+        return this.taskExecutorService.createBatchTask(cloud189, batchTaskDto);
     }
     // 定时清空回收站
     async clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
@@ -1171,7 +1108,7 @@ class TaskService {
                 isFolder: isFolder
             })
         }
-        console.log(taskInfos)
+        logTaskEvent(`准备删除云盘内容: ${JSON.stringify(taskInfos)}`)
         
         const batchTaskDto = new BatchTaskDto({
             taskInfos: JSON.stringify(taskInfos),
