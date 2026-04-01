@@ -2,6 +2,7 @@ const { DataSource } = require('typeorm');
 const { Account, Task, CommonFolder, TransferredFile } = require('../entities');
 const path = require('path');
 const dotenv = require('dotenv');
+const logger = require('../utils/logger');
 
 dotenv.config();
 

@@ -1324,8 +1324,8 @@ class TaskService {
     }
 
     // 删除移动云盘（cloud139）文件/目录
-    async deleteCloudFile139(cloud139, file, isFolder) {
-        return this.taskStorageService.deleteCloudFile139(cloud139, file, isFolder);
+    async deleteCloudFile139(cloud139, file) {
+        return this.taskStorageService.deleteCloudFile139(cloud139, file);
     }
 }
 

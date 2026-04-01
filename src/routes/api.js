@@ -561,7 +561,10 @@ const registerApiRoutes = (app, deps) => {
 
             res.json({ success: true, data: null });
         } catch (error) {
-            res.status(400).json({ success: false, error: error.message });
+            logger.error('更新系统设置失败', { error: error.message, stack: error.stack });
+            const isValidationError = typeof error?.message === 'string'
+                && error.message.includes('Cron 无效');
+            res.status(isValidationError ? 400 : 500).json({ success: false, error: error.message });
         }
     });
 

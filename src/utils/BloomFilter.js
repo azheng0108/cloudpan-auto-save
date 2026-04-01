@@ -110,7 +110,7 @@ class HarmonizedFilter {
     // 添加被和谐的资源MD5
     addHarmonized(md5) {
         this.filter.add(md5);
-        s.appendToFile(md5).catch(error => {
+        this.appendToFile(md5).catch(error => {
             logger.error('写入和谐MD5到文件失败', { error: error.message, stack: error.stack });
         });
     }
