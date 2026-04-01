@@ -110,7 +110,12 @@ class TaskNamingService {
         };
         let newName = template;
         for (const [key, value] of Object.entries(replaceMap)) {
-            newName = newName.replace(new RegExp(key, 'g'), value);
+            const replacement = value == null ? '' : String(value);
+            if (typeof newName.replaceAll === 'function') {
+                newName = newName.replaceAll(key, replacement);
+            } else {
+                newName = newName.split(key).join(replacement);
+            }
         }
         return this.sanitizeFileName(newName);
     }
