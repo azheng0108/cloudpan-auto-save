@@ -5,21 +5,19 @@
  */
 
 import { describe, test, expect, beforeEach } from '@jest/globals';
-const CheckpointManager = require('../src/services/checkpointManager');
+import CheckpointManager from '../src/services/checkpointManager';
 
 describe('CheckpointManager', () => {
     describe('createCheckpoint', () => {
         test('应该创建新的检查点', () => {
             const checkpoint = CheckpointManager.createCheckpoint({
                 processedFolders: ['folder1', 'folder2'],
-                transferredFileIds: ['file1', 'file2'],
                 currentBatchIndex: 2,
                 metadata: { totalBatches: 10 }
             });
             
             expect(checkpoint.version).toBe('1.0');
             expect(checkpoint.processedFolders).toEqual(['folder1', 'folder2']);
-            expect(checkpoint.transferredFileIds).toEqual(['file1', 'file2']);
             expect(checkpoint.currentBatchIndex).toBe(2);
             expect(checkpoint.metadata.totalBatches).toBe(10);
             expect(checkpoint.createdAt).toBeTruthy();
@@ -29,7 +27,6 @@ describe('CheckpointManager', () => {
             const checkpoint = CheckpointManager.createCheckpoint();
             
             expect(checkpoint.processedFolders).toEqual([]);
-            expect(checkpoint.transferredFileIds).toEqual([]);
             expect(checkpoint.currentBatchIndex).toBe(0);
         });
     });
@@ -143,21 +140,6 @@ describe('CheckpointManager', () => {
         });
     });
 
-    describe('isFileProcessed', () => {
-        test('应该检查文件是否已处理', () => {
-            const checkpoint = CheckpointManager.createCheckpoint({
-                transferredFileIds: ['file1', 'file2', 'file3']
-            });
-            
-            expect(CheckpointManager.isFileProcessed(checkpoint, 'file1')).toBe(true);
-            expect(CheckpointManager.isFileProcessed(checkpoint, 'file4')).toBe(false);
-        });
-
-        test('检查点为空时应该返回 false', () => {
-            expect(CheckpointManager.isFileProcessed(null, 'file1')).toBe(false);
-        });
-    });
-
     describe('isFolderProcessed', () => {
         test('应该检查文件夹是否已处理', () => {
             const checkpoint = CheckpointManager.createCheckpoint({
@@ -183,16 +165,6 @@ describe('CheckpointManager', () => {
             expect(updated.processedFolders).toContain('folder2');
         });
 
-        test('应该更新已传输的文件', () => {
-            const checkpoint = CheckpointManager.createCheckpoint();
-            
-            const updated = CheckpointManager.updateProgress(checkpoint, {
-                transferredFiles: ['file1', 'file2']
-            });
-            
-            expect(updated.transferredFileIds).toEqual(['file1', 'file2']);
-        });
-
         test('应该更新批次索引', () => {
             const checkpoint = CheckpointManager.createCheckpoint({
                 currentBatchIndex: 0
@@ -207,17 +179,14 @@ describe('CheckpointManager', () => {
 
         test('应该去重已处理项', () => {
             const checkpoint = CheckpointManager.createCheckpoint({
-                processedFolders: ['folder1'],
-                transferredFileIds: ['file1']
+                processedFolders: ['folder1']
             });
             
             const updated = CheckpointManager.updateProgress(checkpoint, {
-                processedFolder: 'folder1', // 重复
-                transferredFiles: ['file1', 'file2'] // file1 重复
+                processedFolder: 'folder1'
             });
             
             expect(updated.processedFolders).toEqual(['folder1']);
-            expect(updated.transferredFileIds).toHaveLength(2);
         });
     });
 

@@ -11,6 +11,9 @@ class TaskRetryService {
         logTaskEvent(error);
         const maxRetries = ConfigService.getConfigValue('task.maxRetries');
         const retryInterval = ConfigService.getConfigValue('task.retryInterval');
+        const baseRetryDelay = Number(error && error.retryDelay) > 0
+            ? Number(error.retryDelay)
+            : retryInterval;
         if (!task.retryCount) {
             task.retryCount = 0;
         }
@@ -19,8 +22,9 @@ class TaskRetryService {
             task.retryCount++;
             task.status = 'pending';
             task.lastError = `${error.message} (重试 ${task.retryCount}/${maxRetries})`;
-            task.nextRetryTime = new Date(Date.now() + retryInterval * 1000);
-            logTaskEvent(`任务将在 ${retryInterval} 秒后重试 (${task.retryCount}/${maxRetries})`);
+            const retryDelay = Math.min(baseRetryDelay * Math.pow(2, Math.max(0, task.retryCount - 1)), 3600);
+            task.nextRetryTime = new Date(Date.now() + retryDelay * 1000);
+            logTaskEvent(`任务将在 ${retryDelay} 秒后重试 (${task.retryCount}/${maxRetries})`);
         } else {
             task.status = 'failed';
             task.lastError = `${error.message} (已达到最大重试次数 ${maxRetries})`;

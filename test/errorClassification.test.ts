@@ -5,8 +5,8 @@
  */
 
 import { describe, test, expect, beforeEach } from '@jest/globals';
-const { ErrorClassifier, ERROR_TYPES } = require('../src/services/errorClassifier');
-const TaskErrorService = require('../src/services/taskErrorService');
+import { ErrorClassifier, ERROR_TYPES } from '../src/services/errorClassifier';
+import TaskErrorService from '../src/services/taskErrorService';
 
 describe('ErrorClassifier', () => {
     describe('classify', () => {
@@ -29,6 +29,38 @@ describe('ErrorClassifier', () => {
             
             expect(classification.type.code).toBe('LINK_EXPIRED');
             expect(classification.type.fatal).toBe(true);
+        });
+
+        test('应该识别访问次数超限错误', () => {
+            const error = new Error('访问次数超限') as any;
+            error.apiCode = '200000402';
+
+            const classification = ErrorClassifier.classify(error);
+
+            expect(classification.type.code).toBe('LINK_LIMIT_EXCEEDED');
+            expect(classification.type.fatal).toBe(true);
+            expect(classification.type.retryable).toBe(false);
+        });
+
+        test('应该识别权限不足错误', () => {
+            const error = new Error('权限不足') as any;
+            error.statusCode = 403;
+
+            const classification = ErrorClassifier.classify(error);
+
+            expect(classification.type.code).toBe('PERMISSION_DENIED');
+            expect(classification.type.fatal).toBe(true);
+        });
+
+        test('应该识别用户信息查询失败错误', () => {
+            const error = new Error('用户信息查询失败') as any;
+            error.apiCode = '05010003';
+
+            const classification = ErrorClassifier.classify(error);
+
+            expect(classification.type.code).toBe('USER_INFO_QUERY_FAILED');
+            expect(classification.type.fatal).toBe(true);
+            expect(classification.type.retryable).toBe(false);
         });
 
         test('应该识别空间已满错误', () => {
@@ -96,7 +128,7 @@ describe('ErrorClassifier', () => {
             const error = new Error('测试错误') as any;
             error.apiCode = '200000401';
             
-            const enhanced = ErrorClassifier.enhance(error);
+            const enhanced = ErrorClassifier.enhance(error) as any;
             
             expect(enhanced.errorType).toBe('LINK_EXPIRED');
             expect(enhanced.fatal).toBe(true);
@@ -113,7 +145,7 @@ describe('ErrorClassifier', () => {
             const classifiedError = ErrorClassifier.createClassifiedError(
                 originalError,
                 { taskId: 123 }
-            );
+            ) as any;
             
             expect(classifiedError.errorType).toBe('QUOTA_EXCEEDED');
             expect(classifiedError.context.taskId).toBe(123);
