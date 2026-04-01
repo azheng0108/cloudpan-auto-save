@@ -41,6 +41,10 @@ class Cloud189Service {
         });
     }
 
+    static clearAllInstances() {
+        this.instances.clear();
+    }
+
     // 封装统一请求
     async request(action, body) {
         return this.limit(() => this.requestImpl(action, body));
