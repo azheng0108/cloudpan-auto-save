@@ -1,4 +1,4 @@
-const { Cloud189Service } = require('./cloud189');
+const { Cloud189Service } = require('../legacy189/services/cloud189');
 const { Cloud139Service } = require('./cloud139');
 const { BatchTaskDto } = require('../dto/BatchTaskDto');
 const { SchedulerService } = require('./scheduler');

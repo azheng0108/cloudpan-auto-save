@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const ConfigService = require('./ConfigService');
 const { logTaskEvent } = require('../utils/logUtils');
 const { MessageUtil } = require('./message');
+const { AppDataSource } = require('../database');
 
 class SchedulerService {
     static taskJobs = new Map();
@@ -9,6 +10,7 @@ class SchedulerService {
     static DEFAULT_TASK_CHECK_CRON = '0 19-23 * * *';
     static DEFAULT_RETRY_TASK_CRON = '*/1 * * * *';
     static DEFAULT_CLEAN_RECYCLE_CRON = '0 */8 * * *';
+    static DEFAULT_VACUUM_CRON = '0 4 * * 0';
 
     static async initTaskJobs(taskRepo, taskService) {
         // 初始化所有启用定时任务的任务
@@ -132,10 +134,18 @@ class SchedulerService {
             throw new Error(`回收站清理 Cron 无效: ${cleanRecycleCron}`);
         }
 
+        const vacuumCron = (typeof taskSettings.vacuumCron === 'string' && taskSettings.vacuumCron.trim())
+            ? taskSettings.vacuumCron.trim()
+            : this.DEFAULT_VACUUM_CRON;
+        if (!cron.validate(vacuumCron)) {
+            throw new Error(`VACUUM Cron 无效: ${vacuumCron}`);
+        }
+
         return {
             taskCheckCron: taskCheckCrons.join('|'),
             retryTaskCron,
             cleanRecycleCron,
+            vacuumCron,
         };
     }
 
@@ -162,6 +172,19 @@ class SchedulerService {
         } else {
             this.removeTaskJob('自动清空回收站');
         }
+
+        this.saveDefaultTaskJob('SQLite-VACUUM', normalized.vacuumCron, async () => {
+            try {
+                if (!AppDataSource.isInitialized) {
+                    logTaskEvent('VACUUM 跳过：数据库未初始化');
+                    return;
+                }
+                await AppDataSource.query('VACUUM');
+                logTaskEvent('VACUUM 执行成功');
+            } catch (error) {
+                logTaskEvent(`VACUUM 执行失败: ${error.message}`);
+            }
+        });
 
         return normalized;
     }
