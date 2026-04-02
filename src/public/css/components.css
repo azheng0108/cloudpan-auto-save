@@ -39,6 +39,86 @@
     color: #666;
 }
 
+.task-recovery-box {
+    margin-top: 6px;
+}
+
+.task-recovery-text {
+    font-size: 11px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.task-recovery-bar {
+    width: 100%;
+    height: 5px;
+    background: #f0f0f0;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.task-recovery-bar > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #1890ff, #52c41a);
+}
+
+.task-recovery-node {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #d46b08;
+}
+
+.task-error-box {
+    margin-top: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+}
+
+.task-error-title {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.task-error-hint {
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+.task-error-text {
+    font-size: 11px;
+    margin-top: 3px;
+    color: #666;
+}
+
+.error-tier-fatal {
+    background: #fff2f0;
+    border-color: #ffccc7;
+}
+
+.error-tier-fatal .task-error-title {
+    color: #cf1322;
+}
+
+.error-tier-retryable {
+    background: #fffbe6;
+    border-color: #ffe58f;
+}
+
+.error-tier-retryable .task-error-title {
+    color: #d48806;
+}
+
+.error-tier-unknown {
+    background: #f0f5ff;
+    border-color: #adc6ff;
+}
+
+.error-tier-unknown .task-error-title {
+    color: #2f54eb;
+}
+
 /* 视图切换按钮 */
 .view-toggle {
     position: absolute;
