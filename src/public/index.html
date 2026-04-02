@@ -343,11 +343,6 @@
                             <small class="form-text">控制移动云盘（139）请求并发，避免触发限流</small>
                         </div>
                         <div class="push-item">
-                            <label for="cloud189Concurrency">189并发上限</label>
-                            <input type="number" id="cloud189Concurrency" min="1" placeholder="默认5">
-                            <small class="form-text">控制天翼云盘（189）请求并发，便于兼容旧链路</small>
-                        </div>
-                        <div class="push-item">
                             <label>任务定时检查</label>
                             <input type="text" id="taskCheckCron" placeholder="Cron表达式">
                             <small class="form-text">默认：0 19-23 * * * (每天19点到23点整点执行一次) 允许多个表达式, 使用|分隔, 例如: 0 19-23 * * *|0 16-23 * * *</small>
@@ -356,19 +351,6 @@
                             <label>重试任务检查</label>
                             <input type="text" id="retryTaskCron" placeholder="Cron表达式">
                             <small class="form-text">默认：*/1 * * * * (每分钟执行一次重试扫描)</small>
-                        </div>
-                        <div class="push-item">
-                            <label>
-                                <input type="checkbox" id="enableAutoClearRecycle">
-                                自动清空个人回收站
-                            </label>
-                            <label>
-                                <input type="checkbox" id="enableAutoClearFamilyRecycle">
-                                自动清空回家庭收站
-                            </label>
-
-                            <input type="text" id="cleanRecycleCron" placeholder="Cron表达式">
-                            <small class="form-text">默认：0 */8 * * * (每8小时)</small>
                         </div>
                         <div class="push-item">
                             <label for="mediaSuffix">媒体文件后缀</label>

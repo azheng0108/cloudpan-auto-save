@@ -11,13 +11,9 @@ async function loadSettings() {
             document.getElementById('taskExpireDays').value = settings.task?.taskExpireDays || 3;
             document.getElementById('taskCheckCron').value = settings.task?.taskCheckCron || '0 19-23 * * *';
             document.getElementById('retryTaskCron').value = settings.task?.retryTaskCron || '*/1 * * * *';
-            document.getElementById('cleanRecycleCron').value = settings.task?.cleanRecycleCron || '0 */8 * * * ';
             document.getElementById('taskMaxRetries').value = settings.task?.maxRetries || 3;
             document.getElementById('taskRetryInterval').value = settings.task?.retryInterval || 300;
             document.getElementById('cloud139Concurrency').value = settings.task?.cloud139Concurrency || 3;
-            document.getElementById('cloud189Concurrency').value = settings.task?.cloud189Concurrency || 5;
-            document.getElementById('enableAutoClearRecycle').checked = settings.task?.enableAutoClearRecycle || false;
-            document.getElementById('enableAutoClearFamilyRecycle').checked = settings.task?.enableAutoClearFamilyRecycle || false;
             document.getElementById('mediaSuffix').value = settings.task?.mediaSuffix || '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov';
             document.getElementById('enableOnlySaveMedia').checked = settings.task?.enableOnlySaveMedia || false;
             document.getElementById('enableAutoCreateFolder').checked = settings.task?.enableAutoCreateFolder || false;
@@ -88,13 +84,9 @@ async function saveSettings() {
             taskExpireDays: parseInt(document.getElementById('taskExpireDays').value) || 3,
             taskCheckCron: document.getElementById('taskCheckCron').value || '0 19-23 * * *',
             retryTaskCron: document.getElementById('retryTaskCron').value || '*/1 * * * *',
-            cleanRecycleCron: document.getElementById('cleanRecycleCron').value || '0 */8 * * *',
             maxRetries: parseInt(document.getElementById('taskMaxRetries').value) || 3,
             retryInterval: parseInt(document.getElementById('taskRetryInterval').value) || 300,
             cloud139Concurrency: parseInt(document.getElementById('cloud139Concurrency').value) || 3,
-            cloud189Concurrency: parseInt(document.getElementById('cloud189Concurrency').value) || 5,
-            enableAutoClearRecycle: document.getElementById('enableAutoClearRecycle').checked,
-            enableAutoClearFamilyRecycle: document.getElementById('enableAutoClearFamilyRecycle').checked,
             mediaSuffix: document.getElementById('mediaSuffix').value,
             enableOnlySaveMedia: document.getElementById('enableOnlySaveMedia').checked,
             enableAutoCreateFolder: document.getElementById('enableAutoCreateFolder').checked
@@ -159,7 +151,7 @@ async function saveSettings() {
         message.warning("任务重试间隔不能小于60秒")
         return 
     }
-    if (settings.task.cloud139Concurrency < 1 || settings.task.cloud189Concurrency < 1) {
+    if (settings.task.cloud139Concurrency < 1) {
         message.warning('并发上限必须大于等于1');
         return;
     }
