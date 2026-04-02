@@ -1,5 +1,5 @@
 const { In, IsNull } = require('typeorm');
-const { Cloud189Service } = require('./cloud189');
+const { Cloud189Service } = require('../legacy189/services/cloud189');
 const { Cloud139Service } = require('./cloud139');
 const { MessageUtil } = require('./message');
 const { logTaskEvent } = require('../utils/logUtils');

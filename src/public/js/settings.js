@@ -1,5 +1,25 @@
 let customPushConfigs = []
+
+// 加载版本信息
+async function loadVersionInfo() {
+    try {
+        const response = await fetch('/api/system/version');
+        const data = await response.json();
+        if (data.success) {
+            document.getElementById('systemVersion').textContent = `v${data.version}`;
+        } else {
+            document.getElementById('systemVersion').textContent = 'unknown';
+        }
+    } catch (error) {
+        console.error('获取版本信息失败:', error);
+        document.getElementById('systemVersion').textContent = 'unknown';
+    }
+}
+
 async function loadSettings() {
+    // 加载版本信息
+    await loadVersionInfo();
+    
     try {
         const response = await fetch('/api/settings');
         const data = await response.json();

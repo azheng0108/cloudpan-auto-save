@@ -1,5 +1,5 @@
 const path = require('path');
-const cloud189Utils = require('../utils/Cloud189Utils');
+const cloud189Utils = require('../legacy189/utils/Cloud189Utils');
 const Cloud139Utils = require('../utils/Cloud139Utils');
 
 class TaskParserService {

@@ -9,7 +9,7 @@ const { logTaskEvent } = require('../utils/logUtils');
 const { clearCloudSaverToken } = require('../sdk/cloudsaver');
 const { AppDataSource } = require('../database');
 const logger = require('../utils/logger');
-const { Cloud189Service } = require('../services/cloud189');
+const { Cloud189Service } = require('../legacy189/services/cloud189');
 
 const ensureCloud139Account = (account, action) => {
     if (!account) {
@@ -583,6 +583,15 @@ const registerApiRoutes = (app, deps) => {
 
     app.get('/api/version', (req, res) => {
         res.json({ version: currentVersion });
+    });
+
+    app.get('/api/system/version', (req, res) => {
+        res.json({ 
+            success: true,
+            version: currentVersion,
+            platform: '移动云盘 (139) 专用版',
+            timestamp: new Date().toISOString()
+        });
     });
 
     app.post('/api/share/parse', async (req, res) => {

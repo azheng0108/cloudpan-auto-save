@@ -1,17 +1,17 @@
 # cloudpan-auto-save
 
-多云盘自动转存系统，支持 **天翼云盘（189）** 和 **移动云盘（139）**，自动监控分享链接更新并转存文件，支持 Telegram 机器人操作。
+多云盘自动转存系统，支持 **移动云盘（139）**，自动监控分享链接更新并转存文件，支持 Telegram 机器人操作。
 
-> Fork 自 [1307super/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)，在原版基础上新增移动云盘（139）完整支持。
+> Fork 自 [1307super/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)，在原版基础上新增移动云盘（139）完整支持。**当前版本聚焦移动云盘（139）能力。**
 
 ---
 
 ## ✨ 主要功能
 
 - 🔄 定时监控分享链接，自动转存更新文件
-- ☁️ 支持天翼云盘（189）+ 移动云盘（139）双平台
+- ☁️ **当前支持移动云盘（139）**
 - 🤖 Telegram 机器人：远程添加/删除任务、目录浏览、资源搜索
-- 🔍 CloudSaver 资源搜索，支持 189 / 139 链接分组展示
+- 🔍 CloudSaver 资源搜索与分组展示
 - 📲 消息推送：Telegram、企业微信、Bark、Wxpusher
 - 🌙 WebUI 可视化管理，支持暗黑模式
 - 🔑 系统 API Key，支持第三方调用

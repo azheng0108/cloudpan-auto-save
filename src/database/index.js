@@ -9,7 +9,7 @@ dotenv.config();
 const AppDataSource = new DataSource({
     type: 'sqlite',
     database: path.join(__dirname, '../../data/database.sqlite'),
-    synchronize: true,
+    synchronize: false,  // 禁止自动同步，使用migration管理schema变更
     logging: false,
     maxQueryExecutionTime: 1000, // 查询超时设置
     enableWAL: true,   // 启用 WAL 模式提升性能

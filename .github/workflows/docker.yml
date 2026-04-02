@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      custom_version:
+        description: '可选：自定义版本号（留空则使用package.json版本）'
+        required: false
+        default: ''
 
 jobs:
   test:
@@ -26,9 +31,16 @@ jobs:
       
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-      
+
+      - name: Clean build validation
+        run: yarn build
+
       - name: Run tests with coverage
         run: yarn test:ci
+
+      - name: Legacy smoke (non-blocking)
+        continue-on-error: true
+        run: yarn test:legacy
           
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -61,10 +73,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Get version from package.json
+      - name: Get version from package.json or input
         id: pkg
-        # 从 package.json 中读取版本号，用于自动打版本 tag（无需手动推 git tag）
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        # 优先使用手动输入的版本，否则从 package.json 读取
+        run: |
+          if [ -n "${{ github.event.inputs.custom_version }}" ]; then
+            echo "version=${{ github.event.inputs.custom_version }}" >> $GITHUB_OUTPUT
+            echo "使用手动输入版本: ${{ github.event.inputs.custom_version }}"
+          else
+            echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+            echo "使用package.json版本: $(node -p "require('./package.json').version")"
+          fi
 
       - name: Extract metadata (tags & labels)
         id: meta
@@ -72,23 +91,28 @@ jobs:
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/cloudpan-auto-save
           tags: |
-            # main 分支推送时：同时打 latest 和 package.json 版本号（如 2.2.45）
-            type=raw,value=latest
-            type=raw,value=${{ steps.pkg.outputs.version }}
-            # 手动推送 git tag（v1.2.3）时额外打一次，确保历史 tag 可追溯
+            # 主分支推送或手动触发：同时打 latest 和版本号标签
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.pkg.outputs.version }},enable={{is_default_branch}}
+            # Git tag推送时：提取版本号（v1.2.3 -> 1.2.3）
             type=match,pattern=v(.*),group=1,event=tag
+            # PR时仅用于测试构建，不推送到registry
+            type=ref,event=pr
 
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
+          # PR 时只构建不推送，其他情况构建并推送
+          push: ${{ github.event_name != 'pull_request' }}
           no-cache: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Update Docker Hub description
+        # 仅在推送到main分支或手动触发时更新描述
+        if: github.event_name != 'pull_request'
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}

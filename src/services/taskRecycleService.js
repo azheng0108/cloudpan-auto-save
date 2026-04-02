@@ -1,4 +1,4 @@
-const { Cloud189Service } = require('./cloud189');
+const { Cloud189Service } = require('../legacy189/services/cloud189');
 const { BatchTaskDto } = require('../dto/BatchTaskDto');
 const { logTaskEvent } = require('../utils/logUtils');
 
