@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "start:prod": "npm run migration:run:prod && node dist/index.js",
-    "build": "if exist dist rmdir /S /Q dist && tsc && xcopy /E /I /Y src\\public dist\\public",
+    "build": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});\" && tsc && node -e \"const fs=require('fs');fs.cpSync('src/public','dist/public',{recursive:true});\"",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
