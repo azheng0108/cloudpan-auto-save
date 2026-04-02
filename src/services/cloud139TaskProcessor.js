@@ -2,6 +2,8 @@ const { Cloud139Service } = require('./cloud139');
 const { logTaskEvent } = require('../utils/logUtils');
 const ConfigService = require('./ConfigService');
 const { TaskCompleteEventDto } = require('../dto/TaskCompleteEventDto');
+const CheckpointManager = require('./checkpointManager');
+const { ErrorClassifier } = require('./errorClassifier');
 
 async function saveShareBatchWithRetryAndVerify(cloud139, linkID, coPathLst, targetCatalogID, needPassword, expectedNames = []) {
     const saveRes = await cloud139.saveShareFilesWithRetry(
@@ -256,9 +258,40 @@ async function processCloud139Task(taskService, task, account) {
             if (!groupedByFolder.has(physicalId)) groupedByFolder.set(physicalId, []);
             groupedByFolder.get(physicalId).push(f);
         }
+
+        // P1-01: 初始化检查点
+        let checkpoint = CheckpointManager.loadCheckpoint(task);
+        const isResuming = CheckpointManager.shouldResume(task, checkpoint);
+        
+        if (!checkpoint || !isResuming) {
+            // 创建新检查点
+            checkpoint = CheckpointManager.createCheckpoint({
+                catalogMap: Object.fromEntries(catalogMap),
+                physicalFolderMap: Object.fromEntries(physicalFolderMap),
+                metadata: {
+                    totalBatches: groupedByFolder.size,
+                    startTime: new Date().toISOString()
+                }
+            });
+        } else {
+            logTaskEvent(`[恢复] 任务 ${task.id} 从检查点恢复，进度: ${checkpoint.currentBatchIndex}/${checkpoint.metadata.totalBatches}`);
+        }
+
+        let batchIndex = 0;
         for (const [physicalId, files] of groupedByFolder) {
+            // P1-01: 跳过已处理的批次
+            if (isResuming && CheckpointManager.isFolderProcessed(checkpoint, physicalId)) {
+                logTaskEvent(`[恢复] 跳过已处理的文件夹: ${physicalId}`);
+                batchIndex++;
+                continue;
+            }
+
             const coPathLst = files.filter((f) => f.path).map((f) => f.path);
-            if (!coPathLst.length) continue;
+            if (!coPathLst.length) {
+                batchIndex++;
+                continue;
+            }
+
             await saveShareBatchWithRetryAndVerify(
                 cloud139,
                 linkID,
@@ -267,6 +300,16 @@ async function processCloud139Task(taskService, task, account) {
                 !!passwd,
                 files.map((f) => f.coName || '').filter(Boolean)
             );
+
+            // P1-01: 保存批次检查点
+            checkpoint = CheckpointManager.updateProgress(checkpoint, {
+                processedFolder: physicalId,
+                transferredFiles: files.map(f => f.path || String(f.coID ?? '')),
+                currentBatchIndex: batchIndex + 1
+            });
+            
+            await CheckpointManager.saveCheckpoint(taskService.taskRepo, task, checkpoint);
+            batchIndex++;
         }
 
         const taskInfoList = newFiles.map((f) => ({
@@ -318,6 +361,10 @@ async function processCloud139Task(taskService, task, account) {
         task.currentEpisodes = existingMediaCount + fileCount;
         task.retryCount = 0;
         task.lastCheckTime = new Date();
+        
+        // P1-01: 清除检查点（任务完成）
+        await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
+        
         await taskService.taskRepo.save(task);
 
         process.nextTick(() => {
@@ -332,15 +379,36 @@ async function processCloud139Task(taskService, task, account) {
 
         return `${resourceName}追更${fileCount}集: \n${lines.join('\n')}`;
     } catch (err) {
-        if (err.fatal) {
-            logTaskEvent(`[139] 分享链接已失效 [${err.apiCode}]: ${err.message}`);
+        // P1-02: 增强错误处理
+        const classifiedError = ErrorClassifier.enhance(err);
+        
+        logTaskEvent(`[139] 任务执行错误: ${classifiedError.errorTypeName || '未知'} - ${classifiedError.message}`);
+        
+        // 记录错误到数据库
+        if (taskService.taskErrorService) {
+            await taskService.taskErrorService.recordError(task.id, classifiedError, {
+                shareLink: task.shareLink,
+                shareFolderId: task.shareFolderId,
+                accountId: task.accountId
+            });
+        }
+
+        if (classifiedError.fatal) {
+            // 致命错误：直接标记失败
+            logTaskEvent(`[139] 致命错误，任务标记为失败: [${classifiedError.errorType}] ${classifiedError.message}`);
             task.status = 'failed';
-            task.lastError = err.message;
+            task.lastError = `[${classifiedError.errorTypeName}] ${classifiedError.message}`;
             task.lastCheckTime = new Date();
+            
+            // 清除检查点
+            await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
+            
             await taskService.taskRepo.save(task);
             return '';
         }
-        return await taskService._handleTaskFailure(task, err);
+
+        // 可重试错误：保留检查点，交给重试机制处理
+        return await taskService._handleTaskFailure(task, classifiedError);
     }
 }
 

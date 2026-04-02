@@ -203,6 +203,26 @@ export class Task {
     // 是否是文件夹
     @Column('boolean', { nullable: true, default: true })
     isFolder!: boolean;
+
+    // P1-01: 断点恢复字段
+    /** 检查点数据（JSON格式，存储恢复所需的上下文） */
+    @Column('text', { nullable: true })
+    checkpointData!: string;
+
+    /** 已处理批次数 */
+    @Column('integer', { nullable: true, default: 0 })
+    processedBatches!: number;
+
+    /** 总批次数 */
+    @Column('integer', { nullable: true, default: 0 })
+    totalBatches!: number;
+
+    /** 最后检查点时间 */
+    @Column('datetime', { nullable: true, transformer: {
+        from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
+        to: (date: Date) => date
+    } })
+    lastCheckpointTime!: Date;
 }
 
 // 常用目录表
@@ -243,4 +263,57 @@ export class TransferredFile {
     createdAt!: Date;
 }
 
-export default { Account, Task, CommonFolder, TransferredFile };
+// P1-02: 任务错误记录表
+@Entity()
+@Index(['taskId'])
+@Index(['errorType'])
+@Index(['createdAt'])
+export class TaskError {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    /** 所属任务 ID */
+    @Column('integer')
+    taskId!: number;
+
+    /** 错误类型（LINK_INVALID, QUOTA_EXCEEDED, RATE_LIMITED, etc.） */
+    @Column('text')
+    errorType!: string;
+
+    /** 错误代码（API返回的错误码） */
+    @Column('text', { nullable: true })
+    errorCode!: string;
+
+    /** 错误消息 */
+    @Column('text')
+    errorMessage!: string;
+
+    /** 堆栈跟踪 */
+    @Column('text', { nullable: true })
+    stackTrace!: string;
+
+    /** 是否可重试 */
+    @Column('boolean', { default: true })
+    retryable!: boolean;
+
+    /** 是否致命错误（不可恢复） */
+    @Column('boolean', { default: false })
+    fatal!: boolean;
+
+    /** HTTP 状态码 */
+    @Column('integer', { nullable: true })
+    httpStatus!: number;
+
+    /** API 错误码 */
+    @Column('text', { nullable: true })
+    apiCode!: string;
+
+    /** 上下文信息（JSON格式） */
+    @Column('text', { nullable: true })
+    context!: string;
+
+    @CreateDateColumn()
+    createdAt!: Date;
+}
+
+export default { Account, Task, CommonFolder, TransferredFile, TaskError };

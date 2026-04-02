@@ -2,7 +2,7 @@ require('dotenv').config();
 require('express-async-errors');
 const express = require('express');
 const { AppDataSource } = require('./database');
-const { Account, Task, CommonFolder, TransferredFile } = require('./entities');
+const { Account, Task, CommonFolder, TransferredFile, TaskError } = require('./entities');
 const { TaskService } = require('./services/task');
 const { MessageUtil } = require('./services/message');
 const { CacheManager } = require('./services/CacheManager')
@@ -109,7 +109,8 @@ AppDataSource.initialize().then(async () => {
     const taskRepo = AppDataSource.getRepository(Task);
     const commonFolderRepo = AppDataSource.getRepository(CommonFolder);
     const transferredFileRepo = AppDataSource.getRepository(TransferredFile);
-    const taskService = new TaskService(taskRepo, accountRepo, transferredFileRepo);
+    const taskErrorRepo = AppDataSource.getRepository(TaskError);
+    const taskService = new TaskService(taskRepo, accountRepo, transferredFileRepo, taskErrorRepo);
     const messageUtil = new MessageUtil();
     // 机器人管理
     const botManager = TelegramBotManager.getInstance();
@@ -131,6 +132,7 @@ AppDataSource.initialize().then(async () => {
         taskRepo,
         commonFolderRepo,
         transferredFileRepo,
+        taskErrorRepo,
         taskService,
         messageUtil,
         botManager,
