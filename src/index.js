@@ -23,23 +23,50 @@ const app = express();
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
-    : ['http://localhost:3001'];
+    : [];
 
-app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        const error = new Error('CORS策略禁止此来源');
+const corsOptionsDelegate = (req, callback) => {
+    const origin = req.headers.origin;
+    if (!origin) {
+        return callback(null, { origin: true, credentials: true });
+    }
+
+    const requestHostRaw = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+        .split(',')[0]
+        .trim()
+        .toLowerCase();
+    const allowedSet = new Set(allowedOrigins.map(item => item.toLowerCase()));
+    const allowAll = allowedSet.has('*');
+
+    let originHost = '';
+    try {
+        originHost = new URL(origin).host.toLowerCase();
+    } catch (_) {
+        const error = new Error('CORS来源格式无效');
         error.status = 403;
         error.statusCode = 403;
         return callback(error);
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
-    credentials: true,
-}));
+    }
+
+    const isSameHost = requestHostRaw && originHost === requestHostRaw;
+    const isInAllowList = allowedSet.has(origin.toLowerCase());
+
+    if (allowAll || isSameHost || isInAllowList) {
+        return callback(null, {
+            origin: true,
+            methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+            allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
+            credentials: true,
+        });
+    }
+
+    const error = new Error('CORS策略禁止此来源');
+    error.status = 403;
+    error.statusCode = 403;
+    return callback(error);
+};
+
+app.use(cors(corsOptionsDelegate));
 app.use(express.json());
 
 const sessionSecret = ConfigService.getOrCreateSessionSecret();
