@@ -277,18 +277,16 @@ async function processCloud139Task(taskService, task, account) {
             logTaskEvent(`[恢复] 任务 ${task.id} 从检查点恢复，进度: ${checkpoint.currentBatchIndex}/${checkpoint.metadata.totalBatches}`);
         }
 
-        let batchIndex = 0;
+        let processedBatchCount = Array.isArray(checkpoint.processedFolders) ? checkpoint.processedFolders.length : 0;
         for (const [physicalId, files] of groupedByFolder) {
             // P1-01: 跳过已处理的批次
             if (isResuming && CheckpointManager.isFolderProcessed(checkpoint, physicalId)) {
                 logTaskEvent(`[恢复] 跳过已处理的文件夹: ${physicalId}`);
-                batchIndex++;
                 continue;
             }
 
             const coPathLst = files.filter((f) => f.path).map((f) => f.path);
             if (!coPathLst.length) {
-                batchIndex++;
                 continue;
             }
 
@@ -302,14 +300,13 @@ async function processCloud139Task(taskService, task, account) {
             );
 
             // P1-01: 保存批次检查点
+            processedBatchCount += 1;
             checkpoint = CheckpointManager.updateProgress(checkpoint, {
                 processedFolder: physicalId,
-                transferredFiles: files.map(f => f.path || String(f.coID ?? '')),
-                currentBatchIndex: batchIndex + 1
+                currentBatchIndex: processedBatchCount
             });
             
             await CheckpointManager.saveCheckpoint(taskService.taskRepo, task, checkpoint);
-            batchIndex++;
         }
 
         const taskInfoList = newFiles.map((f) => ({
@@ -408,7 +405,17 @@ async function processCloud139Task(taskService, task, account) {
         }
 
         // 可重试错误：保留检查点，交给重试机制处理
-        return await taskService._handleTaskFailure(task, classifiedError);
+        // 使用 taskRetryService.handleTaskFailure 并传入分类后的错误
+        if (taskService.taskRetryService) {
+            return await taskService.taskRetryService.handleTaskFailure(task, classifiedError);
+        } else {
+            // 降级处理：直接设置重试
+            task.status = 'pending';
+            task.retryCount = (task.retryCount || 0) + 1;
+            task.nextRetryTime = new Date(Date.now() + 600000); // 默认10分钟后重试
+            await taskService.taskRepo.save(task);
+            return '';
+        }
     }
 }
 

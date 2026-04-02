@@ -152,7 +152,7 @@ global: {
 ### 覆盖率报告
 
 - **终端输出**：`text` + `text-summary`
-- **HTML 报告**：`coverage/index.html`（本地查看）
+- **HTML 报告**：`coverage/lcov-report/index.html`（本地查看）
 - **LCOV 格式**：`coverage/lcov.info`（CI 集成）
 - **JSON 摘要**：`coverage/coverage-summary.json`（可编程读取）
 
@@ -171,7 +171,7 @@ npm run test:watch
 npm run test:coverage
 
 # 查看 HTML 报告
-open coverage/index.html
+open coverage/lcov-report/index.html
 ```
 
 ### CI 环境
@@ -204,16 +204,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
+          cache: 'yarn'
       
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
       
-      - name: Run tests
-        run: npm run test:ci
-      
-      - name: Check test coverage
-        run: npm run test:coverage -- --ci --coverage
+      - name: Run tests with coverage
+        run: yarn test:ci
       
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -244,12 +241,11 @@ jobs:
 
 ### 绕过门禁（紧急情况）
 
-⚠️ **不推荐**，仅在紧急修复时使用：
+⚠️ **不推荐**，仅在紧急修复时使用。当前 CI 工作流不支持通过 Git 命令直接跳过执行：
 
-```bash
-# 跳过 CI（需要管理员权限）
-git push --no-verify
-```
+- `git push --no-verify` **仅会跳过本地 Git hooks**，不会阻止远端 CI（如 GitHub Actions）运行。
+- 如确需在 CI 失败情况下合并，应由具备权限的管理员在 GitHub 界面执行受控覆盖操作，并记录原因。
+- 建议在使用绕过机制后尽快补齐测试并修复问题，确保主干健康。
 
 ## 测试最佳实践
 
@@ -341,12 +337,12 @@ test('应该处理边缘情况', () => {
 | 测试文件 | 测试数 | 通过率 |
 |----------|--------|--------|
 | jest-health-check.test.ts | 5 | 100% |
-| taskNamingService.test.ts | 11 | 100% |
+| taskNamingService.test.ts | 10 | 100% |
 | taskParserService.test.ts | 8 | 100% |
 | errorClassification.test.ts | 19 | 100% |
 | checkpointRecovery.test.ts | 22 | 100% |
-| idempotency.test.ts | 10 | 100% |
-| **总计** | **75** | **100%** |
+| idempotency.test.ts | 9 | 100% |
+| **总计** | **73** | **100%** |
 
 ### 执行性能
 

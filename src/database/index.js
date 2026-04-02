@@ -1,5 +1,5 @@
 const { DataSource } = require('typeorm');
-const { Account, Task, CommonFolder, TransferredFile } = require('../entities');
+const { Account, Task, CommonFolder, TransferredFile, TaskError } = require('../entities');
 const path = require('path');
 const dotenv = require('dotenv');
 const logger = require('../utils/logger');
@@ -14,9 +14,9 @@ const AppDataSource = new DataSource({
     maxQueryExecutionTime: 1000, // 查询超时设置
     enableWAL: true,   // 启用 WAL 模式提升性能
     busyTimeout: 3000, // 设置超时时间
-    entities: [Account, Task, CommonFolder, TransferredFile],
+    entities: [Account, Task, CommonFolder, TransferredFile, TaskError],
     subscribers: [],
-    migrations: [],
+    migrations: [path.join(__dirname, 'migrations/*.js')],
     timezone: '+08:00',  // 添加时区设置
     dateStrings: true,   // 将日期作为字符串返回
     poolSize: 10,
@@ -47,6 +47,7 @@ const getAccountRepository = () => AppDataSource.getRepository(Account);
 const getTaskRepository = () => AppDataSource.getRepository(Task);
 const getCommonFolderRepository = () => AppDataSource.getRepository(CommonFolder);
 const getTransferredFileRepository = () => AppDataSource.getRepository(TransferredFile);
+const getTaskErrorRepository = () => AppDataSource.getRepository(TaskError);
 
 module.exports = {
     AppDataSource,
@@ -54,5 +55,6 @@ module.exports = {
     getAccountRepository,
     getTaskRepository,
     getCommonFolderRepository,
-    getTransferredFileRepository
+    getTransferredFileRepository,
+    getTaskErrorRepository
 };

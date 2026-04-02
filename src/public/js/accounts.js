@@ -208,27 +208,6 @@ function formatBytes(bytes) {
     
     return value.toFixed(exponent > 0 ? 2 : 0) + units[exponent];
 }
-async function clearRecycleBin() {
-    if (!confirm('确定要清空所有账号的回收站吗？')) {
-        return;
-    }
-    try {
-        const response = await fetch('/api/accounts/recycle', {
-            method: 'DELETE'
-        });
-        const data = await response.json();
-        if (data.success) {
-            message.success('后台任务执行中, 请稍后查看结果');
-        } else {
-            message.warning('清空回收站失败: ' + data.error);
-        }
-    } catch (error) {
-        message.warning('操作失败: ' + error.message);
-    }
-}
-
-
-
 async function setDefaultAccount(id) {
     try {
         const response = await fetch(`/api/accounts/${id}/default`, {

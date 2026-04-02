@@ -36,22 +36,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### P0-02: 数据库基线纠偏（禁用synchronize）
 
 **核心变更**
-- **禁用自动同步**：`src/database/index.js` 将 `synchronize: true` 改为 `synchronize: false`
-- **迁移脚本**：创建初始迁移 `src/database/migrations/1743505200000-InitialSchema.js`
+- **禁用自动同步（计划）**：后续在 `src/database/index.js` 中将 `synchronize: true` 调整为 `synchronize: false`
+- **迁移脚本（计划）**：创建初始迁移 `src/database/migrations/1743505200000-InitialSchema.js`
   - 包含所有实体：Account, Task, CommonFolder, TransferredFile
   - 包含索引：IDX_transferred_file_taskId_fileId（唯一索引）
   - up()使用 `CREATE IF NOT EXISTS` 防止重复创建
   - down()提供完整回滚逻辑
-- **迁移路径配置**：在 AppDataSource 中添加 `migrations: [path.join(__dirname, 'migrations/*.js')]`
+- **迁移路径配置（计划）**：在 AppDataSource 中添加 `migrations: [path.join(__dirname, 'migrations/*.js')]`
 
-**文档补充**
+**文档补充（规划中）**
 - **docs/MIGRATION_TEST.md**：创建迁移测试指南
   - 场景1：现有数据库（schema已存在）
   - 场景2：空数据库（全新安装）
   - 场景3：回滚测试
   - 包含命令参考和注意事项
 
-**验收结果**: ✅ synchronize已禁用 | ✅ 迁移脚本创建 | ✅ 构建产物包含迁移
+**当前状态**: ⚠️ 仅完成方案设计，后续版本再落地为可验收项
 
 ---
 
