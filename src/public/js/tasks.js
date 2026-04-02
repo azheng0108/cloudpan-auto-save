@@ -6,6 +6,85 @@ let taskFilterParams = {
 
 
 // 任务相关功能
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getErrorTier(task) {
+    const lastError = String(task.lastError || '');
+    if (!lastError) return null;
+    const match = lastError.match(/^\[([^\]]+)\]/);
+    const typeName = match ? match[1] : '';
+    const fatalTypes = ['链接失效', '链接过期', '访问次数超限', '权限不足', '用户信息查询失败'];
+    const retryTypes = ['空间已满', '请求限流', '网络错误', '服务器错误', '未知错误'];
+
+    if (fatalTypes.includes(typeName)) {
+        return {
+            className: 'error-tier-fatal',
+            label: `致命: ${typeName}`,
+            hint: '需人工处理后重试'
+        };
+    }
+    if (retryTypes.includes(typeName)) {
+        let hint = '系统将按重试策略自动重试';
+        if (task.nextRetryTime) {
+            hint = `下次重试: ${formatDateTime(task.nextRetryTime)}`;
+        }
+        if (typeName === '空间已满') {
+            hint = '建议先清理空间后等待自动重试';
+        }
+        return {
+            className: 'error-tier-retryable',
+            label: `可恢复: ${typeName}`,
+            hint
+        };
+    }
+    return {
+        className: 'error-tier-unknown',
+        label: '未分类错误',
+        hint: '请查看日志定位问题'
+    };
+}
+
+function buildRecoveryInfo(task) {
+    const totalBatches = Number(task.totalBatches || 0);
+    const processedBatches = Number(task.processedBatches || 0);
+    if (totalBatches <= 0) return '';
+
+    const percent = Math.max(0, Math.min(100, Math.round((processedBatches / totalBatches) * 100)));
+    let failedNode = '';
+    if ((task.status === 'failed' || task.status === 'pending') && processedBatches < totalBatches) {
+        const failedBatch = Math.min(processedBatches + 1, totalBatches);
+        failedNode = `<div class="task-recovery-node">失败节点: 批次 ${failedBatch}/${totalBatches}</div>`;
+    }
+    return `
+        <div class="task-recovery-box">
+            <div class="task-recovery-text">恢复进度: ${processedBatches}/${totalBatches} (${percent}%)</div>
+            <div class="task-recovery-bar"><span style="width:${percent}%"></span></div>
+            ${failedNode}
+        </div>
+    `;
+}
+
+function buildErrorInfo(task) {
+    const tier = getErrorTier(task);
+    if (!tier) return '';
+    const rawError = String(task.lastError || '');
+    const errorText = escapeHtml(rawError.length > 90 ? `${rawError.slice(0, 90)}...` : rawError);
+    return `
+        <div class="task-error-box ${tier.className}">
+            <div class="task-error-title">${escapeHtml(tier.label)}</div>
+            <div class="task-error-hint">${escapeHtml(tier.hint)}</div>
+            <div class="task-error-text" title="${escapeHtml(rawError)}">${errorText}</div>
+        </div>
+    `;
+}
+
 function createProgressRing(current, total) {
     if (!total) return '';
     
@@ -58,6 +137,8 @@ async function fetchTasks() {
         data.data.forEach(task => {
             taskList.push(task)
             const progressRing = task.totalEpisodes ? createProgressRing(task.currentEpisodes || 0, task.totalEpisodes) : '';
+            const recoveryInfo = buildRecoveryInfo(task);
+            const errorInfo = buildErrorInfo(task);
             // root-files 任务：文件直接存根目录，不拼子目录路径，加小标签区分
             // taskNameText 用于 HTML 属性（title/data-name），不能含引号；taskName 用于可见内容
             const taskNameText = (task.shareFolderId === 'root-files')
@@ -83,7 +164,7 @@ async function fetchTasks() {
                     <td data-label="更新数/总数">${task.currentEpisodes || 0}/${task.totalEpisodes || '未知'}${progressRing}</td>
                     <td data-label="转存时间">${formatDateTime(task.lastFileUpdateTime)}</td>
                     <td data-label="备注">${task.remark?task.remark:''}</td>
-                    <td data-label="状态"><span class="status-badge status-${task.status}">${formatStatus(task.status)}</span></td>
+                    <td data-label="状态"><span class="status-badge status-${task.status}">${formatStatus(task.status)}</span>${recoveryInfo}${errorInfo}</td>
                 </tr>
             `;
         });
@@ -689,8 +770,7 @@ function escapeRegExp(regexStr) {
 
 // 转义HTML属性中的特殊字符
 function escapeHtmlAttr(str) {
-    // 不再处理
-    return str;
+    return escapeHtml(str);
 }
 
 // 初始化表单展开/隐藏功能

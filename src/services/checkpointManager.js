@@ -17,7 +17,6 @@ class CheckpointManager {
             version: '1.0',
             createdAt: new Date().toISOString(),
             processedFolders: options.processedFolders || [],
-            transferredFileIds: options.transferredFileIds || [],
             catalogMap: options.catalogMap || {},
             physicalFolderMap: options.physicalFolderMap || {},
             currentBatchIndex: options.currentBatchIndex || 0,
@@ -95,19 +94,6 @@ class CheckpointManager {
     }
 
     /**
-     * 判断文件是否已处理（基于检查点）
-     * @param {Object} checkpoint - 检查点数据
-     * @param {string} fileId - 文件 ID
-     * @returns {boolean} 是否已处理
-     */
-    static isFileProcessed(checkpoint, fileId) {
-        if (!checkpoint || !checkpoint.transferredFileIds) {
-            return false;
-        }
-        return checkpoint.transferredFileIds.includes(fileId);
-    }
-
-    /**
      * 判断文件夹是否已处理（基于检查点）
      * @param {Object} checkpoint - 检查点数据
      * @param {string} folderId - 文件夹 ID
@@ -133,10 +119,6 @@ class CheckpointManager {
             updated.processedFolders = [...new Set([...updated.processedFolders, progress.processedFolder])];
         }
 
-        if (progress.transferredFiles && Array.isArray(progress.transferredFiles)) {
-            updated.transferredFileIds = [...new Set([...updated.transferredFileIds, ...progress.transferredFiles])];
-        }
-
         if (progress.currentBatchIndex !== undefined) {
             updated.currentBatchIndex = progress.currentBatchIndex;
         }
@@ -159,8 +141,14 @@ class CheckpointManager {
 
         // 如果任务状态是 pending 或 processing，且有检查点，则尝试恢复
         if (task.status === 'pending' || task.status === 'processing') {
+            const createdAtMs = checkpoint.createdAt ? Date.parse(checkpoint.createdAt) : NaN;
+            if (!Number.isFinite(createdAtMs)) {
+                logTaskEvent(`[检查点] 任务 ${task.id} 检查点创建时间无效，忽略恢复`);
+                return false;
+            }
+
             // 检查检查点是否过期（超过24小时）
-            const checkpointAge = Date.now() - new Date(checkpoint.createdAt).getTime();
+            const checkpointAge = Date.now() - createdAtMs;
             const MAX_CHECKPOINT_AGE = 24 * 60 * 60 * 1000; // 24小时
 
             if (checkpointAge > MAX_CHECKPOINT_AGE) {

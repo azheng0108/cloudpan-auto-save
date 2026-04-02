@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeEach } from '@jest/globals';
-const { TaskParserService } = require('../src/services/taskParserService');
+import { TaskParserService } from '../src/services/taskParserService';
 
 describe('TaskParserService', () => {
     let parser: any;
@@ -79,9 +79,8 @@ describe('TaskParserService', () => {
             expect(parsed.shareCode).toBe('AbCdEf12');
         });
 
-        test('应该处理不同的访问码格式', () => {
-            // 移除这个测试，因为访问码解析的实际行为可能不同
-            // 原始测试期望不正确
+        test.skip('应该处理不同的访问码格式', () => {
+            // TODO: 补充覆盖不同访问码格式的真实断言
         });
 
         test('应该构建 Cloud189 分享文件夹结构', async () => {
