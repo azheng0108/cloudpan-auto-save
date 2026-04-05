@@ -1,11 +1,10 @@
 function initLogs() {
     const logsContainer = document.getElementById('logsContainer');
-    const showLogsBtn = document.getElementById('showLogsBtn');
     const logsModal = document.getElementById('logsModal');
-    const closeBtn = logsModal.querySelector('.close-btn');
     
     let eventSource = null;
-    const MAX_VISIBLE_ITEMS = 100; // 同时显示的最大日志数量
+    const MAX_VISIBLE_ITEMS = 200; // 增加到200条日志
+    
     function connectSSE() {
         eventSource = new EventSource('/api/logs/events');
 
@@ -16,16 +15,20 @@ function initLogs() {
             document.dispatchEvent(customEvent);
 
             if (data.type === 'history') {
-                logsContainer.innerHTML = data.logs.join('<br>');
+                const logs = data.logs.join('\n');
+                logsContainer.textContent = logs;
                 logsContainer.scrollTop = logsContainer.scrollHeight;
             } else if (data.type === 'log') {
-                const div = document.createElement('div');
-                div.textContent = data.message;
-                logsContainer.appendChild(div);
-                // 如果日志数量超过限制，移除最旧的日志
-                if (logsContainer.children.length > MAX_VISIBLE_ITEMS) {
-                    logsContainer.removeChild(logsContainer.firstChild);
+                // 添加新日志
+                logsContainer.textContent += '\n' + data.message;
+                
+                // 如果日志行数超过限制，移除最旧的日志
+                const lines = logsContainer.textContent.split('\n');
+                if (lines.length > MAX_VISIBLE_ITEMS) {
+                    logsContainer.textContent = lines.slice(-MAX_VISIBLE_ITEMS).join('\n');
                 }
+                
+                // 自动滚动到底部
                 logsContainer.scrollTop = logsContainer.scrollHeight;
             }
         };
@@ -36,18 +39,21 @@ function initLogs() {
         };
     }
 
-    showLogsBtn.onclick = () => {
-        logsModal.style.display = 'block';
-        if (!eventSource) {
-            connectSSE();
+    // 如果弹窗存在，添加关闭功能（向后兼容）
+    if (logsModal) {
+        const closeBtn = logsModal.querySelector('.close-btn');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                logsModal.style.display = 'none';
+            };
         }
-        // 显示弹窗时滚动到最新消息
-        logsContainer.scrollTop = logsContainer.scrollHeight;
-    };
-
-    closeBtn.onclick = () => {
-        logsModal.style.display = 'none';
-    };
+        
+        logsModal.onclick = (e) => {
+            if (e.target === logsModal) {
+                logsModal.style.display = 'none';
+            }
+        };
+    }
 
     // 页面关闭时才断开连接
     window.addEventListener('beforeunload', () => {
@@ -55,5 +61,7 @@ function initLogs() {
             eventSource.close();
         }
     });
+    
+    // 页面加载时自动连接
     connectSSE();
 }

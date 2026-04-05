@@ -21,7 +21,7 @@ async function saveCustomPushConfigsToBackend(configs) {
 // --- Modal Control ---
 function openCustomPushManagementModal() {
     renderCustomPushTable();
-    document.getElementById('customPushManagementModal').style.display = 'block';
+    document.getElementById('customPushManagementModal').style.display = 'flex';
 }
 
 function closeCustomPushManagementModal() {
@@ -54,7 +54,7 @@ function openAddEditCustomPushModal(index = null) {
             }
         }
     }
-    document.getElementById('addEditCustomPushModal').style.display = 'block';
+    document.getElementById('addEditCustomPushModal').style.display = 'flex';
 }
 
 function closeAddEditCustomPushModal() {

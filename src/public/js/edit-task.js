@@ -12,6 +12,8 @@ let shareFolderSelector = new FolderSelector({
 });
 
 let editFolderSelector = new FolderSelector({
+    enableFavorites: true,
+    favoritesKey: 'createTaskFavorites',
     onSelect: ({ id, name, path }) => {
         document.getElementById('editRealFolder').value = path;
         document.getElementById('editRealFolderId').value = id;
@@ -34,17 +36,15 @@ function showEditTaskModal(id) {
     document.getElementById('editMatchOperator').value = task.matchOperator;
     document.getElementById('editMatchValue').value = task.matchValue;
     document.getElementById('editRemark').value = task.remark;
+    document.getElementById('editMovieRenameFormat').value = task.movieRenameFormat || '';
+    document.getElementById('editTvRenameFormat').value = task.tvRenameFormat || '';
     document.getElementById('editTaskModal').style.display = 'flex';
     document.getElementById('editEnableCron').checked = task.enableCron;
     document.getElementById('editCronExpression').value = task.cronExpression;
     document.getElementById('editAccountId').value = task.accountId;
 
     document.getElementsByClassName('cronExpression-box')[1].style.display = task.enableCron?'block':'none';
-    document.getElementById('editEnableCron').addEventListener('change', function() {
-        // 如果为选中 则显示cron表达式输入框
-        const cronInput = document.getElementsByClassName('cronExpression-box')[1];
-        cronInput.style.display = this.checked? 'block' : 'none';
-    });
+    applyEditCronPresetFromExpression(task.cronExpression);
 }
 
 function closeEditTaskModal() {
@@ -73,6 +73,19 @@ function initEditTaskForm() {
         editFolderSelector.show(accountId);
     });
 
+    const editFavoriteFolderBtn = document.getElementById('editFavoriteFolderBtn');
+    if (editFavoriteFolderBtn) {
+        editFavoriteFolderBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const accountId = document.getElementById('editAccountId').value;
+            if (!accountId) {
+                message.warning('请先选择账号');
+                return;
+            }
+            editFolderSelector.showFavorites(accountId);
+        });
+    }
+
     document.getElementById('editTaskForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('editTaskId').value;
@@ -91,7 +104,9 @@ function initEditTaskForm() {
         const remark = document.getElementById('editRemark').value
 
         const enableCron = document.getElementById('editEnableCron').checked;
-        const cronExpression = document.getElementById('editCronExpression').value;
+        const cronExpression = enableCron ? buildEditCronExpression() : document.getElementById('editCronExpression').value;
+        const movieRenameFormat = document.getElementById('editMovieRenameFormat').value;
+        const tvRenameFormat = document.getElementById('editTvRenameFormat').value;
 
         try {
             loading.show()
@@ -112,7 +127,9 @@ function initEditTaskForm() {
                     matchValue,
                     remark,
                     enableCron,
-                    cronExpression
+                    cronExpression,
+                    movieRenameFormat,
+                    tvRenameFormat
                 })
             });
             loading.hide()
@@ -127,4 +144,135 @@ function initEditTaskForm() {
             message.warning('修改任务失败：' + error.message);
         }
     });
+
+    document.getElementById('editEnableCron').addEventListener('change', function() {
+        const cronInput = document.getElementsByClassName('cronExpression-box')[1];
+        cronInput.style.display = this.checked ? 'block' : 'none';
+        if (this.checked) {
+            const value = buildEditCronExpression();
+            if (value) {
+                document.getElementById('editCronExpression').value = value;
+            }
+        }
+    });
+
+    document.getElementById('editCronPresetType').addEventListener('change', () => {
+        updateEditCronBuilderUI();
+        const value = buildEditCronExpression();
+        if (value) {
+            document.getElementById('editCronExpression').value = value;
+        }
+    });
+
+    document.getElementById('editCronPresetTime').addEventListener('change', () => {
+        const value = buildEditCronExpression();
+        if (value) {
+            document.getElementById('editCronExpression').value = value;
+        }
+    });
+
+    document.querySelectorAll('input[name="editCronMonthDay"]').forEach((el) => {
+        el.addEventListener('change', () => {
+            const value = buildEditCronExpression();
+            if (value) {
+                document.getElementById('editCronExpression').value = value;
+            }
+        });
+    });
+
+    document.querySelectorAll('input[name="editCronWeekday"]').forEach((el) => {
+        el.addEventListener('change', () => {
+            const value = buildEditCronExpression();
+            if (value) {
+                document.getElementById('editCronExpression').value = value;
+            }
+        });
+    });
+}
+
+function updateEditCronBuilderUI() {
+    const type = document.getElementById('editCronPresetType').value;
+    const weeklyRow = document.getElementById('editCronWeeklyRow');
+    const monthlyRow = document.getElementById('editCronMonthlyRow');
+    if (weeklyRow) {
+        weeklyRow.classList.toggle('is-hidden', type !== 'weekly');
+    }
+    if (monthlyRow) {
+        monthlyRow.classList.toggle('is-hidden', type !== 'monthly');
+    }
+}
+
+function buildEditCronExpression() {
+    const type = document.getElementById('editCronPresetType').value;
+    if (type === 'custom') {
+        return document.getElementById('editCronExpression').value.trim();
+    }
+
+    const time = document.getElementById('editCronPresetTime').value || '02:00';
+    const [hourRaw, minuteRaw] = time.split(':');
+    const hour = Number.isFinite(Number(hourRaw)) ? Number(hourRaw) : 2;
+    const minute = Number.isFinite(Number(minuteRaw)) ? Number(minuteRaw) : 0;
+
+    if (type === 'daily') {
+        return `0 ${minute} ${hour} * * *`;
+    }
+
+    if (type === 'weekly') {
+        const weekdays = Array.from(document.querySelectorAll('input[name="editCronWeekday"]:checked')).map((cb) => cb.value);
+        const normalizedWeekdays = weekdays.length > 0 ? weekdays.join(',') : '1';
+        return `0 ${minute} ${hour} * * ${normalizedWeekdays}`;
+    }
+
+    if (type === 'monthly') {
+        const monthDays = Array.from(document.querySelectorAll('input[name="editCronMonthDay"]:checked')).map((cb) => cb.value);
+        const normalizedDays = monthDays.length > 0 ? monthDays.join(',') : '1';
+        return `0 ${minute} ${hour} ${normalizedDays} * *`;
+    }
+
+    return document.getElementById('editCronExpression').value.trim();
+}
+
+function applyEditCronPresetFromExpression(expression) {
+    const cronExpression = String(expression || '').trim();
+    const parts = cronExpression.split(/\s+/);
+    // 默认回到自定义
+    document.getElementById('editCronPresetType').value = 'custom';
+    updateEditCronBuilderUI();
+
+    if (parts.length !== 6) {
+        return;
+    }
+
+    const minute = parseInt(parts[1], 10);
+    const hour = parseInt(parts[2], 10);
+    if (!Number.isFinite(minute) || !Number.isFinite(hour)) {
+        return;
+    }
+
+    document.getElementById('editCronPresetTime').value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+    if (parts[3] === '*' && parts[4] === '*' && parts[5] === '*') {
+        document.getElementById('editCronPresetType').value = 'daily';
+        updateEditCronBuilderUI();
+        return;
+    }
+
+    if (parts[3] === '*' && parts[4] === '*' && parts[5] !== '*') {
+        document.getElementById('editCronPresetType').value = 'weekly';
+        updateEditCronBuilderUI();
+        const selected = new Set(parts[5].split(','));
+        document.querySelectorAll('input[name="editCronWeekday"]').forEach((cb) => {
+            cb.checked = selected.has(cb.value);
+        });
+        return;
+    }
+
+    if (parts[4] === '*' && parts[5] === '*') {
+        document.getElementById('editCronPresetType').value = 'monthly';
+        updateEditCronBuilderUI();
+        const selected = new Set(parts[3].split(','));
+        document.querySelectorAll('input[name="editCronMonthDay"]').forEach((cb) => {
+            cb.checked = selected.has(cb.value);
+        });
+    }
 }

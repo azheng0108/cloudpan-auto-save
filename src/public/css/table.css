@@ -57,8 +57,10 @@ a:visited {
 .delete-cloud-options {
     display: flex;
     align-items: center;
-    margin-left: 16px;
-    min-width: 200px;
+    margin-left: 0;
+    min-width: 0;
+    gap: 12px;
+    flex-wrap: wrap;
 }
 
 .checkbox-group {

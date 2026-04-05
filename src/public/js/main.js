@@ -16,6 +16,57 @@ function debounce(func, wait) {
     };
 }
 
+function closeModalWithCleanup(modal) {
+    if (!modal) return;
+
+    const closeHandlers = {
+        addAccountModal: typeof closeAddAccountModal === 'function' ? closeAddAccountModal : null,
+        createTaskModal: typeof closeCreateTaskModal === 'function' ? closeCreateTaskModal : null,
+        editTaskModal: typeof closeEditTaskModal === 'function' ? closeEditTaskModal : null,
+        customPushManagementModal: typeof closeCustomPushManagementModal === 'function' ? closeCustomPushManagementModal : null,
+        addEditCustomPushModal: typeof closeAddEditCustomPushModal === 'function' ? closeAddEditCustomPushModal : null,
+        strmModal: typeof closeStrmModal === 'function' ? closeStrmModal : null
+    };
+
+    const handler = modal.id ? closeHandlers[modal.id] : null;
+    if (typeof handler === 'function') {
+        handler();
+        return;
+    }
+
+    if (modal.classList.contains('files-list-modal') && typeof closeFileListModal === 'function') {
+        closeFileListModal();
+        return;
+    }
+    if (modal.classList.contains('rename-options-modal') && typeof closeRenameOptionsModal === 'function') {
+        closeRenameOptionsModal();
+        return;
+    }
+    if (modal.classList.contains('preview-rename-modal') && typeof closeRenamePreviewModal === 'function') {
+        closeRenamePreviewModal();
+        return;
+    }
+
+    modal.style.display = 'none';
+}
+
+function initGlobalModalInteractions() {
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.classList.contains('modal')) return;
+        closeModalWithCleanup(target);
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const openedModals = Array.from(document.querySelectorAll('.modal'))
+            .filter((modal) => window.getComputedStyle(modal).display !== 'none');
+        if (openedModals.length === 0) return;
+        closeModalWithCleanup(openedModals[openedModals.length - 1]);
+    });
+}
+
 // 主入口文件
 document.addEventListener('DOMContentLoaded', () => {
      // 初始化macos样式
@@ -55,10 +106,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initAccountForm();
     initTaskForm();
     initEditTaskForm();
-    // 初始化主题
-    initTheme();
     // 初始化日志
     initLogs()
+    // 统一弹窗交互（遮罩点击与 Esc 关闭）
+    initGlobalModalInteractions();
 
     // 初始化目录选择器
     const folderSelector = new FolderSelector({
@@ -172,13 +223,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
-
-function toggleFloatingBtns() {
-    const container = document.getElementById('floatingBtnsContainer');
-    const icon = document.getElementById('toggleIcon');
-    container.classList.toggle('collapsed');
-    icon.classList.toggle('expanded');
-}
 
 
 function toggleHelpText(button) {

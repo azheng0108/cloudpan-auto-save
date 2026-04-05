@@ -1,4 +1,20 @@
 let customPushConfigs = []
+let systemCapabilities = null; // 存储系统能力信息
+
+// 加载系统能力信息
+async function loadSystemCapabilities() {
+    try {
+        const response = await fetch('/api/system/capabilities');
+        const data = await response.json();
+        if (data.success) {
+            systemCapabilities = data.data;
+            return systemCapabilities;
+        }
+    } catch (error) {
+        console.error('获取系统能力信息失败:', error);
+    }
+    return null;
+}
 
 // 加载版本信息
 async function loadVersionInfo() {
@@ -16,9 +32,41 @@ async function loadVersionInfo() {
     }
 }
 
+// 更新运行模式显示
+function updatePlatformDisplay(capabilities) {
+    const platformElement = document.getElementById('systemPlatform');
+    if (platformElement && capabilities) {
+        platformElement.textContent = capabilities.platform || '移动云盘(139)';
+    }
+}
+
+// 根据能力控制功能可见性
+function applyCapabilityGating(capabilities) {
+    if (!capabilities) return;
+    
+    // 控制回收站设置可见性
+    const recycleGroup = document.getElementById('recycleSettingsGroup');
+    if (recycleGroup) {
+        if (capabilities.features.recycle) {
+            recycleGroup.style.display = '';
+        } else {
+            recycleGroup.style.display = 'none';
+        }
+    }
+}
+
 async function loadSettings() {
+    // 加载系统能力信息
+    const capabilities = await loadSystemCapabilities();
+    
     // 加载版本信息
     await loadVersionInfo();
+    
+    // 更新运行模式显示
+    updatePlatformDisplay(capabilities);
+    
+    // 应用能力控制
+    applyCapabilityGating(capabilities);
     
     try {
         const response = await fetch('/api/settings');
@@ -31,12 +79,16 @@ async function loadSettings() {
             document.getElementById('taskExpireDays').value = settings.task?.taskExpireDays || 3;
             document.getElementById('taskCheckCron').value = settings.task?.taskCheckCron || '0 19-23 * * *';
             document.getElementById('retryTaskCron').value = settings.task?.retryTaskCron || '*/1 * * * *';
+            document.getElementById('cleanRecycleCron').value = settings.task?.cleanRecycleCron || '0 */8 * * *';
+            document.getElementById('vacuumCron').value = settings.task?.vacuumCron || '0 4 * * 0';
             document.getElementById('taskMaxRetries').value = settings.task?.maxRetries || 3;
             document.getElementById('taskRetryInterval').value = settings.task?.retryInterval || 300;
             document.getElementById('cloud139Concurrency').value = settings.task?.cloud139Concurrency || 3;
             document.getElementById('mediaSuffix').value = settings.task?.mediaSuffix || '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov';
             document.getElementById('enableOnlySaveMedia').checked = settings.task?.enableOnlySaveMedia || false;
             document.getElementById('enableAutoCreateFolder').checked = settings.task?.enableAutoCreateFolder || false;
+            document.getElementById('enableAutoClearRecycle').checked = settings.task?.enableAutoClearRecycle || false;
+            document.getElementById('enableAutoClearFamilyRecycle').checked = settings.task?.enableAutoClearFamilyRecycle || false;
 
             // 企业微信设置
             document.getElementById('enableWecom').checked = settings.wecom?.enable || false;
@@ -58,7 +110,7 @@ async function loadSettings() {
             document.getElementById('proxyUsername').value = settings.proxy?.username || '';
             document.getElementById('proxyPassword').value = settings.proxy?.password || '';
             document.getElementById('proxyTelegram').checked = settings.proxy?.services?.telegram || false;
-            document.getElementById('proxyCloud189').checked = settings.proxy?.services?.cloud189 || false;
+            document.getElementById('proxyCloud139').checked = settings.proxy?.services?.cloud139 || false;
             document.getElementById('proxyCustomPush').checked = settings.proxy?.services?.customPush || false;
             // Bark 设置
             document.getElementById('enableBark').checked = settings.bark?.enable || false;
@@ -104,12 +156,16 @@ async function saveSettings() {
             taskExpireDays: parseInt(document.getElementById('taskExpireDays').value) || 3,
             taskCheckCron: document.getElementById('taskCheckCron').value || '0 19-23 * * *',
             retryTaskCron: document.getElementById('retryTaskCron').value || '*/1 * * * *',
+            cleanRecycleCron: document.getElementById('cleanRecycleCron').value || '0 */8 * * *',
+            vacuumCron: document.getElementById('vacuumCron').value || '0 4 * * 0',
             maxRetries: parseInt(document.getElementById('taskMaxRetries').value) || 3,
             retryInterval: parseInt(document.getElementById('taskRetryInterval').value) || 300,
             cloud139Concurrency: parseInt(document.getElementById('cloud139Concurrency').value) || 3,
             mediaSuffix: document.getElementById('mediaSuffix').value,
             enableOnlySaveMedia: document.getElementById('enableOnlySaveMedia').checked,
-            enableAutoCreateFolder: document.getElementById('enableAutoCreateFolder').checked
+            enableAutoCreateFolder: document.getElementById('enableAutoCreateFolder').checked,
+            enableAutoClearRecycle: document.getElementById('enableAutoClearRecycle').checked,
+            enableAutoClearFamilyRecycle: document.getElementById('enableAutoClearFamilyRecycle').checked
         },
         wecom: {
             enable: document.getElementById('enableWecom').checked,
@@ -137,7 +193,7 @@ async function saveSettings() {
             password: document.getElementById('proxyPassword').value,
             services:{
                 telegram: document.getElementById('proxyTelegram').checked,
-                cloud189: document.getElementById('proxyCloud189').checked,
+                cloud139: document.getElementById('proxyCloud139').checked,
                 customPush: document.getElementById('proxyCustomPush').checked
             }
         },

@@ -3,6 +3,8 @@
     display: flex;
     border-bottom: 2px solid #eee;
     margin-bottom: 20px;
+    overflow-x: auto;
+    scrollbar-width: thin;
 }
 
 .tab {
@@ -10,6 +12,8 @@
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -2px;
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .tab.active {
@@ -23,4 +27,14 @@
 
 .tab-content.active {
     display: block;
+}
+
+@media (max-width: 768px) {
+    .tabs {
+        margin-bottom: 14px;
+    }
+
+    .tab {
+        padding: 10px 14px;
+    }
 }

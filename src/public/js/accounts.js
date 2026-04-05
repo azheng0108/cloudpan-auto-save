@@ -19,6 +19,7 @@ async function fetchAccounts(updateSelect = false) {
         }
         accountsList = data.data
         data.data.forEach(account => {
+            const displayUsername = account.original_username || account.username;
             tbody.innerHTML += `
                 <tr>
                     <td><span class="default-star" onclick="setDefaultAccount(${account.id})" title="设为默认账号">
@@ -27,7 +28,7 @@ async function fetchAccounts(updateSelect = false) {
                          <button class="btn-primary" onclick="editAccount(${account.id})">修改</button>
                         <button class="btn-danger" onclick="deleteAccount(${account.id})">删除</button>
                         </td>
-                    <td data-label='账户名'>${account.username}</td>
+                    <td data-label='账户名'>${displayUsername}</td>
                     <td data-label='会员状态'>${account.memberInfo ? account.memberInfo.memberName : '-'}</td>
                     <td data-label='容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
 
@@ -35,9 +36,9 @@ async function fetchAccounts(updateSelect = false) {
             `;
             if (updateSelect) {
                 // n_打头的账号不显示在下拉列表中
-                if (!account.username.startsWith('n_')) {
+                if (!displayUsername.startsWith('n_')) {
                     select.innerHTML += `
-                    <option value="${account.id}" ${account.isDefault?"selected":''}>${account.username}</option>
+                    <option value="${account.id}" ${account.isDefault?"selected":''}>${displayUsername}</option>
                 `;
                 }
             }
@@ -73,6 +74,8 @@ function initAccountForm() {
 function openAddAccountModal() {
     chooseAccount = null
     const modal = document.getElementById('addAccountModal');
+    document.getElementById('accountType').value = 'cloud139';
+    onAccountTypeChange('cloud139');
     modal.style.display = 'flex';
 }
 
@@ -85,8 +88,8 @@ function closeAddAccountModal() {
     submitBtn.textContent = '添加';
     document.getElementById('username').removeAttribute('readonly')
     // 重置账号类型
-    document.getElementById('accountType').value = 'cloud189';
-    onAccountTypeChange('cloud189');
+    document.getElementById('accountType').value = 'cloud139';
+    onAccountTypeChange('cloud139');
     // 清空表单
     document.getElementById('accountForm').reset();
     // 移除可能存在的验证码容器
@@ -114,11 +117,11 @@ async function editAccount(id) {
     modalTitle.textContent = '修改账号';
 
     // 填充表单数据
-    const accountType = chooseAccount.accountType || 'cloud189';
+    const accountType = chooseAccount.accountType || 'cloud139';
     document.getElementById('accountType').value = accountType;
     onAccountTypeChange(accountType);
-    document.getElementById('username').value = chooseAccount.username;
-    document.getElementById('password').value = chooseAccount.password; // 出于安全考虑，不填充密码
+    document.getElementById('username').value = chooseAccount.original_username || chooseAccount.username;
+    document.getElementById('password').value = '';
     document.getElementById('cookie').value = chooseAccount.cookies || '';
     // 账号不允许修改
     document.getElementById('username').setAttribute('readonly', true )

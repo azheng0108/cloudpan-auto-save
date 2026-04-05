@@ -1,3 +1,61 @@
+/* 日志容器样式 */
+#logsContainer {
+    overflow-y: auto;
+    overflow-x: hidden;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-word;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 640px) {
+    #logsContainer {
+        font-size: 13px;
+    }
+}
+
+@media (min-width: 1024px) {
+    #logsContainer {
+        font-size: 13px;
+    }
+}
+
+#logsContainer::-webkit-scrollbar {
+    width: 8px;
+}
+
+#logsContainer::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+}
+
+#logsContainer::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+#logsContainer::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+/* 暗色模式滚动条 */
+.dark #logsContainer::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dark #logsContainer::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.dark #logsContainer::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* ===== 以下为弹窗相关样式（向后兼容，可选删除） ===== */
+
 .floating-logs-btn {
     position: fixed;
     right: 20px;
@@ -26,41 +84,70 @@
 }
 
 .logs-modal {
-    width: 80%;
-    max-width: 800px;
-    height: 80vh;
+    width: 95%;
+    max-width: 1200px;
+    height: 90vh;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+}
+
+@media (min-width: 640px) {
+    .logs-modal {
+        width: 90%;
+        height: 85vh;
+    }
+}
+
+@media (min-width: 1024px) {
+    .logs-modal {
+        width: 85%;
+        height: 80vh;
+    }
 }
 
 .logs-modal .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+@media (min-width: 640px) {
+    .logs-modal .modal-header {
+        padding: 16px 20px;
+    }
 }
 
 .logs-modal .close-btn {
     background: none;
     border: none;
-    font-size: 24px;
+    font-size: 22px;
     cursor: pointer;
     color: var(--text-color);
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-#logsContainer {
-    height: calc(80vh - 60px);
-    overflow-y: auto;
-    padding: 15px;
-    font-family: monospace;
-    font-size: 14px;
-    line-height: 1.5;
+.logs-modal #logsContainer {
+    flex: 1;
+    padding: 12px;
     background: var(--bg-color);
-    white-space: pre-wrap;
-    word-wrap: break-word;
 }
 
-#logsContainer div {
-    margin-bottom: 5px;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 5px;
+@media (min-width: 640px) {
+    .logs-modal #logsContainer {
+        padding: 16px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .logs-modal #logsContainer {
+        padding: 20px;
+    }
 }

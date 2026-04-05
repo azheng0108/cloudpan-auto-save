@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>多云盘自动转存系统</title>
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#0f172a">
     <meta name="color-scheme" content="light dark">
 
     <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=__ASSET_VERSION__" sizes="96x96" />
@@ -14,782 +14,1365 @@
     <meta name="apple-mobile-web-app-title" content="自动转存" />
     <link rel="manifest" href="/favicon/site.webmanifest?v=__ASSET_VERSION__" />
 
-    <link rel="stylesheet" href="/css/base.css?v=__ASSET_VERSION__">
+    <!-- Tailwind & Lucide -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            750: '#293548',
+                            850: '#172033', 
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.3s, color 0.3s; }
+        
+        /* ================= 统一输入框 ================= */
+        .input-base {
+            width: 100%; padding: 8px 12px; border-radius: 4px; font-size: 14px; 
+            transition: all 0.2s; outline: none; box-sizing: border-box; height: 38px;
+            background-color: #fff; border: 1px solid #d1d5db; color: #374151;
+        }
+        .input-base:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1); }
+        .input-base:read-only { background-color: #f9fafb; cursor: pointer; }
+        
+        .dark .input-base { 
+            background-color: #0f172a; 
+            border: 1px solid #293548; 
+            box-shadow: none; 
+            color: #e2e8f0; 
+        }
+        .dark .input-base:focus { border-color: #3b82f6; box-shadow: inset 0 0 0 1px #3b82f6; }
+        .dark .input-base:read-only { background-color: #0f172a; color: #94a3b8; opacity: 0.8; border-color: #1e293b; }
+        .dark .input-base::placeholder { color: #475569; }
+        
+        /* ================= 统一按钮 ================= */
+        .btn-primary { background-color: #1677ff; color: white; padding: 6px 16px; border-radius: 4px; font-size: 14px; font-weight: 500; transition: all 0.2s; border: 1px solid transparent; cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-primary:hover { background-color: #4096ff; }
+        .dark .btn-primary { background-color: #2563eb; }
+        .dark .btn-primary:hover { background-color: #3b82f6; }
+
+        .btn-default { background-color: #fff; color: #374151; border: 1px solid #d1d5db; padding: 6px 16px; border-radius: 4px; font-size: 14px; transition: all 0.2s; cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-default:hover { color: #1677ff; border-color: #1677ff; background-color: #f0f7ff; }
+        
+        .dark .btn-default { background-color: transparent; color: #cbd5e1; border-color: rgba(255,255,255,0.15); }
+        .dark .btn-default:hover { background-color: rgba(255,255,255,0.05); color: #fff; }
+
+        .btn-icon { background: transparent; border: none; cursor: pointer; padding: 4px; border-radius: 4px; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; color: #6b7280; }
+        .btn-icon:hover { background: #f3f4f6; color: #1677ff; }
+        .dark .btn-icon { color: #94a3b8; }
+        .dark .btn-icon:hover { background-color: rgba(255,255,255,0.05); color: #60a5fa; }
+
+        /* ================= 布局与组件 (针对移动端优化) ================= */
+        .tabs { 
+            display: flex; gap: 8px; padding: 0 12px; border-bottom: 1px solid #f3f4f6; 
+            background: white; border-radius: 8px 8px 0 0; margin: 0; transition: all 0.3s; 
+            overflow-x: auto; white-space: nowrap; -ms-overflow-style: none; scrollbar-width: none;
+        }
+        .tabs::-webkit-scrollbar { display: none; }
+        @media (min-width: 640px) { .tabs { gap: 32px; padding: 0 32px; } }
+        
+        .tab { 
+            padding: 12px 8px; min-width: 44px; min-height: 44px; 
+            font-size: 15px; color: #4b5563; border-bottom: 2px solid transparent; 
+            cursor: pointer; transition: 0.2s; font-weight: normal; margin-bottom: -1px; 
+            display: inline-flex; align-items: center; justify-content: center;
+            text-align: center;
+        }
+        .tab:hover { color: #1677ff; }
+        .tab.active { color: #1677ff; font-weight: 500; border-bottom-color: #1677ff; }
+        @media (min-width: 640px) { .tab { padding: 16px 0; min-width: auto; } }
+        
+        .tab-content { display: none; padding: 16px; background: white; border-radius: 0 0 8px 8px; transition: all 0.3s; }
+        @media (min-width: 640px) { .tab-content { padding: 24px; } }
+        .tab-content.active { display: block; }
+        
+        .dark .tabs { background-color: #1e293b; border-bottom-color: #0f172a; }
+        .dark .tab { color: #94a3b8; }
+        .dark .tab:hover { color: #e2e8f0; }
+        .dark .tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+        .dark .tab-content { background-color: #1e293b; }
+
+        .form-group { margin-bottom: 20px; }
+        .form-group > label { display: block; font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 8px; }
+        .dark .form-group > label { color: #94a3b8; } 
+        .form-text { font-size: 12px; color: #6b7280; margin-top: 6px; display: block; line-height: 1.4; }
+        .dark .form-text { color: #64748b; }
+        
+        .settings-card { border: 1px solid #f0f0f0; border-radius: 8px; padding: 16px; background: #fafafa; margin-bottom: 20px; transition: all 0.3s; }
+        @media (min-width: 640px) { .settings-card { padding: 20px; } }
+        .settings-card h4 { font-size: 15px; font-weight: 600; color: #111827; margin-top: 0; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 8px; }
+        
+        .dark .settings-card { background-color: #172033; border-color: transparent; box-shadow: none; }
+        .dark .settings-card h4 { color: #f8fafc; border-bottom: none; padding-bottom: 4px; }
+
+        /* ================= 统一表格 ================= */
+        .table-container { overflow-x: auto; border: 1px solid #f0f0f0; border-radius: 8px; background: white; transition: all 0.3s; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+        th { padding: 12px 16px; background: #fafafa; font-weight: 500; color: #4b5563; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+        td { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; color: #374151; vertical-align: middle; transition: background-color 0.2s; white-space: nowrap;}
+        tr:hover td { background: #fafafa; }
+        
+        .dark .table-container { border-color: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); background-color: #1e293b; }
+        .dark table th { background-color: #0f172a; color: #94a3b8; border-bottom-color: rgba(255,255,255,0.05); }
+        .dark table td { border-bottom-color: rgba(255,255,255,0.05); color: #cbd5e1; }
+        .dark tr:hover td { background-color: #0f172a; }
+
+        /* ================= 统一弹窗 (Modal) ================= */
+        .modal { 
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; 
+            display: none; backdrop-filter: blur(3px);
+            align-items: center; justify-content: center;
+            overflow-y: auto; /* 允许整体滚动 */
+            -webkit-overflow-scrolling: touch; /* iOS 流畅滚动 */
+        }
+        .modal-wrapper { 
+            display: flex; align-items: center; justify-content: center; 
+            width: 100%; min-height: 100%; padding: 12px; box-sizing: border-box; 
+        }
+        .modal-content { 
+            background: white; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.15); 
+            width: 100%; max-width: 600px; max-height: 90vh; 
+            display: flex; flex-direction: column; overflow: hidden; 
+            position: relative; transition: all 0.3s;
+            margin: auto; /* 确保垂直居中 */
+        }
+        .modal-header { 
+            padding: 12px 16px; border-bottom: 1px solid #f0f0f0; 
+            display: flex; justify-content: space-between; align-items: center; 
+            background: white; flex-shrink: 0; 
+        }
+        .modal-header h3 { margin: 0; font-size: 15px; font-weight: 600; color: #111827; }
+        .form-body, .modal-body { 
+            padding: 16px; overflow-y: auto; flex: 1;
+            -webkit-overflow-scrolling: touch; /* iOS 流畅滚动 */
+        }
+        .form-actions { 
+            padding: 12px 16px; border-top: 1px solid #f0f0f0; 
+            display: flex; justify-content: flex-end; gap: 12px; 
+            background: white; flex-shrink: 0; 
+        }
+        .close-btn { 
+            background: transparent; border: none; font-size: 20px; color: #9ca3af; 
+            cursor: pointer; transition: 0.2s; padding: 0; line-height: 1; 
+            display: flex; align-items: center; justify-content: center;
+            min-width: 32px; min-height: 32px; /* 增大移动端点击区 */
+        }
+        .close-btn:hover { color: #4b5563; }
+        @media (min-width: 640px) {
+            .modal-wrapper { padding: 16px; }
+            .modal-header { padding: 16px 24px; }
+            .modal-header h3 { font-size: 16px; }
+            .form-body, .modal-body { padding: 24px; }
+            .form-actions { padding: 16px 24px; }
+        }
+        
+        /* ⭐️ 弹窗整体暗黑模式优化：严格统一样式，复刻截图的微光边框 */
+        .dark .modal-content { background-color: #1e293b; box-shadow: 0 10px 40px rgba(0,0,0,0.8); border: 1px solid #334155; }
+        .dark .modal-header { background-color: #1e293b; border-bottom: 1px solid #334155; }
+        .dark .modal-header h3 { color: #f8fafc; }
+        .dark .form-actions { background-color: #1e293b; border-top: 1px solid #334155; }
+
+        /* 其他元素 */
+        .dropdown-content { position: absolute; left: 0; top: 100%; margin-top: 4px; background: white; border: 1px solid #f0f0f0; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none; min-width: 120px; z-index: 20; overflow: hidden; padding: 4px 0; }
+        .dropdown-content.show { display: block; }
+        .dropdown-content a { display: block; padding: 8px 16px; color: #374151; font-size: 14px; cursor: pointer; text-decoration: none; transition: 0.2s; }
+        .dropdown-content a:hover { background: #f0f7ff; color: #1677ff; }
+        
+        .dark .dropdown-content { background-color: #1e293b; border-color: #334155; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .dark .dropdown-content a { color: #cbd5e1; }
+        .dark .dropdown-content a:hover { background-color: rgba(255,255,255,0.05); color: #60a5fa; }
+
+        input[type="checkbox"] { accent-color: #1677ff; width: 16px; height: 16px; cursor: pointer; border-radius: 4px; border: 1px solid #d1d5db; margin: 0; }
+        .dark input[type="checkbox"] { border-color: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2); background-color: rgba(255,255,255,0.05); accent-color: #3b82f6; }
+        select { background-color: #fff; }
+        textarea { width: 100%; padding: 8px 12px; border-radius: 4px; font-size: 14px; transition: all 0.2s; outline: none; box-sizing: border-box; background-color: #fff; border: 1px solid #d1d5db; color: #374151; font-family: monospace; }
+        textarea:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1); }
+        .dark textarea { background-color: #0f172a; border-color: #293548; color: #e2e8f0; }
+        .dark textarea:focus { border-color: #3b82f6; box-shadow: inset 0 0 0 1px #3b82f6; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+        .animate-success { animation: successPulse 0.8s ease-out forwards !important; border-color: #1677ff !important; }
+        .dark .animate-success { border-color: #3b82f6 !important; }
+        @keyframes successPulse {
+            0% { box-shadow: 0 0 0 0 rgba(22, 119, 255, 0.4); border-color: #1677ff; }
+            70% { box-shadow: 0 0 0 4px rgba(22, 119, 255, 0); border-color: transparent; }
+            100% { box-shadow: 0 0 0 0 rgba(22, 119, 255, 0); }
+        }
+
+        /* 辅助类 */
+        .is-hidden { display: none !important; }
+        .dropdown-button-group { position: relative; display: inline-block; }
+        .dropdown-toggle::after { content: ' ▼'; font-size: 10px; margin-left: 4px; }
+    </style>
+
+    <!-- 保留原有CSS文件 -->
     <link rel="stylesheet" href="/css/folder-tree.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/modal.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/card-view.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/components.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/table-view.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/table.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/tabs.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/theme.css?v=__ASSET_VERSION__">
     <link rel="stylesheet" href="/css/logs.css?v=__ASSET_VERSION__">
     <link rel="stylesheet" href="/css/loading.css?v=__ASSET_VERSION__">
     <link rel="stylesheet" href="/css/message.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/floating-btn.css?v=__ASSET_VERSION__">
     <link rel="stylesheet" href="/css/cloudsaver.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/chat.css?v=__ASSET_VERSION__">
 </head>
-<body>
-    <div class="header">
-        <h1 id="appTitle">云盘自动转存</h1>
-    </div>
+<body class="bg-[#f0f2f5] dark:bg-[#0f172a] transition-colors duration-300">
     
-    <div class="theme-switch">
-        <button id="themeToggle" class="theme-toggle-btn">
-            <span class="theme-icon"></span>
-        </button>
-        <div class="theme-dropdown" id="themeDropdown">
-            <div class="theme-option" data-theme="light">
-                <span class="theme-icon"></span>
-                默认
-            </div>
-            <div class="theme-option" data-theme="dark">
-                <span class="theme-icon"></span>
-                暗黑
-            </div>
-            <div class="theme-option" data-theme="auto">
-                <span class="theme-icon"></span>
-                自动
+    <main class="max-w-[1400px] mx-auto p-4 md:p-8 pb-24 md:pb-8">
+        
+        <!-- 全局头部 -->
+        <div class="flex justify-between items-center mb-4 md:mb-6 px-1">
+            <h1 class="text-[20px] md:text-[24px] font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-2 transition-colors duration-300" id="appTitle">
+                <i data-lucide="cloud-cog" class="w-6 h-6 md:w-7 md:h-7 text-[#1677ff] dark:text-[#3b82f6]"></i>云盘自动转存
+            </h1>
+            
+            <div class="theme-switch flex items-center relative">
+                <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors text-gray-500 dark:text-gray-400">
+                    <i data-lucide="moon" class="w-5 h-5 hidden dark:block"></i>
+                    <i data-lucide="sun" class="w-5 h-5 block dark:hidden"></i>
+                </button>
+                <div class="theme-dropdown hidden absolute right-0 top-10 bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-[#334155] shadow-lg rounded-md overflow-hidden z-50 min-w-[120px]" id="themeDropdown">
+                    <div class="px-4 py-2 hover:bg-gray-50 dark:hover:bg-[rgba(255,255,255,0.05)] dark:text-gray-200 cursor-pointer text-sm transition-colors flex items-center gap-2" data-theme="light"><i data-lucide="sun" class="w-4 h-4 text-gray-400"></i> 默认模式</div>
+                    <div class="px-4 py-2 hover:bg-gray-50 dark:hover:bg-[rgba(255,255,255,0.05)] dark:text-gray-200 cursor-pointer text-sm transition-colors flex items-center gap-2" data-theme="dark"><i data-lucide="moon" class="w-4 h-4 text-gray-400"></i> 暗黑模式</div>
+                    <div class="px-4 py-2 hover:bg-gray-50 dark:hover:bg-[rgba(255,255,255,0.05)] dark:text-gray-200 cursor-pointer text-sm transition-colors flex items-center gap-2" data-theme="auto"><i data-lucide="sun-moon" class="w-4 h-4 text-gray-400"></i> 自动</div>
+                </div>
             </div>
         </div>
-    </div>
-    <div class="container">
-        <div class="tabs">
-            <div class="tab" data-tab="account">账号</div>
-            <div class="tab active" data-tab="task">任务</div>
-            <div class="tab" data-tab="media">媒体</div>
-            <div class="tab" data-tab="settings">系统</div>
-        </div>
-
-        <div id="accountTab" class="tab-content">
-            <div class="form-header">
-                <div class="task-operations">
-                    <div class="operation-group">
-                        <div class="button-group">
-                            <button type="button" onclick="openAddAccountModal()" class="btn-primary">添加账号</button>
-                        </div>
-                    </div>
-                </div>
+        
+        <!-- 全局主卡片 -->
+        <div class="bg-white dark:bg-[#1e293b] rounded-[8px] border border-gray-200 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] min-h-[750px] shadow-sm relative flex flex-col transition-all duration-300 w-full overflow-hidden">
+            
+            <div class="tabs">
+                <div class="tab" data-tab="account">账号</div>
+                <div class="tab active" data-tab="task">任务</div>
+                <div class="tab" data-tab="media">媒体</div>
+                <div class="tab" data-tab="settings">设置</div>
+                <div class="tab" data-tab="system">系统</div>
             </div>
-            <div id="addAccountModal" class="modal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                    <h3>添加账号</h3>
-                    </div>
-                    <form id="accountForm">
-                        <div class="form-body">
-                            <div class="form-group">
-                                <label for="accountType">账号类型</label>
-                                <select id="accountType" onchange="onAccountTypeChange(this.value)">
-                                    <option value="cloud139">移动云盘（139）</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="username">用户名</label>
-                                <input type="text" id="username" required>
-                            </div>
-                            <div class="form-group" id="passwordGroup">
-                                <label for="password">密码</label>
-                                <input type="password" id="password">
-                            </div>
-                            <!---验证码-->
-                            <div class="form-group" id="account-captcha" style="display: none;">
-                                <label for="captcha">验证码</label>
-                                <div class="captcha-container">
-                                    <img id="captchaImage" src="" alt="验证码">
-                                    <input type="text" id="validateCode" placeholder="验证码">
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="cookie">Cookie</label>
-                                <input type="cookie" id="cookie">
-                            </div>
-                            <div class="form-group">
-                            <small class="form-text" id="loginHint">密码和Cookie至少填写一个, 如果都填写, 则只有账号密码生效</small>
-                            </div>
-                            <div class="form-group">
-                                <div class="info-note">
-                                    📝 当前版本专注于移动云盘（139）平台，为您提供更稳定的服务体验
-                                </div>
-                            </div>
 
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit">添加</button>
-                            <button type="button" class="btn-default" onclick="closeAddAccountModal()">取消</button>
-                        </div>
-                    </form>
+            <!-- ================= Tab: 账号 ================= -->
+            <div id="accountTab" class="tab-content flex-1">
+                <div class="flex gap-3 mb-4 md:mb-6">
+                    <button type="button" onclick="openAddAccountModal()" class="btn-primary w-full sm:w-auto">
+                        <i data-lucide="plus" class="w-4 h-4 mr-1.5"></i> 添加账号
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="accountTable">
+                        <thead>
+                            <tr>
+                                <th>操作</th>
+                                <th>用户名</th>
+                                <th>会员状态</th>
+                                <th>容量</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
                 </div>
             </div>
 
-            <div class="table-container">
-                <table id="accountTable">
-                    <thead>
-                        <tr>
-                            <th>操作</th>
-                            <th>用户名</th>
-                            <th>会员状态</th>
-                            <th>容量</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-
-        <div id="taskTab" class="tab-content active">
-            <div class="form-header">
-                <div class="task-operations">
-                    <div class="operation-group">
-                        <div class="button-group">
-                            <button type="button" onclick="openCreateTaskModal()" class="btn-primary">创建任务</button>
-                            <div class="dropdown-button-group">
-                                <button type="button" class="dropdown-toggle">
-                                    更多操作
-                                    <span class="dropdown-icon">▼</span>
-                                </button>
-                                <div class="dropdown-content">
-                                    <a onclick="executeAllTask()">执行所有</a>
-                                    <a onclick="deleteSelectedTasks()">批量删除</a>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="search-bar">
-                            <div class="filter-dropdown">
-                                <select id="taskFilter">
-                                    <option value="all" selected>全部任务</option>
-                                    <option value="processing">追剧中</option>
-                                    <option value="completed">已完结</option>
-                                    <option value="failed">失败</option>
-                                    <option value="pending">等待中</option>
-                                </select>
-                            </div>
-                            <div class="search-input">
-                                <input type="text" id="taskSearch" placeholder="搜索资源名称/账号/备注">
-                                <button type="button" onclick="fetchTasks()" class="btn-icon" title="刷新任务列表">
-                                    <img src="/icons/refresh.svg?v=__ASSET_VERSION__" alt="刷新" class="refresh-icon">
-                                </button>
+            <!-- ================= Tab: 任务 ================= -->
+            <div id="taskTab" class="tab-content active flex-1">
+                <!-- 移动端响应式工具栏 -->
+                <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+                    <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
+                        <button type="button" onclick="openCreateTaskModal()" class="btn-primary flex-1 sm:flex-none">
+                            <i data-lucide="plus" class="w-4 h-4 mr-1.5"></i> 创建任务
+                        </button>
+                        
+                        <div class="dropdown-button-group flex-1 sm:flex-none relative">
+                            <button type="button" class="btn-default dropdown-toggle w-full justify-center">
+                                更多操作 <i data-lucide="chevron-down" class="w-3.5 h-3.5 ml-1"></i>
+                            </button>
+                            <div class="dropdown-content w-full sm:w-auto">
+                                <a onclick="executeAllTask()"><i data-lucide="play-circle" class="w-4 h-4 inline mr-1 text-green-500 dark:text-green-400"></i>执行所有</a>
+                                <div class="h-px bg-gray-100 dark:bg-slate-700 my-1"></div>
+                                <a onclick="deleteSelectedTasks()" class="text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-300"><i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>批量删除</a>
                             </div>
                         </div>
                     </div>
-                    <div class="delete-cloud-options">
-                        <label class="delete-cloud-option">
-                            <input type="checkbox" id="selectAllTasks">
-                            <span>全选</span>
-                        </label>
-                        <label class="delete-cloud-option">
-                            <input type="checkbox" id="deleteCloudOption">
-                            <span>同步删除网盘</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-            <div id="createTaskModal" class="modal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3>创建任务</h3>
-                    </div>
-                    <form id="taskForm">
-                        <div class="form-body">
-                            <div class="form-group">
-                                <label for="accountId">选择账号</label>
-                                <select id="accountId" required></select>
-                            </div>
-                            <div class="form-group">
-                                <label for="shareLink">分享链接</label>
-                                <div class="share-input-group" style="display: flex; gap: 10px;">
-                                    <input type="text" id="shareLink" required style="flex: 2;" data-share-input placeholder="可自动解析带访问码的链接">
-                                    <input type="text" id="accessCode" placeholder="访问码（可选）" style="flex: 1;" data-share-input>
-                                </div>
-                                <div id="shareParseError" style="color: #ff4d4f; font-size: 10px; margin-top: 2px; min-height: 12px;"></div>
-                            </div>
-                            <div class="form-group">
-                                <label for="taskName">任务名称</label>
-                                <input type="text" id="taskName" required readonly>
-                                <small class="form-text">默认使用分享目录第一个文件夹名称,识别完成后可更改</small>
-                            </div>
-                            <div class="form-group share-folders-group" style="display: none;">
-                                <label>分享目录</label>
-                                <div class="share-folders-list" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 0; border-radius: 4px;">
-                                    <div id="shareFoldersList"></div>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="targetFolderId">保存目录</label>
-                                <div class="tree-select" style="display: flex; gap: 10px;">
-                                    <div style="flex: 1; position: relative;">
-                                        <input type="text" id="targetFolder" readonly required>
-                                        <input type="hidden" id="targetFolderId" required>
-                                        <div class="tree-select-dropdown"></div>
-                                    </div>
-                                    <button type="button" class="btn-default" id="favoriteFolderBtn">
-                                        <i class="fas fa-star"></i>
-                                        常用目录
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="totalEpisodes">总集数</label>
-                                <input type="number" id="totalEpisodes" min="0">
-                            </div>
-                            <div class="form-group">
-                                <label for="remark">备注</label>
-                                <input type="text" id="remark" >
-                            </div>
-                            <div class="form-group">
-                                <label>文件名重命名（可选）</label>
-                                <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
-                                    <input type="text" id="ctSourceRegex" placeholder="正则表达式 例如: .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$" style="flex: 2 1 200px;">
-                                    <input id="ctTargetRegex" placeholder="例如: 沙尘暴.$1$2" style="flex: 1 1 100px;">
-                                </div>
-                                <div class="help-text-container" style="margin-top:4px;">
-                                    <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
-                                    <small class="form-text" style="display:none;">例如：沙尘暴 - S01E06 - 第6集.mkv 正则就填写 .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$ 值填写沙尘暴.$1$2, 结果为沙尘暴.S01E06.mkv<br/>
-                                        注意: 如果开启了AI并且正则未填写, 则会使用AI处理文件名; 正则的优先级 &gt; AI
-                                    </small>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label>文件名匹配规则（可选）</label>
-                                <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
-                                    <input type="text" id="matchPattern" placeholder="正则表达式 例如: (?<=E)\d+" style="flex: 2 1 200px;">
-                                    <select id="matchOperator" style="flex: 1 1 100px;">
-                                        <option value="lt">小于</option>
-                                        <option value="eq">等于</option>
-                                        <option value="gt">大于</option>
-                                        <option value="contains">包含</option>
-                                        <option value="notContains">不包含</option>
-                                    </select>
-                                    <input id="matchValue" placeholder="值" min="0" style="flex: 1 1 100px;">
-                                </div>
-                                <div class="help-text-container" style="margin-top:4px;">
-                                    <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
-                                    <small class="form-text" style="display:none;">例如：沙尘暴 - S01E06 - 第6集.mkv 想要转存大于8集的剧集, 正则就填写 (?<=E)\d+ 值填写8, 逻辑是用正则匹配出S01E06中的06与值8进行比较<br/>
-                                        注意: 如果启用了AI会默认走AI处理, 正则表达式栏可以用自然语, 例如: 剧集 大于 8 AI会处理筛选剧集大于8的文件; 文件名 不包含 特别版和番外篇 AI会只保留满足条件的
-                                    </small>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="enableCron" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="enableCron" style="width:auto;margin:0;">启用自定义定时任务</label>
-                                <div class="cronExpression-box">
-                                    <input type="text" id="cronExpression" placeholder="Cron表达式，如：0 */30 * * * *">
-                                    <small class="form-text">每30分钟执行：0 */30 * * * *</small><br/>
-                                    <small class="form-text">每天凌晨2点执行：0 0 2 * * *</small>
-                                </div>
-                            </div>
+                    
+                    <div class="flex flex-col sm:flex-row gap-3 items-center w-full xl:w-auto">
+                        <select id="taskFilter" class="input-base w-full sm:w-32 cursor-pointer">
+                            <option value="all" selected>全部任务</option>
+                            <option value="processing">追剧中</option>
+                            <option value="completed">已完结</option>
+                            <option value="failed">失败</option>
+                            <option value="pending">等待中</option>
+                        </select>
+                        <div class="flex items-center gap-2 relative w-full sm:w-auto">
+                            <input type="text" id="taskSearch" placeholder="搜索资源/账号/备注" class="input-base w-full sm:w-64 pr-10">
+                            <button type="button" onclick="fetchTasks()" class="absolute right-1 btn-icon" title="刷新列表">
+                                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            </button>
                         </div>
-                        <div class="form-actions">
-                            <button type="submit">创建</button>
-                            <button type="button" class="btn-default" onclick="closeCreateTaskModal()">取消</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            <div class="table-container">
-                <table id="taskTable">
-                    <thead>
-                        <tr>
-                            <th>操作</th>
-                            <th>资源名称</th>
-                            <th>账号</th>
-                            <!-- <th>视频类型</th> -->
-                            <th>首次保存目录</th>
-                            <th>更新目录</th>
-                            <th>更新数/总数</th>
-                            <th>状态</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-
-        <div id="settingsTab" class="tab-content">
-            <form id="settingsForm">
-                <div class="form-group">
-                    <label>CloudSaver 设置</label>
-                    <div class="proxy-settings" style="border: 1px solid var(--border-color);padding: 12px;">
-                        <input type="text" id="cloudSaverUrl" placeholder="服务地址: http://localhost:8008">
-                        <input type="text" id="cloudSaverUsername" placeholder="账号">
-                        <input type="password" id="cloudSaverPassword" placeholder="密码">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="systemApiKey">系统apiKey</label>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="text" id="systemApiKey" placeholder="系统apiKey" style="flex: 1;">
-                        <button type="button" onclick="generateApiKey()" class="btn-default" style="margin-top: unset;">生成Key</button>
-                    </div>
-                    <small class="form-text">系统apiKey, 可用于第三方调用接口使用。生成后请及时保存设置。</small>
-                </div>
-                <div class="form-group">
-                    <label>任务设置</label>
-                    <div class="push-settings">
-                        <div class="push-item">
-                            <label for="taskExpireDays">任务过期天数</label>
-                            <input type="number" id="taskExpireDays" min="1" placeholder="默认3天">
-                            <small class="form-text">超过指定天数未新增资源的任务将状态改为已完成</small>
-                        </div>
-                        <div class="push-item">
-                            <label for="taskMaxRetries">最大重试次数</label>
-                            <input type="number" id="taskMaxRetries" min="0" placeholder="默认3次">
-                            <small class="form-text">任务执行失败时的最大重试次数</small>
-                        </div>
-                        <div class="push-item">
-                            <label for="taskRetryInterval">重试间隔（秒）</label>
-                            <input type="number" id="taskRetryInterval" min="0" placeholder="默认300秒">
-                            <small class="form-text">任务重试的时间间隔</small>
-                        </div>
-                        <div class="push-item">
-                            <label for="cloud139Concurrency">139并发上限</label>
-                            <input type="number" id="cloud139Concurrency" min="1" placeholder="默认3">
-                            <small class="form-text">控制移动云盘（139）请求并发，避免触发限流</small>
-                        </div>
-                        <div class="push-item">
-                            <label>任务定时检查</label>
-                            <input type="text" id="taskCheckCron" placeholder="Cron表达式">
-                            <small class="form-text">默认：0 19-23 * * * (每天19点到23点整点执行一次) 允许多个表达式, 使用|分隔, 例如: 0 19-23 * * *|0 16-23 * * *</small>
-                        </div>
-                        <div class="push-item">
-                            <label>重试任务检查</label>
-                            <input type="text" id="retryTaskCron" placeholder="Cron表达式">
-                            <small class="form-text">默认：*/1 * * * * (每分钟执行一次重试扫描)</small>
-                        </div>
-                        <div class="push-item">
-                            <label for="mediaSuffix">媒体文件后缀</label>
-                            <input type="text" id="mediaSuffix" placeholder="例如: .mp4, .mkv">
-                            <small class="form-text">仅用于计算当前已转存集数,其他文件一样会转存。当任务总集数填写后,会根据当前填写的后缀匹配媒体文件,满足后缀的文件会计入已更新数。</small>
-                            <label>
-                                <input type="checkbox" id="enableOnlySaveMedia">
-                                仅转存指定后缀的媒体文件
-                            </label>
-                        </div>
-                        <div class="push-item">
-                            <label>
-                                <input type="checkbox" id="enableAutoCreateFolder">
-                                云盘文件夹不存在时自动创建
-                            </label>
-                            <small class="form-text">当天翼云盘中任务更新目录不存在的时候, 自动创建文件夹, 仅会创建最后一级文件夹</small>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>消息推送设置</label>
-                    <div class="push-settings">
-                        <div class="push-item">
-                            <label>
-                                <input type="checkbox" id="enableWecom">
-                                企微 推送
-                            </label>
-                            <input type="text" id="wecomWebhook" placeholder="机器人webhook">
-                            <label>
-                                <input type="checkbox" id="enableTelegram">
-                                Telegram 推送
-                            </label>
-                            <input type="text" id="proxyDomain" placeholder="反代地址, 选填">
-                            <label for="telegramBotToken">Bot Token</label>
-                            <input type="text" id="telegramBotToken" placeholder="Bot Token">
-                            <label for="telegramChatId">Chat ID</label>
-                            <input type="text" id="telegramChatId" placeholder="Chat ID">
-
-                            <label>
-                                <input type="checkbox" id="enableWXPusher">
-                                WXPusher 推送
-                            </label>
-                            <input type="text" id="wXPusherSPT" placeholder="WXPusher SPT">
-                            <label>
-                                <input type="checkbox" id="enableBark">
-                                Bark 推送
-                            </label>
-                            <input type="text" id="barkServerUrl" placeholder="Bark serverUrl">
-                            <input type="text" id="barkKey" placeholder="Bark key">
-
-                            <label>
-                                <input type="checkbox" id="enablePushPlus">
-                                PushPlus 推送
-                            </label>
-                            <label for="pushplusToken">Token</label>
-                            <input type="text" id="pushplusToken" placeholder="PushPlus Token">
-                            <label for="pushplusTopic">群组编码</label>
-                            <input type="text" id="pushplusTopic" placeholder="群组编码, 不填仅给自己发送">
-                            <label for="pushplusChannel">推送渠道</label>
-                            <select id="pushplusChannel">
-                                <option value="wechat">微信公众号</option>
-                                <option value="webhook">WebHook</option>
-                                <option value="cp">企业微信</option>
-                                <option value="sms">短信</option>
-                                <option value="mail">邮件</option>
-                            </select>
-                            <label for="pushplusWebhook">Webhook(选填)</label>
-                            <input type="text" id="pushplusWebhook" placeholder="仅在选择 WebHook 渠道时需要填写">
-                            <label for="pushplusTo">好友令牌(选填)</label>
-                            <input type="text" id="pushplusTo" placeholder="好友令牌">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Telegram 机器人</label>
-                    <div class="push-item">
-                        <label>
-                            <input type="checkbox" id="enableTgBot">
-                            点亮 TG 创任务
-                        </label>
-                        <label for="telegramChatId">Token</label>
-                        <input type="text" id="tgBotToken" placeholder="Bot Token">
-                        <label for="telegramChatId">Chat ID</label>
-                        <input type="text" id="tgBotChatId" placeholder="Chat ID">
-                        <small class="form-text">点亮后即可通过TG机器人管理任务。</small>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="proxySettings">代理设置</label>
-                    <div class="push-item">
-                    <div class="proxy-settings">
-                        <input type="text" id="proxyHost" placeholder="代理地址: 127.0.0.1">
-                        <input type="number" id="proxyPort" placeholder="代理端口">
-                        <input type="text" id="proxyUsername" placeholder="账号 如果有">
-                        <input type="text" id="proxyPassword" placeholder="密码 如果有">
-                    </div>
-                    <div class="proxy-options" style="margin-top: 10px;">
-                        <label style="display: block; margin-bottom: 5px;">启用代理的服务：</label>
-                        <div class="proxy-services-container">
-                            <label class="proxy-service-item">
-                                <input type="checkbox" id="proxyTelegram">
-                                <span>Telegram</span>
-                            </label>
-                            <label class="proxy-service-item">
-                                <input type="checkbox" id="proxyCloud189">
-                                <span>天翼</span>
-                            </label>
-                            <label class="proxy-service-item">
-                                <input type="checkbox" id="proxyCustomPush">
-                                <span>自定义推送</span>
-                            </label>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="proxySettings">用户名密码设置</label>
-                    <div class="proxy-settings">
-                        <input type="text" id="systemUserName" placeholder="登录账号">
-                        <input type="password" id="systemPassword" placeholder="登录密码">
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label>系统信息</label>
-                    <div class="system-info">
-                        <div class="info-item">
-                            <span class="info-label">当前版本:</span>
-                            <span class="info-value" id="systemVersion">loading...</span>
+                <div class="table-container">
+                    <table id="taskTable">
+                        <thead>
+                            <tr>
+                                <th>操作</th>
+                                <th>资源名称</th>
+                                <th>账号</th>
+                                <th>首次保存目录</th>
+                                <th>更新目录</th>
+                                <th>更新数/总数</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 mt-4 p-3 bg-gray-50 dark:bg-[#0f172a] border border-gray-100 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] rounded-[4px]">
+                    <label class="text-sm dark:text-gray-300">
+                        <input type="checkbox" id="selectAllTasks"> 全选当前页
+                    </label>
+                    <label class="text-sm text-red-600 dark:text-red-400">
+                        <input type="checkbox" id="deleteCloudOption"> 删除任务时同步删除网盘文件
+                    </label>
+                </div>
+            </div>
+
+            <!-- ================= Tab: 媒体 ================= -->
+            <div id="mediaTab" class="tab-content flex-1">
+                <div class="max-w-4xl mx-auto mt-4 md:mt-8">
+                    <div class="flex flex-col sm:flex-row gap-3 relative shadow-sm rounded-md">
+                        <div class="relative flex-1 w-full">
+                            <i data-lucide="search" class="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="searchInput" placeholder="输入关键字搜索全盘资源..." class="input-base w-full pl-12 h-12 text-base">
                         </div>
-                        <div class="info-item">
-                            <span class="info-label">运行模式:</span>
-                            <span class="info-value">移动云盘 (139) 专用版</span>
-                        </div>
+                        <button type="button" onclick="searchResources()" class="btn-primary w-full sm:w-auto px-8 h-12 text-base">全网搜索</button>
                     </div>
                 </div>
-
-                <button type="submit">保存设置</button>
-            </form>
-        </div>
-
-        <div id="mediaTab" class="tab-content">
-            <div class="cloudsaver-search-container">
-                <div class="cloudsaver-search-box">
-                    <input type="text" id="searchInput" placeholder="输入关键字搜索资源">
-                    <button type="button" onclick="searchResources()">搜索</button>
-                </div>
-                <div id="searchResults" class="cloudsaver-search-results" style="display: none;">
+                <div id="searchResults" class="cloudsaver-search-results is-hidden mt-6">
                     <div class="cloudsaver-results-list"></div>
                 </div>
             </div>
-        </div>
-    </div>
 
-<!-- 在 body 结束标签前添加以下脚本引用 -->
-<script>window.__ASSET_VERSION__ = '__ASSET_VERSION__';</script>
-<script src="/js/folderSelector.js?v=__ASSET_VERSION__"></script>
-<script src="/js/theme.js?v=__ASSET_VERSION__"></script>
-<script src="/js/tabs.js?v=__ASSET_VERSION__"></script>
-<script src="/js/accounts.js?v=__ASSET_VERSION__"></script>
-<script src="/js/tasks.js?v=__ASSET_VERSION__"></script>
-<script src="/js/edit-task.js?v=__ASSET_VERSION__"></script>
-<script src="/js/main.js?v=__ASSET_VERSION__"></script>
-<script src="/js/settings.js?v=__ASSET_VERSION__"></script>
-<script src="/js/media.js?v=__ASSET_VERSION__"></script>
-<script src="/js/logs.js?v=__ASSET_VERSION__"></script>
-<script src="/js/loading.js?v=__ASSET_VERSION__"></script>
-<script src="/js/message.js?v=__ASSET_VERSION__"></script>
-<script src="/js/cloudsaver.js?v=__ASSET_VERSION__"></script>
-<script src="/js/customPush.js?v=__ASSET_VERSION__"></script> 
+            <!-- ================= Tab: 设置 ================= -->
+            <form id="settingsForm" class="contents">
+                <div id="settingsTab" class="tab-content flex-1">
+                    <div class="max-w-6xl mx-auto space-y-6">
+                        
+                        <!-- CloudSaver基础服务 -->
+                        <div class="settings-card mb-0">
+                            <h4><i data-lucide="server" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> CloudSaver 基础服务</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="sm:col-span-3">
+                                    <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">服务地址</label>
+                                    <input type="text" id="cloudSaverUrl" placeholder="http://localhost:8008" class="input-base">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">通信账号</label>
+                                    <input type="text" id="cloudSaverUsername" placeholder="用户名" class="input-base">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">通信密码</label>
+                                    <input type="password" id="cloudSaverPassword" placeholder="密码" class="input-base">
+                                </div>
+                            </div>
+                        </div>
 
+                        <!-- 任务策略配置 -->
+                        <div class="settings-card mb-0">
+                            <h4><i data-lucide="settings-2" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 任务策略配置</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                                <div>
+                                    <label for="taskExpireDays" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">任务过期天数</label>
+                                    <input type="number" id="taskExpireDays" min="1" placeholder="默认 3 天" class="input-base">
+                                    <small class="form-text">超过指定天数未新增资源的任务将状态改为已完成</small>
+                                </div>
+                                <div>
+                                    <label for="taskMaxRetries" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">最大重试次数</label>
+                                    <input type="number" id="taskMaxRetries" min="0" placeholder="默认 3 次" class="input-base">
+                                    <small class="form-text">任务执行失败时的最大重试次数</small>
+                                </div>
+                                <div>
+                                    <label for="taskRetryInterval" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">重试间隔（秒）</label>
+                                    <input type="number" id="taskRetryInterval" min="0" placeholder="默认300秒" class="input-base">
+                                </div>
+                                <div>
+                                    <label for="cloud139Concurrency" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">139并发上限</label>
+                                    <input type="number" id="cloud139Concurrency" min="1" placeholder="默认3" class="input-base">
+                                    <small class="form-text">控制移动云盘（139）请求并发，避免触发限流</small>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label class="text-sm dark:text-gray-300">
+                                        <input type="checkbox" id="enableAutoCreateFolder">
+                                        <span class="ml-2">云盘文件夹不存在时自动创建</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
 
-</body>
-</html>
+                        <!-- 定时与清理 -->
+                        <div class="settings-card mb-0">
+                            <h4><i data-lucide="clock" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 定时与清理</h4>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="taskCheckCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">任务定时检查</label>
+                                    <input type="text" id="taskCheckCron" placeholder="Cron表达式（5位或6位）" class="input-base">
+                                    <small class="form-text">默认：0 19-23 * * * (每天19点到23点整点执行一次) | 支持5位或6位格式</small>
+                                </div>
+                                <div>
+                                    <label for="retryTaskCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">重试任务检查</label>
+                                    <input type="text" id="retryTaskCron" placeholder="Cron表达式（5位或6位）" class="input-base">
+                                    <small class="form-text">默认：*/10 * * * * (每10分钟执行一次重试扫描) | 支持5位或6位格式</small>
+                                </div>
+                                <div id="recycleSettingsGroup">
+                                    <label for="cleanRecycleCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">
+                                        回收站清理
+                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">(仅天翼云盘189账号可用)</span>
+                                    </label>
+                                    <input type="text" id="cleanRecycleCron" placeholder="Cron表达式（5位或6位）" class="input-base">
+                                    <small class="form-text">默认：0 */8 * * * (每8小时执行一次) | 支持5位或6位格式</small>
+                                    <div class="mt-2 space-y-2">
+                                        <label class="text-sm dark:text-gray-300">
+                                            <input type="checkbox" id="enableAutoClearRecycle">
+                                            <span class="ml-2">自动清空个人回收站</span>
+                                        </label>
+                                        <label class="text-sm dark:text-gray-300 block">
+                                            <input type="checkbox" id="enableAutoClearFamilyRecycle">
+                                            <span class="ml-2">自动清空家庭回收站</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="vacuumCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">SQLite VACUUM</label>
+                                    <input type="text" id="vacuumCron" placeholder="Cron表达式（5位或6位）" class="input-base">
+                                    <small class="form-text">默认：0 4 * * 0 (每周日凌晨4点执行) | 支持5位或6位格式</small>
+                                </div>
+                            </div>
+                        </div>
 
-<!-- 修改任务弹窗 -->
-<div id="editTaskModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>修改任务</h3>
-        </div>
-        <form id="editTaskForm">
-            <div class="form-body">
-                <input type="hidden" id="editTaskId">
-                <div class="form-group">
-                    <label for="editResourceName">资源名</label>
-                    <div class="tree-select">
-                        <input type="text" id="editResourceName" required>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="shareFolderId">源目录(分享链接中的目录)</label>
-                    <div class="tree-select">
-                        <input type="text" id="shareFolder" readonly required>
-                        <input type="hidden" id="shareFolderId" required>
-                        <div class="tree-select-dropdown"></div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="editRealFolderId">更新目录</label>
-                    <div class="tree-select">
-                        <input type="text" id="editRealFolder" readonly required>
-                        <input type="hidden" id="editRealFolderId" required>
-                        <div class="tree-select-dropdown"></div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="editCurrentEpisodes">更新数</label>
-                    <input type="number" id="editCurrentEpisodes" min="0">
-                </div>
-                <div class="form-group">
-                    <label for="editTotalEpisodes">总数</label>
-                    <input type="number" id="editTotalEpisodes" min="0">
-                </div>
-                <div class="form-group">
-                    <label for="editStatus">状态</label>
-                    <select id="editStatus" required>
-                        <option value="pending">待处理</option>
-                        <option value="processing">追剧中</option>
-                        <option value="completed">已完结</option>
-                        <option value="failed">失败</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="editRemark">备注</label>
-                    <input type="text" id="editRemark">
-                </div>
-                <div class="form-group">
-                    <label>文件名匹配规则（可选）<span class="help-icon" data-tooltip="常用正则表达式示例">?</span></label>
-                    <div class="match-rule" style="display: flex; flex-wrap: wrap; gap: 10px;">
-                        <input type="text" id="editMatchPattern" placeholder="正则表达式 例如: 第(\d+)集" style="flex: 2 1 200px;">
-                        <select id="editMatchOperator" style="flex: 1 1 100px;">
-                            <option value="lt">小于</option>
-                            <option value="eq">等于</option>
-                            <option value="gt">大于</option>
-                            <option value="contains">包含</option>
-                            <option value="notContains">不包含</option>
-                        </select>
-                        <input id="editMatchValue" placeholder="值" min="0" style="flex: 1 1 100px;">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <div class="push-item">
-                        <label for="editEnableCron" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="editEnableCron" style="width:auto;margin:0;">自定义定时任务</label>
-                        <div class="cronExpression-box">
-                            <input type="text" id="editCronExpression" placeholder="Cron表达式，如：0 */30 * * * *">
-                            <small class="form-text">每30分钟执行：0 */30 * * * *</small><br/>
-                            <small class="form-text">每天凌晨2点执行：0 0 2 * * *</small>
+                        <!-- 媒体筛选 -->
+                        <div class="settings-card mb-0">
+                            <h4><i data-lucide="film" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 媒体筛选</h4>
+                            <div>
+                                <label for="mediaSuffix" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">媒体文件后缀</label>
+                                <input type="text" id="mediaSuffix" placeholder="例如: .mp4, .mkv" class="input-base">
+                                <small class="form-text">仅用于计算当前已转存集数，其他文件一样会转存</small>
+                                <label class="text-sm dark:text-gray-300 block mt-2">
+                                    <input type="checkbox" id="enableOnlySaveMedia">
+                                    <span class="ml-2">仅转存指定后缀的媒体文件</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 消息推送 -->
+                        <div class="settings-card mb-0">
+                            <div class="flex justify-between items-center mb-3">
+                                <h4 class="mb-0"><i data-lucide="send" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 消息推送</h4>
+                                <button type="button" onclick="openCustomPushManagementModal()" class="btn-default text-sm">
+                                    <i data-lucide="webhook" class="w-4 h-4 mr-1"></i>
+                                    自定义 Webhook
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- 企微推送 -->
+                                <div class="border border-gray-200 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] rounded-md overflow-hidden">
+                                    <div class="bg-gray-50 dark:bg-[rgba(255,255,255,0.02)] px-3 py-2 border-b border-gray-200 dark:border-[rgba(255,255,255,0.05)]">
+                                        <label class="font-medium text-sm text-gray-700 dark:text-gray-300">
+                                            <input type="checkbox" id="enableWecom"> 企微推送
+                                        </label>
+                                    </div>
+                                    <div class="p-3 bg-white dark:bg-transparent">
+                                        <input type="text" id="wecomWebhook" placeholder="机器人webhook" class="input-base">
+                                    </div>
+                                </div>
+
+                                <!-- Telegram推送 -->
+                                <div class="border border-gray-200 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] rounded-md overflow-hidden">
+                                    <div class="bg-gray-50 dark:bg-[rgba(255,255,255,0.02)] px-3 py-2 border-b border-gray-200 dark:border-[rgba(255,255,255,0.05)]">
+                                        <label class="font-medium text-sm text-gray-700 dark:text-gray-300">
+                                            <input type="checkbox" id="enableTelegram"> Telegram推送
+                                        </label>
+                                    </div>
+                                    <div class="p-3 bg-white dark:bg-transparent space-y-2">
+                                        <input type="text" id="proxyDomain" placeholder="反代地址(选填)" class="input-base">
+                                        <input type="text" id="telegramBotToken" placeholder="Bot Token" class="input-base">
+                                        <input type="text" id="telegramChatId" placeholder="Chat ID" class="input-base">
+                                    </div>
+                                </div>
+
+                                <!-- WXPusher -->
+                                <div class="border border-gray-200 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] rounded-md overflow-hidden">
+                                    <div class="bg-gray-50 dark:bg-[rgba(255,255,255,0.02)] px-3 py-2 border-b border-gray-200 dark:border-[rgba(255,255,255,0.05)]">
+                                        <label class="font-medium text-sm text-gray-700 dark:text-gray-300">
+                                            <input type="checkbox" id="enableWXPusher"> WXPusher推送
+                                        </label>
+                                    </div>
+                                    <div class="p-3 bg-white dark:bg-transparent">
+                                        <input type="text" id="wXPusherSPT" placeholder="WXPusher SPT" class="input-base">
+                                    </div>
+                                </div>
+
+                                <!-- Bark -->
+                                <div class="border border-gray-200 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] rounded-md overflow-hidden">
+                                    <div class="bg-gray-50 dark:bg-[rgba(255,255,255,0.02)] px-3 py-2 border-b border-gray-200 dark:border-[rgba(255,255,255,0.05)]">
+                                        <label class="font-medium text-sm text-gray-700 dark:text-gray-300">
+                                            <input type="checkbox" id="enableBark"> Bark推送
+                                        </label>
+                                    </div>
+                                    <div class="p-3 bg-white dark:bg-transparent space-y-2">
+                                        <input type="text" id="barkServerUrl" placeholder="Bark serverUrl" class="input-base">
+                                        <input type="text" id="barkKey" placeholder="Bark key" class="input-base">
+                                    </div>
+                                </div>
+
+                                <!-- PushPlus -->
+                                <div class="border border-gray-200 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] rounded-md overflow-hidden md:col-span-2">
+                                    <div class="bg-gray-50 dark:bg-[rgba(255,255,255,0.02)] px-3 py-2 border-b border-gray-200 dark:border-[rgba(255,255,255,0.05)]">
+                                        <label class="font-medium text-sm text-gray-700 dark:text-gray-300">
+                                            <input type="checkbox" id="enablePushPlus"> PushPlus推送
+                                        </label>
+                                    </div>
+                                    <div class="p-3 bg-white dark:bg-transparent grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <input type="text" id="pushplusToken" placeholder="PushPlus Token" class="input-base">
+                                        <input type="text" id="pushplusTopic" placeholder="群组编码(选填)" class="input-base">
+                                        <select id="pushplusChannel" class="input-base">
+                                            <option value="wechat">微信公众号</option>
+                                            <option value="webhook">WebHook</option>
+                                            <option value="cp">企业微信</option>
+                                            <option value="sms">短信</option>
+                                            <option value="mail">邮件</option>
+                                        </select>
+                                        <input type="text" id="pushplusWebhook" placeholder="Webhook(选填)" class="input-base">
+                                        <input type="text" id="pushplusTo" placeholder="好友令牌(选填)" class="input-base sm:col-span-2">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Telegram机器人 -->
+                        <div class="settings-card mb-0">
+                            <h4><i data-lucide="bot" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> Telegram 机器人</h4>
+                            <div class="space-y-3">
+                                <label class="text-sm dark:text-gray-300">
+                                    <input type="checkbox" id="enableTgBot">
+                                    <span class="ml-2">点亮 TG 创任务</span>
+                                </label>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">Token</label>
+                                        <input type="text" id="tgBotToken" placeholder="Bot Token" class="input-base">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">Chat ID</label>
+                                        <input type="text" id="tgBotChatId" placeholder="Chat ID" class="input-base">
+                                    </div>
+                                </div>
+                                <small class="form-text">点亮后即可通过TG机器人管理任务。</small>
+                            </div>
+                        </div>
+
+                        <!-- 网络代理 -->
+                        <div class="settings-card mb-0">
+                            <h4><i data-lucide="globe" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 网络代理</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                                <input type="text" id="proxyHost" placeholder="代理地址: 127.0.0.1" class="input-base">
+                                <input type="number" id="proxyPort" placeholder="代理端口" class="input-base">
+                                <input type="text" id="proxyUsername" placeholder="账号(选填)" class="input-base">
+                                <input type="text" id="proxyPassword" placeholder="密码(选填)" class="input-base">
+                            </div>
+                            <div class="flex flex-wrap gap-4">
+                                <label class="text-sm text-gray-700 dark:text-gray-400">启用代理的服务：</label>
+                                <label class="text-sm dark:text-gray-300">
+                                    <input type="checkbox" id="proxyTelegram">
+                                    <span class="ml-2">Telegram</span>
+                                </label>
+                                <label class="text-sm dark:text-gray-300">
+                                    <input type="checkbox" id="proxyCloud139">
+                                    <span class="ml-2">移动云盘(139)</span>
+                                </label>
+                                <label class="text-sm dark:text-gray-300">
+                                    <input type="checkbox" id="proxyCustomPush">
+                                    <span class="ml-2">自定义推送</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end">
+                            <button type="submit" class="btn-primary">保存设置</button>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="form-actions">
-                <button type="submit">保存</button>
-                <input type="hidden" id="editAccountId">
-                <button type="button" class="btn-default" onclick="closeEditTaskModal()">取消</button>
-            </div>
-        </form>
-    </div>
-</div>
 
-<div class="regex-tooltip" id="regexTooltip">
-    <span style="font-size: 12px;">注意: 使用捕获组的正则仅对重命名功能有效, 文件匹配请使用零宽断言;
-         <br/>示例中前2项对重命名有效, 后3项对文件名匹配功能有效
-         <br/>示例仅供参考, 请根据实际情况自行修改
+                <!-- ================= Tab: 系统 ================= -->
+                <div id="systemTab" class="tab-content flex-1">
+                    <div class="max-w-3xl mx-auto mt-4 space-y-6">
+                        <div class="settings-card border-l-4 border-l-[#1677ff] dark:border-l-[#3b82f6]">
+                            <h4>系统访问安全认证</h4>
+                            <div class="space-y-6">
+                                <div>
+                                    <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-slate-400">Web 控制台账号密码</label>
+                                    <div class="flex flex-col sm:flex-row gap-4">
+                                        <input type="text" id="systemUserName" placeholder="登录账号" class="input-base flex-1">
+                                        <input type="password" id="systemPassword" placeholder="登录密码" class="input-base flex-1">
+                                    </div>
+                                </div>
+                                <hr class="border-gray-100 dark:border-[rgba(255,255,255,0.05)]">
+                                <div>
+                                    <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-slate-400">Open API 鉴权密钥</label>
+                                    <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                                        <input type="text" id="systemApiKey" placeholder="尚未生成" class="input-base flex-1 bg-gray-50 dark:bg-slate-900 font-mono tracking-wider w-full">
+                                        <button type="button" onclick="generateApiKey()" class="btn-default whitespace-nowrap w-full sm:w-auto"><i data-lucide="key" class="w-4 h-4 mr-1"></i>重新生成</button>
+                                    </div>
+                                    <small class="form-text">系统apiKey, 可用于第三方调用接口使用。生成后请及时保存设置。</small>
+                                </div>
+                                <hr class="border-gray-100 dark:border-[rgba(255,255,255,0.05)]">
+                                <div>
+                                    <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-slate-400">系统信息</label>
+                                    <div class="space-y-2">
+                                        <div class="flex justify-between items-center p-2 bg-gray-50 dark:bg-[#0f172a] rounded">
+                                            <span class="text-sm text-gray-600 dark:text-gray-400">当前版本:</span>
+                                            <span class="text-sm font-medium text-gray-900 dark:text-gray-200" id="systemVersion">loading...</span>
+                                        </div>
+                                        <div class="flex justify-between items-center p-2 bg-gray-50 dark:bg-[#0f172a] rounded">
+                                            <span class="text-sm text-gray-600 dark:text-gray-400">运行模式:</span>
+                                            <span class="text-sm font-medium text-gray-900 dark:text-gray-200" id="systemPlatform">loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 系统日志 -->
+                        <div class="settings-card">
+                            <h4 class="mb-3"><i data-lucide="terminal" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 系统日志</h4>
+                            <div id="logsContainer" class="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 h-[500px] overflow-y-auto font-mono text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap" style="-webkit-overflow-scrolling: touch;"></div>
+                            <small class="form-text mt-2 block">实时显示系统运行日志，自动滚动到最新记录</small>
+                        </div>
+                        
+                        <div class="flex justify-end">
+                            <button type="button" onclick="saveSettings()" class="btn-primary">保存设置</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <!-- ============================================== 弹窗区 ============================================== -->
+
+    <!-- 添加账号Modal -->
+    <div id="addAccountModal" class="modal">
+        <div class="modal-wrapper" onclick="if(event.target===this) closeAddAccountModal()">
+            <div class="modal-content !max-w-md w-full">
+                <div class="modal-header">
+                    <h3>添加云盘账号</h3>
+                    <button type="button" class="close-btn" onclick="closeAddAccountModal()">&times;</button>
+                </div>
+                <form id="accountForm" class="flex flex-col min-h-0">
+                    <div class="form-body space-y-4">
+                        <div class="form-group mb-0">
+                            <label for="accountType">账号类型</label>
+                            <select id="accountType" class="input-base" onchange="onAccountTypeChange(this.value)">
+                                <option value="cloud139">移动云盘（139）</option>
+                            </select>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="username">用户名 / 手机号</label>
+                            <input type="text" id="username" class="input-base" required>
+                        </div>
+                        <div class="form-group mb-0 is-hidden" id="passwordGroup">
+                            <label for="password">密码</label>
+                            <input type="password" id="password" class="input-base">
+                        </div>
+                        <div class="form-group mb-0 is-hidden" id="account-captcha">
+                            <label for="validateCode">验证码</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="validateCode" placeholder="验证码" class="input-base flex-1">
+                                <img id="captchaImage" src="" alt="验证码" class="h-[38px] rounded border border-gray-300 dark:border-gray-600">
+                            </div>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="cookie">完整 Cookie</label>
+                            <input type="text" id="cookie" class="input-base font-mono text-xs" placeholder="抓包获取到的完整 Cookie 字符串">
+                        </div>
+                        <small class="form-text" id="loginHint">移动云盘（139）只支持 Cookie 登录，请填写 Cookie</small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-default" onclick="closeAddAccountModal()">取消</button>
+                        <button type="submit" class="btn-primary">确认添加</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建任务Modal -->
+    <div id="createTaskModal" class="modal">
+        <div class="modal-wrapper" onclick="if(event.target===this) closeCreateTaskModal()">
+            <div class="modal-content !max-w-3xl">
+                <div class="modal-header">
+                    <h3 class="flex items-center gap-2"><i data-lucide="layout-template" class="w-5 h-5 text-[#1677ff] dark:text-[#60a5fa]"></i>创建自动转存任务</h3>
+                    <button type="button" class="close-btn" onclick="closeCreateTaskModal()">&times;</button>
+                </div>
+                <form id="taskForm" class="flex flex-col min-h-0 flex-1">
+                    <div class="form-body space-y-5">
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                            <div class="form-group mb-0">
+                                <label for="accountId">执行账号</label>
+                                <select id="accountId" class="input-base" required></select>
+                            </div>
+                            <div class="form-group mb-0">
+                                <label for="taskName">任务名称</label>
+                                <input type="text" id="taskName" class="input-base" required readonly>
+                                <small class="form-text">默认使用分享目录第一个文件夹名称</small>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label>分享链接与提取码</label>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <input type="text" id="shareLink" required class="input-base flex-[2]" placeholder="可自动解析带访问码的链接">
+                                <input type="text" id="accessCode" class="input-base flex-1" placeholder="访问码 (选填)">
+                            </div>
+                            <div id="shareParseError" class="text-red-500 text-sm mt-1"></div>
+                        </div>
+
+                        <div class="form-group mb-0 is-hidden share-folders-group">
+                            <label>分享目录</label>
+                            <div class="share-folders-list">
+                                <div id="shareFoldersList"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label for="targetFolder">保存至我的网盘目录</label>
+                            <div class="tree-select flex gap-3">
+                                <div class="flex-1 relative">
+                                    <input type="text" id="targetFolder" class="input-base cursor-pointer" readonly required placeholder="点击输入框选择目录">
+                                    <input type="hidden" id="targetFolderId" required>
+                                    <div class="tree-select-dropdown"></div>
+                                </div>
+                                <button type="button" class="btn-default whitespace-nowrap" id="favoriteFolderBtn">
+                                    <i data-lucide="star" class="w-4 h-4 mr-1"></i>常用目录
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                            <div class="form-group mb-0">
+                                <label for="totalEpisodes">资源总集数 (留空为未知)</label>
+                                <input type="number" id="totalEpisodes" min="0" class="input-base">
+                            </div>
+                            <div class="form-group mb-0">
+                                <label for="remark">自定义备注</label>
+                                <input type="text" id="remark" class="input-base">
+                            </div>
+                        </div>
+
+                        <!-- 文件名重命名 -->
+                        <div class="form-group mb-0">
+                            <label>文件名重命名（可选）</label>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <input type="text" id="ctSourceRegex" class="input-base flex-[2] font-mono text-xs" placeholder="正则表达式 例如: .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$">
+                                <input type="text" id="ctTargetRegex" class="input-base flex-1 font-mono text-xs" placeholder="例如: 沙尘暴.$1$2">
+                            </div>
+                            <div class="mt-2">
+                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="toggleHelpText(this)">显示帮助</button>
+                                <small class="form-text is-hidden">例如：沙尘暴 - S01E06 - 第6集.mkv 正则就填写 .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$ 值填写沙尘暴.$1$2, 结果为沙尘暴.S01E06.mkv</small>
+                            </div>
+                        </div>
+
+                        <!-- Jinja2模板重命名 -->
+                        <div class="form-group mb-0">
+                            <label>Jinja2 模板重命名（可选）</label>
+                            <div class="flex flex-col gap-3">
+                                <textarea id="movieRenameFormat" rows="2" placeholder="电影模板，例如：{{title}}{% if year %} ({{year}}){% endif %}{{fileExt}}" class="font-mono text-xs"></textarea>
+                                <textarea id="tvRenameFormat" rows="2" placeholder="电视剧模板，例如：{{title}} - {{season_episode}}{{fileExt}}" class="font-mono text-xs"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- 文件名匹配规则 -->
+                        <div class="form-group mb-0">
+                            <label>文件名匹配规则（可选）</label>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <input type="text" id="matchPattern" class="input-base flex-[2] font-mono text-xs" placeholder="正则表达式 例如: (?<=E)\d+">
+                                <select id="matchOperator" class="input-base flex-[1] min-w-[90px]">
+                                    <option value="lt">小于 (<)</option>
+                                    <option value="eq">等于 (=)</option>
+                                    <option value="gt">大于 (>)</option>
+                                    <option value="contains">包含</option>
+                                    <option value="notContains">不包含</option>
+                                </select>
+                                <input type="text" id="matchValue" class="input-base flex-1" placeholder="值">
+                            </div>
+                            <div class="mt-2">
+                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="toggleHelpText(this)">显示帮助</button>
+                                <small class="form-text is-hidden">例如：沙尘暴 - S01E06 - 第6集.mkv 想要转存大于8集的剧集, 正则就填写 (?<=E)\d+ 值填写8</small>
+                            </div>
+                        </div>
+
+                        <!-- 定时任务 -->
+                        <div class="form-group mb-0">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" id="enableCron" class="w-4 h-4">
+                                <span>启用自定义定时任务</span>
+                            </label>
+                            <div class="cronExpression-box mt-3 space-y-3 p-4 bg-gray-50 dark:bg-[#0f172a] rounded border border-gray-200 dark:border-[#334155]" style="display: none;">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-sm mb-1">执行频率</label>
+                                        <select id="cronPresetType" class="input-base">
+                                            <option value="custom">自定义 Cron</option>
+                                            <option value="daily">每天</option>
+                                            <option value="weekly">每周</option>
+                                            <option value="monthly">每月</option>
+                                        </select>
+                                    </div>
+                                    <div id="cronTimeRow">
+                                        <label class="block text-sm mb-1">执行时间</label>
+                                        <input type="time" id="cronPresetTime" value="02:00" class="input-base">
+                                    </div>
+                                </div>
+                                <div id="cronWeeklyRow" class="is-hidden">
+                                    <label class="block text-sm mb-2">选择星期（可多选）</label>
+                                    <div class="flex flex-wrap gap-2">
+                                        <label class="text-sm"><input type="checkbox" name="cronWeekday" value="1" checked> 周一</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronWeekday" value="2"> 周二</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronWeekday" value="3"> 周三</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronWeekday" value="4"> 周四</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronWeekday" value="5"> 周五</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronWeekday" value="6"> 周六</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronWeekday" value="0"> 周日</label>
+                                    </div>
+                                    <small class="form-text">例：勾选"周一、周三、周五"表示每周这三天执行</small>
+                                </div>
+                                <div id="cronMonthlyRow" class="is-hidden">
+                                    <label class="block text-sm mb-2">选择日期（可多选）</label>
+                                    <div class="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-gray-200 dark:border-slate-700 rounded">
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="1" checked> 1号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="2"> 2号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="3"> 3号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="4"> 4号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="5"> 5号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="6"> 6号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="7"> 7号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="8"> 8号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="9"> 9号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="10"> 10号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="11"> 11号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="12"> 12号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="13"> 13号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="14"> 14号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="15"> 15号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="16"> 16号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="17"> 17号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="18"> 18号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="19"> 19号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="20"> 20号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="21"> 21号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="22"> 22号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="23"> 23号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="24"> 24号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="25"> 25号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="26"> 26号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="27"> 27号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="28"> 28号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="29"> 29号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="30"> 30号</label>
+                                        <label class="text-sm"><input type="checkbox" name="cronMonthDay" value="31"> 31号</label>
+                                    </div>
+                                    <small class="form-text">例：勾选"1号、15号、30号"表示每月这三天执行</small>
+                                </div>
+                                <div>
+                                    <input type="text" id="cronExpression" placeholder="Cron表达式，如：0 */30 * * * *" class="input-base font-mono text-xs">
+                                    <small class="form-text">每30分钟执行：0 */30 * * * *  |  每天凌晨2点执行：0 0 2 * * *</small>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-default" onclick="closeCreateTaskModal()">取消</button>
+                        <button type="submit" class="btn-primary"><i data-lucide="play" class="w-4 h-4 mr-1.5"></i> 创建并运行</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改任务Modal -->
+    <div id="editTaskModal" class="modal">
+        <div class="modal-wrapper" onclick="if(event.target===this) closeEditTaskModal()">
+            <div class="modal-content !max-w-3xl">
+                <div class="modal-header">
+                    <h3 class="flex items-center gap-2"><i data-lucide="edit" class="w-5 h-5 text-[#1677ff] dark:text-[#60a5fa]"></i>修改任务配置</h3>
+                    <button type="button" class="close-btn" onclick="closeEditTaskModal()">&times;</button>
+                </div>
+                <form id="editTaskForm" class="flex flex-col min-h-0 flex-1">
+                    <div class="form-body space-y-4">
+                        <input type="hidden" id="editTaskId">
+                        <input type="hidden" id="editAccountId">
+                        
+                        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">基础信息</h4>
+                        
+                        <div class="form-group mb-0">
+                            <label for="editResourceName">资源名称</label>
+                            <input type="text" id="editResourceName" class="input-base" required>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="form-group mb-0">
+                                <label for="shareFolder">源目录 (分享提取锁定)</label>
+                                <input type="text" id="shareFolder" class="input-base bg-gray-50 dark:bg-slate-900" readonly required>
+                                <input type="hidden" id="shareFolderId" required>
+                                <small class="form-text">源目录来自分享链接解析，如需调整请重新解析或重建任务</small>
+                            </div>
+                            <div class="form-group mb-0">
+                                <label for="editRealFolder">网盘更新目标目录</label>
+                                <div class="tree-select relative flex gap-2">
+                                    <input type="text" id="editRealFolder" class="input-base cursor-pointer flex-1" readonly required>
+                                    <input type="hidden" id="editRealFolderId" required>
+                                    <div class="tree-select-dropdown"></div>
+                                    <button type="button" class="btn-default whitespace-nowrap" id="editFavoriteFolderBtn">
+                                        <i data-lucide="star" class="w-4 h-4 mr-1"></i>常用
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="form-group mb-0">
+                                <label for="editCurrentEpisodes">当前已存更新数</label>
+                                <input type="number" id="editCurrentEpisodes" min="0" class="input-base">
+                            </div>
+                            <div class="form-group mb-0">
+                                <label for="editTotalEpisodes">总集数 (修正)</label>
+                                <input type="number" id="editTotalEpisodes" min="0" class="input-base">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="form-group mb-0">
+                                <label for="editStatus">强制变更状态</label>
+                                <select id="editStatus" class="input-base" required>
+                                    <option value="pending">待处理</option>
+                                    <option value="processing">追剧中</option>
+                                    <option value="completed">已完结</option>
+                                    <option value="failed">失败</option>
+                                </select>
+                            </div>
+                            <div class="form-group mb-0">
+                                <label for="editRemark">任务备注</label>
+                                <input type="text" id="editRemark" class="input-base">
+                            </div>
+                        </div>
+                        
+                        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2 mt-4">规则与定时</h4>
+                        
+                        <div class="form-group mb-0 bg-gray-50/30 dark:bg-[#0f172a] border border-gray-200 dark:border-[#334155] p-4 rounded-[8px]">
+                            <label class="flex justify-between items-center mb-2">
+                                <span class="text-sm font-medium">更新匹配规则</span>
+                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="document.getElementById('regexTooltip').style.display='block'">查看帮助</button>
+                            </label>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <input type="text" id="editMatchPattern" placeholder="正则: 第(\d+)集" class="input-base flex-[2] font-mono text-xs">
+                                <select id="editMatchOperator" class="input-base flex-1 min-w-[80px]">
+                                    <option value="lt">小于</option>
+                                    <option value="eq">等于</option>
+                                    <option value="gt">大于</option>
+                                    <option value="contains">包含</option>
+                                    <option value="notContains">不包含</option>
+                                </select>
+                                <input type="text" id="editMatchValue" placeholder="值" class="input-base flex-1">
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" id="editEnableCron" class="w-4 h-4">
+                                <span>自定义定时任务</span>
+                            </label>
+                            <div class="cronExpression-box mt-3 space-y-3 p-4 bg-gray-50 dark:bg-[#0f172a] rounded border border-gray-200 dark:border-[#334155]" style="display: none;">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-sm mb-1">执行频率</label>
+                                        <select id="editCronPresetType" class="input-base">
+                                            <option value="custom">自定义 Cron</option>
+                                            <option value="daily">每天</option>
+                                            <option value="weekly">每周</option>
+                                            <option value="monthly">每月</option>
+                                        </select>
+                                    </div>
+                                    <div id="editCronTimeRow">
+                                        <label class="block text-sm mb-1">执行时间</label>
+                                        <input type="time" id="editCronPresetTime" value="02:00" class="input-base">
+                                    </div>
+                                </div>
+                                <div id="editCronWeeklyRow" class="is-hidden">
+                                    <label class="block text-sm mb-2">选择星期（可多选）</label>
+                                    <div class="flex flex-wrap gap-2">
+                                        <label class="text-sm"><input type="checkbox" name="editCronWeekday" value="1" checked> 周一</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronWeekday" value="2"> 周二</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronWeekday" value="3"> 周三</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronWeekday" value="4"> 周四</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronWeekday" value="5"> 周五</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronWeekday" value="6"> 周六</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronWeekday" value="0"> 周日</label>
+                                    </div>
+                                    <small class="form-text">例：勾选"周一、周三、周五"表示每周这三天执行</small>
+                                </div>
+                                <div id="editCronMonthlyRow" class="is-hidden">
+                                    <label class="block text-sm mb-2">选择日期（可多选）</label>
+                                    <div class="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-gray-200 dark:border-slate-700 rounded">
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="1" checked> 1号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="2"> 2号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="3"> 3号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="4"> 4号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="5"> 5号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="6"> 6号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="7"> 7号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="8"> 8号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="9"> 9号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="10"> 10号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="11"> 11号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="12"> 12号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="13"> 13号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="14"> 14号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="15"> 15号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="16"> 16号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="17"> 17号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="18"> 18号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="19"> 19号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="20"> 20号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="21"> 21号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="22"> 22号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="23"> 23号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="24"> 24号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="25"> 25号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="26"> 26号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="27"> 27号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="28"> 28号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="29"> 29号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="30"> 30号</label>
+                                        <label class="text-sm"><input type="checkbox" name="editCronMonthDay" value="31"> 31号</label>
+                                    </div>
+                                    <small class="form-text">例：勾选"1号、15号、30号"表示每月这三天执行</small>
+                                </div>
+                                <div>
+                                    <input type="text" id="editCronExpression" placeholder="Cron表达式，如：0 */30 * * * *" class="input-base font-mono text-xs">
+                                    <small class="form-text">每30分钟执行：0 */30 * * * *  |  每天凌晨2点执行：0 0 2 * * *</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label>Jinja2 模板重命名（可选）</label>
+                            <div class="flex flex-col gap-3">
+                                <textarea id="editMovieRenameFormat" rows="2" placeholder="电影模板" class="font-mono text-xs"></textarea>
+                                <textarea id="editTvRenameFormat" rows="2" placeholder="电视剧模板" class="font-mono text-xs"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-default" onclick="closeEditTaskModal()">取消</button>
+                        <button type="submit" class="btn-primary"><i data-lucide="check" class="w-4 h-4 mr-1.5"></i> 保存所有修改</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自定义推送管理Modal -->
+    <div id="customPushManagementModal" class="modal">
+        <div class="modal-wrapper" onclick="if(event.target===this) closeCustomPushManagementModal()">
+            <div class="modal-content !max-w-4xl w-full">
+                <div class="modal-header">
+                    <h3 class="flex items-center gap-2"><i data-lucide="webhook" class="w-5 h-5 text-[#1677ff] dark:text-[#60a5fa]"></i> 自定义 Webhook 推送</h3>
+                    <button type="button" class="btn-default" onclick="openAddEditCustomPushModal(null)">添加推送</button>
+                    <button type="button" class="close-btn" onclick="closeCustomPushManagementModal()">&times;</button>
+                </div>
+                <div class="modal-body p-0 table-container">
+                    <table id="customPushTable">
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>描述</th>
+                                <th>启用</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="4" class="text-center text-gray-400 py-8">暂无数据</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加/编辑自定义推送Modal -->
+    <div id="addEditCustomPushModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="addEditCustomPushModalTitle">添加自定义推送</h3>
+                <button class="close-btn" onclick="closeAddEditCustomPushModal()">&times;</button>
+            </div>
+            <form id="addEditCustomPushForm" onsubmit="saveCustomPushConfig(event)">
+                <div class="modal-body">
+                    <input type="hidden" id="customPushEditIndex">
+                    <div class="form-group">
+                        <label for="customPushName">名称</label>
+                        <input type="text" id="customPushName" class="input-base" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="customPushDescription">描述</label>
+                        <input type="text" id="customPushDescription" class="input-base">
+                    </div>
+                    <div class="form-group">
+                        <label for="customPushUrl">URL</label>
+                        <input type="url" id="customPushUrl" class="input-base" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="customPushMethod">请求方法 (Method)</label>
+                        <select id="customPushMethod" class="input-base">
+                            <option value="POST">POST</option>
+                            <option value="GET">GET</option>
+                            <option value="PUT">PUT</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="customPushContentType">内容类型 (Content-Type)</label>
+                        <select id="customPushContentType" class="input-base">
+                            <option value="application/json">application/json</option>
+                            <option value="application/x-www-form-urlencoded">application/x-www-form-urlencoded</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>字段配置</label>
+                        <small class="form-text">当字段类型为JSON时, 字段名不会作为参数传入</small>
+                        <div id="customPushFieldsContainer"></div>
+                        <button type="button" class="btn-default mt-2" onclick="addCustomPushFieldRow()">添加字段</button>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="customPushEnabled">
+                            <span class="ml-2">启用此推送</span>
+                        </label>
+                    </div>
+                    <div class="mt-4">
+                        <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="toggleHelpText(this)">显示帮助</button>
+                        <div class="form-text is-hidden mt-2 p-3 bg-gray-50 dark:bg-[#0f172a] rounded">
+                            <h5 class="font-semibold mb-2">关于 JSON 类型字段的重要说明:</h5>
+                            <p class="mb-2">当字段类型选择为 "JSON" 时:</p>
+                            <ul class="list-disc list-inside space-y-1 ml-2">
+                                <li>此字段的"字段名"将被忽略。</li>
+                                <li>整个请求体将直接使用此字段的"字段值"内容。</li>
+                                <li>"字段值"中可使用 <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">{{content}}</code> 模板变量，它将被替换为消息内容。</li>
+                                <li>"字段值"<strong>必须</strong>是严格有效的JSON格式。</li>
+                            </ul>
+                            <p class="mt-2"><strong>例如:</strong></p>
+                            <pre class="bg-gray-800 text-gray-200 p-2 rounded mt-1 text-xs overflow-x-auto"><code>{\"msgtype\":\"text\",\"text\": {\"content\": \"{{content}}\"}}</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-default" onclick="closeAddEditCustomPushModal()">取消</button>
+                    <button type="button" id="testCustomPushBtn" onclick="testCustomPushConfig()" class="btn-default">测试推送</button>
+                    <button type="submit" class="btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 日志Modal -->
+    <div id="logsModal" class="modal">
+        <div class="modal-wrapper">
+            <div class="modal-content logs-modal !max-w-5xl">
+                <div class="modal-header">
+                    <h3>系统日志</h3>
+                    <button class="close-btn">&times;</button>
+                </div>
+                <div id="logsContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 正则帮助提示框 -->
+    <div class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-[550px] bg-[#2d2d2d] text-gray-200 p-5 rounded-lg shadow-2xl z-[2000] is-hidden" id="regexTooltip">
+        <span class="block mb-2 text-blue-300 font-medium">
+            ⚠️ 捕获组正则仅对重命名有效；文件匹配请使用零宽断言。
         </span>
-    <table>
-        <thead>
-            <tr>
-                <th>示例文件名</th>
-                <th>正则表达式</th>
-                <th>匹配结果</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td>北上 - S01E01 - 第一集.mkv</td>
-                <td>.*(S\d{1,3}E\d{1,3}).*</td>
-                <td>S01E01</td>
-            </tr>
-            <tr>
-                <td>北上 - S01E01 - 第一集.mkv</td>
-                <td>.*(S\d{1,3}E\d{1,3}).*?(\.\w+)$</td>
-                <td>S01E01和.mkv</td>
-            </tr>
-            <tr>
-                <td>北上 - S01E01 - 第一集.mkv</td>
-                <td>(?<=E)\d+</td>
-                <td>01</td>
-            </tr>
-            <tr>
-                <td>第06集.mp4</td>
-                <td>(?<=第)\d+(?=集)</td>
-                <td>06</td>
-            </tr>
-            <tr>
-                <td>EP08.mkv</td>
-                <td>(?<=EP)\d+</td>
-                <td>08</td>
-            </tr>
-        </tbody>
-    </table>
-</div>
-
-<div class="floating-btn-group">
-    <div class="floating-btns-container collapsed" id="floatingBtnsContainer">
-        <div class="floating-btn" onclick="openCustomPushManagementModal()" title="自定义推送">
-            <img src="/icons/push.svg?v=__ASSET_VERSION__" alt="自定义推送">
-        </div>
-        <div class="floating-btn" id="showLogsBtn" title="查看日志">
-            <img src="/icons/logs.svg?v=__ASSET_VERSION__" alt="查看日志">
-        </div>
-    </div>
-    <div class="floating-btn" onclick="toggleFloatingBtns()" title="更多">
-        <img src="/icons/toggle.svg?v=__ASSET_VERSION__" alt="更多" id="toggleIcon">
-    </div>
-</div>
-
-<div id="logsModal" class="modal">
-    <div class="modal-content logs-modal">
-        <div class="modal-header">
-            <h3>系统日志</h3>
-            <button class="close-btn">&times;</button>
-        </div>
-        <div id="logsContainer"></div>
-    </div>
-</div>
-
-
-
-
-
-
-
-<!--自定义推送-->
-<div id="customPushManagementModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>自定义推送管理</h3>
-            <button type="button" class="btn-default" onclick="openAddEditCustomPushModal(null)">添加推送</button>
-            <button class="close-btn" onclick="closeCustomPushManagementModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <table id="customPushTable" class="table-view">
+        <button class="absolute top-2 right-2 text-gray-400 hover:text-white" onclick="document.getElementById('regexTooltip').classList.add('is-hidden')">&times;</button>
+        <div class="overflow-x-auto mt-3">
+            <table class="w-full text-left border-collapse text-sm whitespace-nowrap">
                 <thead>
-                    <tr>
-                        <th>名称</th>
-                        <th>描述</th>
-                        <th>启用</th>
-                        <th>操作</th>
+                    <tr class="border-b border-gray-700">
+                        <th class="py-2 px-2 text-gray-300">源文件名样本</th>
+                        <th class="py-2 px-2 text-gray-300">匹配正则 (Pattern)</th>
+                        <th class="py-2 px-2 text-gray-300">捕获结果</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <!-- 自定义推送列表将由JavaScript动态填充 -->
+                <tbody class="font-mono text-[12px]">
+                    <tr class="border-b border-gray-700">
+                        <td class="py-2 px-2">北上 - S01E01.mkv</td>
+                        <td class="py-2 px-2 text-yellow-300">.*(S\d+E\d+).*</td>
+                        <td class="py-2 px-2">S01E01</td>
+                    </tr>
+                    <tr class="border-b border-gray-700">
+                        <td class="py-2 px-2">第06集.mp4</td>
+                        <td class="py-2 px-2 text-green-300">(?<=第)\d+(?=集)</td>
+                        <td class="py-2 px-2 font-bold text-white">06</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 px-2">EP08.mkv</td>
+                        <td class="py-2 px-2 text-green-300">(?<=EP)\d+</td>
+                        <td class="py-2 px-2 font-bold text-white">08</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
     </div>
-</div>
 
-<div id="addEditCustomPushModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 id="addEditCustomPushModalTitle">添加自定义推送</h3> <!-- 标题会动态改变 -->
-            <button class="close-btn" onclick="closeAddEditCustomPushModal()">&times;</button>
-        </div>
-        <form id="addEditCustomPushForm" onsubmit="saveCustomPushConfig(event)">
-            <div class="modal-body">
-                <input type="hidden" id="customPushEditIndex"> <!-- 用于编辑时存储索引 -->
-                <div class="form-group">
-                    <label for="customPushName">名称</label>
-                    <input type="text" id="customPushName" required>
-                </div>
-                <div class="form-group">
-                    <label for="customPushDescription">描述</label>
-                    <input type="text" id="customPushDescription">
-                </div>
-                <div class="form-group">
-                    <label for="customPushUrl">URL</label>
-                    <input type="url" id="customPushUrl" required>
-                </div>
-                <div class="form-group">
-                    <label for="customPushMethod">请求方法 (Method)</label>
-                    <select id="customPushMethod">
-                        <option value="POST">POST</option>
-                        <option value="GET">GET</option>
-                        <option value="PUT">PUT</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="customPushContentType">内容类型 (Content-Type)</label>
-                    <select id="customPushContentType">
-                        <option value="application/json">application/json</option>
-                        <option value="application/x-www-form-urlencoded">application/x-www-form-urlencoded</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>字段配置</label>
-                    <small>当字段类型为JSON时, 字段名不会作为参数传入</small>
-                    <div id="customPushFieldsContainer">
-                    </div>
-                    <button type="button" class="btn-default" onclick="addCustomPushFieldRow()">添加字段</button>
-                </div>
-                <div class="form-group">
-                    <label for="customPushEnabled">
-                        <input type="checkbox" id="customPushEnabled">
-                        <span>启用此推送</span>
-                    </label>
-                </div>
-                <div class="help-text-container">
-                    <button type="button" class="toggle-help-text" onclick="toggleHelpText(this)">显示帮助</button>
-                    <small class="form-text">
-                        <h5 style="margin-top:0; margin-bottom: 8px;">关于 JSON 类型字段的重要说明:</h5>
-                                    <p style="font-size: 0.9em; margin-bottom: 5px;">当字段类型选择为 "JSON" 时:</p>
-                                    <ul style="font-size: 0.9em; margin-left: 20px; padding-left: 0; list-style-type: disc;">
-                                        <li>此字段的“字段名”将被忽略。</li>
-                                        <li>整个请求体将直接使用此字段的“字段值”内容。</li>
-                                        <li>“字段值”中可使用 <code>{{content}}</code> 模板变量，它将被替换为消息内容。</li>
-                                        <li>“字段值”<strong>必须</strong>是严格有效的JSON格式。所有键名和字符串值 (包括代表字符串的 <code>{{content}}</code>) 都需用双引号包裹。</li>
-                                    </ul>
-                                    <p style="font-size: 0.9em; margin-bottom: 5px;"><strong>例如:</strong></p>
-                                    <pre style="background-color: var(--code-background-color); color: var(--text-color); padding: 8px; border-radius: 4px; font-size: 0.85em; white-space: pre-wrap; word-break: break-all;"><code>{\"msgtype\":\"text\",\"text\": {\"content\": \"{{content}}\"}}</code></pre>
-                                    <small style="font-size: 0.85em; display: block; margin-top: 8px;">请注意：不正确的JSON格式将导致推送失败。建议配置后进行测试。</small>
-                    </small>
-                </div>  
-            </div>
-            <div class="form-actions">
-                <button type="submit">保存</button>
-                <button type="button" id="testCustomPushBtn" onclick="testCustomPushConfig()" class="btn-default">测试推送</button>
-                <button type="button" class="btn-default" onclick="closeAddEditCustomPushModal()">取消</button>
-            </div>
-        </form>
-    </div>
-</div>
+    <script>
+        lucide.createIcons();
+
+        // Theme
+        const htmlEl = document.documentElement;
+        const themeDropdown = document.getElementById('themeDropdown');
+
+        document.getElementById('themeToggle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            themeDropdown.classList.toggle('hidden');
+        });
+
+        document.querySelectorAll('.theme-dropdown div[data-theme]').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const theme = e.currentTarget.getAttribute('data-theme');
+                if (theme === 'dark') {
+                    htmlEl.classList.add('dark');
+                    localStorage.setItem('theme', 'dark');
+                } else if (theme === 'light') {
+                    htmlEl.classList.remove('dark');
+                    localStorage.setItem('theme', 'light');
+                } else {
+                    localStorage.setItem('theme', 'auto');
+                    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                        htmlEl.classList.add('dark');
+                    } else {
+                        htmlEl.classList.remove('dark');
+                    }
+                }
+                themeDropdown.classList.add('hidden');
+                setTimeout(() => lucide.createIcons(), 50); 
+            });
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.theme-switch')) themeDropdown.classList.add('hidden');
+        });
+
+        // 初始化主题
+        const savedTheme = localStorage.getItem('theme') || 'auto';
+        if (savedTheme === 'dark') {
+            htmlEl.classList.add('dark');
+        } else if (savedTheme === 'light') {
+            htmlEl.classList.remove('dark');
+        } else {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                htmlEl.classList.add('dark');
+            }
+        }
+
+        // Tabs
+        document.querySelectorAll('.tabs .tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => {
+                    c.classList.remove('active');
+                    c.style.display = 'none';
+                });
+                tab.classList.add('active');
+                const targetId = tab.getAttribute('data-tab') + 'Tab';
+                const targetPanel = document.getElementById(targetId);
+                if(targetPanel) {
+                    targetPanel.classList.add('active');
+                    targetPanel.style.display = 'block';
+                }
+                lucide.createIcons();
+            });
+        });
+        
+        document.getElementById('taskTab').style.display = 'block';
+
+        // Dropdown toggle
+        document.querySelectorAll('.dropdown-toggle').forEach(toggle => {
+            toggle.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const dropdown = this.nextElementSibling;
+                if (dropdown && dropdown.classList.contains('dropdown-content')) {
+                    document.querySelectorAll('.dropdown-content').forEach(d => {
+                        if (d !== dropdown) d.classList.remove('show');
+                    });
+                    dropdown.classList.toggle('show');
+                }
+            });
+        });
+
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+        });
+
+        // Cron checkbox toggle
+        document.getElementById('enableCron')?.addEventListener('change', function() {
+            const cronBox = this.closest('.form-group').querySelector('.cronExpression-box');
+            if (cronBox) {
+                cronBox.style.display = this.checked ? 'block' : 'none';
+            }
+        });
+
+        document.getElementById('editEnableCron')?.addEventListener('change', function() {
+            const cronBox = this.closest('.form-group').querySelector('.cronExpression-box');
+            if (cronBox) {
+                cronBox.style.display = this.checked ? 'block' : 'none';
+            }
+        });
+
+        // Help text toggle
+        function toggleHelpText(btn) {
+            const helpText = btn.nextElementSibling;
+            if (helpText) {
+                helpText.classList.toggle('is-hidden');
+                btn.textContent = helpText.classList.contains('is-hidden') ? '显示帮助' : '隐藏帮助';
+            }
+        }
+
+        // Lucide icons initialization on load
+        setTimeout(() => lucide.createIcons(), 100);
+    </script>
+
+    <!-- 保留原有JS文件引用 -->
+    <script>window.__ASSET_VERSION__ = '__ASSET_VERSION__';</script>
+    <script src="/js/folderSelector.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/tabs.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/accounts.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/tasks.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/edit-task.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/main.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/settings.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/media.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/logs.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/loading.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/message.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/cloudsaver.js?v=__ASSET_VERSION__"></script>
+    <script src="/js/customPush.js?v=__ASSET_VERSION__"></script>
+
+</body>
+</html>
