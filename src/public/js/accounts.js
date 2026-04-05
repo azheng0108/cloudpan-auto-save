@@ -22,12 +22,15 @@ async function fetchAccounts(updateSelect = false) {
             const displayUsername = account.original_username || account.username;
             tbody.innerHTML += `
                 <tr>
-                    <td><span class="default-star" onclick="setDefaultAccount(${account.id})" title="设为默认账号">
-                            ${account.isDefault ? '★' : '☆'}
-                        </span>
-                         <button class="btn-primary" onclick="editAccount(${account.id})">修改</button>
-                        <button class="btn-danger" onclick="deleteAccount(${account.id})">删除</button>
-                        </td>
+                    <td>
+                        <div class="table-row-actions account-row-actions">
+                            <button class="action-icon-btn default-star-btn ${account.isDefault ? 'is-default' : ''}" onclick="setDefaultAccount(${account.id})" title="设为默认账号" aria-label="设为默认账号">
+                                ${account.isDefault ? '★' : '☆'}
+                            </button>
+                            <button class="action-btn action-btn-primary" onclick="editAccount(${account.id})">修改</button>
+                            <button class="action-btn action-btn-danger" onclick="deleteAccount(${account.id})">删除</button>
+                        </div>
+                    </td>
                     <td data-label='账户名'>${displayUsername}</td>
                     <td data-label='会员状态'>${account.memberInfo ? account.memberInfo.memberName : '-'}</td>
                     <td data-label='容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>

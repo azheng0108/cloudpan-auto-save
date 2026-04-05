@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [P1] 前端可用性与发布质量修复 - 2026-04-05
+
+**目标达成**: ✅ 前端交互一致性 | ✅ 表格结构对齐 | ✅ CI 覆盖率恢复
+
+#### 前端体验优化
+- 统一任务与账号列表操作按钮样式，增强可点击反馈与可读性。
+- 重命名配置区改为更清晰的分组卡片结构，创建/编辑任务保持一致。
+- 任务列表表头与数据列再次对齐，移除歧义性目录列展示。
+
+#### 预览页清理
+- 删除临时静态预览页 `src/public/index.static.preview.html`，避免测试页面误入发布包。
+
+#### 测试与覆盖率修复
+- 新增服务层 Jest 单测：
+  - `__tests__/checkpointManager.test.js`
+  - `__tests__/errorClassifier.test.js`
+  - `__tests__/taskErrorService.test.js`
+  - `__tests__/taskNamingService.test.js`
+  - `__tests__/taskParserService.test.js`
+- `npm run test:ci` 已通过，覆盖率恢复到门禁阈值以上：
+  - Statements: 93.61%
+  - Branches: 76.98%
+  - Functions: 100%
+  - Lines: 95.88%
+
 ### [P0] 基础风险清零 - 2026-04-01
 
 **目标达成**: ✅ 架构一致性 | ✅ 数据库安全 | ✅ 调度完整性 | ✅ 构建稳定性

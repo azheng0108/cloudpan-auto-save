@@ -153,14 +153,15 @@ async function fetchTasks() {
             tbody.innerHTML += `
                 <tr data-status='${task.status}' data-task-id='${task.id}' data-name='${taskNameText}'>
                     <td>
-                        <button class="btn-danger" onclick="deleteTask(${task.id})">删除</button>
-                        <button class="btn-warning" onclick="executeTask(${task.id})">执行</button>
-                        <button onclick="showEditTaskModal(${task.id})">修改</button>
+                        <div class="table-row-actions task-row-actions">
+                            <button class="action-btn action-btn-danger" onclick="deleteTask(${task.id})">删除</button>
+                            <button class="action-btn action-btn-warning" onclick="executeTask(${task.id})">执行</button>
+                            <button class="action-btn action-btn-primary" onclick="showEditTaskModal(${task.id})">修改</button>
+                        </div>
                     </td>
-                    <td data-label="资源名称">${cronIcon}<a href="${task.shareLink}" target="_blank" class='ellipsis' title="${taskNameText}">${taskName}</a></td>
+                    <td data-label="资源名称">${cronIcon}<a href="${task.shareLink}" target="_blank" rel="noopener noreferrer" class="interactive-link task-resource-link ellipsis" title="${taskNameText}">${taskName}</a></td>
                     <td data-label="账号">${task.account.username}</td>
-                    <!--<td data-label="首次保存目录"><a href="https://cloud.189.cn/web/main/file/folder/${task.targetFolderId}" target="_blank">${task.targetFolderId}</a></td>-->
-                     <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class='ellipsis'>${task.realFolderName || task.realFolderId}</a></td>
+                    <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class="interactive-link folder-link folder-link-action ellipsis" title="查看目录文件列表">${task.realFolderName || task.realFolderId}</a></td>
                     <td data-label="更新数/总数">${task.currentEpisodes || 0}/${task.totalEpisodes || '未知'}${progressRing}</td>
                     <td data-label="转存时间">${formatDateTime(task.lastFileUpdateTime)}</td>
                     <td data-label="备注">${task.remark?task.remark:''}</td>
@@ -246,7 +247,7 @@ async function executeAllTask() {
 }
 
 const DEFAULT_MOVIE_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}`;
-const DEFAULT_TV_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{{title}} - {{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}`;
+const DEFAULT_TV_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{% if title and title != season_episode %}{{title}} - {% endif %}{{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{{fileExt}}`;
 
 function _getDefaultFormats() {
     return window._renameFormats || { movie: DEFAULT_MOVIE_FORMAT, tv: DEFAULT_TV_FORMAT };
@@ -440,8 +441,8 @@ async function showFileListModal(taskId) {
             </div>
             <div class='modal-body'>
                 <div class="files-list-toolbar">
-                    <button class="btn-primary" onclick="showBatchRenameOptions()">批量重命名</button>
-                    <button class="btn-danger" onclick="deleteTaskFiles()">批量删除</button>
+                    <button class="action-btn action-btn-primary modal-toolbar-btn" onclick="showBatchRenameOptions()">批量重命名</button>
+                    <button class="action-btn action-btn-danger modal-toolbar-btn" onclick="deleteTaskFiles()">批量删除</button>
                 </div>
                 <div class='form-body'>
                 <table>
@@ -511,15 +512,15 @@ function showBatchRenameOptions() {
             </div>
             <div class="form-body">
                 <div class="rename-type-selector">
-                    <label class="radio-label">
+                    <label class="radio-label rename-type-pill">
                         <input type="radio" name="renameType" value="regex" checked>
                         正则表达式重命名
                     </label>
-                    <label class="radio-label">
+                    <label class="radio-label rename-type-pill">
                         <input type="radio" name="renameType" value="jinja2">
                         Jinja2模板重命名
                     </label>
-                    <label class="radio-label">
+                    <label class="radio-label rename-type-pill">
                         <input type="radio" name="renameType" value="sequential">
                         顺序重命名
                     </label>
@@ -527,7 +528,7 @@ function showBatchRenameOptions() {
                 <div id="renameDescription" class="rename-description">
                     正则表达式文件重命名。在第一行输入源文件名正则表达式，并在第二行输入新文件名正则表达式。<span class="help-icon" data-tooltip="常用正则表达式示例">?</span>
                 </div>
-                <div id="regexInputs" class="rename-inputs">
+                <div id="regexInputs" class="rename-inputs rename-inputs-card">
                     <div class="form-group">
                         <input type="text" id="sourceRegex" class="form-input" placeholder="源文件名正则表达式" value="${sourceRegex}">
                     </div>
@@ -535,7 +536,7 @@ function showBatchRenameOptions() {
                         <input type="text" id="targetRegex" class="form-input" placeholder="新文件名正则表达式" value="${targetRegex}">
                     </div>
                 </div>
-                <div id="jinjaInputs" class="rename-inputs" style="display: none;">
+                <div id="jinjaInputs" class="rename-inputs rename-inputs-card" style="display: none;">
                     <div class="form-group">
                         <label style="font-size:12px;color:#666;">电影模板（无剧集信息时使用）</label>
                         <textarea id="jinjaMovieTemplate" class="form-input" rows="2" placeholder="{{title}}{% if year %} ({{year}}){% endif %}{{fileExt}}" style="width:100%;font-family:monospace;font-size:12px;">${movieRenameFormat}</textarea>
@@ -546,7 +547,7 @@ function showBatchRenameOptions() {
                     </div>
                     <small style="font-size:11px;color:#888;">可用变量：title、year、season、episode、season_episode、part、videoFormat、videoSource、videoCodec、audioCodec、fileExt</small>
                 </div>
-                <div id="sequentialInputs" class="rename-inputs" style="display: none;">
+                <div id="sequentialInputs" class="rename-inputs rename-inputs-card" style="display: none;">
                     <div class="form-group">
                         <input type="text" id="newNameFormat" class="form-input" placeholder="新文件名格式">
                     </div>
@@ -556,8 +557,8 @@ function showBatchRenameOptions() {
                 </div>
             </div>
             <div class="form-actions">
-                <button class="saveAndAutoUpdate btn-warning" onclick="previewRename(true)">确定并自动更新</button>
-                <button class="btn-primary" onclick="previewRename(false)">确定</button>
+                <button class="saveAndAutoUpdate action-btn action-btn-warning" onclick="previewRename(true)">确定并自动更新</button>
+                <button class="action-btn action-btn-primary" onclick="previewRename(false)">确定</button>
                 <button class="btn-default" onclick="closeRenameOptionsModal()">取消</button>
             </div>
         </div>
@@ -683,8 +684,8 @@ function showRenamePreview(newNames, autoUpdate) {
                 <table>
                     <thead>
                         <tr>
-                            <th tyle="width: 400px;">原文件名</th>
-                            <th tyle="width: 400px;">新文件名</th>
+                            <th style="width: 400px;">原文件名</th>
+                            <th style="width: 400px;">新文件名</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -698,7 +699,7 @@ function showRenamePreview(newNames, autoUpdate) {
                 </table>
             </div>
             <div class="form-actions">
-                <button onclick="submitRename(${autoUpdate})">确定</button>
+                <button class="action-btn action-btn-primary" onclick="submitRename(${autoUpdate})">确定</button>
                 <button onclick="closeRenamePreviewModal()" class="btn-default">取消</button>
             </div>
         </div>
@@ -878,6 +879,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 修改任务行选择逻辑
     const taskTable = document.getElementById('taskTable');
     taskTable.addEventListener('click', function(e) {
+        if (e.target.closest('button, a, input, .dropdown-content')) {
+            return;
+        }
         const row = e.target.closest('tr');
         if (!row) return;
         
