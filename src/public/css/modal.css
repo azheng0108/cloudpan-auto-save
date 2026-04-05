@@ -189,12 +189,18 @@
     justify-content: flex-start;
     padding: 0 0 10px 0;
     flex-wrap: wrap;          /* 小屏自动换行，不会挤压表头 */
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 10px;
 }
 
 .files-list-toolbar .btn-primary,
 .files-list-toolbar .btn-danger {
     min-width: 110px;
     padding: 6px 14px;
+}
+
+.files-list-modal .form-body table {
+    min-width: 760px;
 }
 
 @media (max-width: 900px) {
@@ -211,13 +217,48 @@
 
 /* 重命名选项弹窗 */
 .rename-options-modal .modal-content {
-    max-height: 60vh;
+    max-height: 78vh;
+    max-width: 760px;
     margin-top: 2vh;
+}
+
+.rename-options-modal .form-body {
+    padding-top: 14px;
+}
+
+.rename-options-modal .rename-type-selector {
+    position: sticky;
+    top: 0;
+    background: var(--bg-color);
+    z-index: 2;
+    padding-bottom: 8px;
+}
+
+.rename-options-modal .rename-inputs {
+    margin-top: 8px;
+}
+
+.rename-options-modal .rename-inputs .form-group {
+    margin-bottom: 10px;
+}
+
+.rename-options-modal .rename-inputs .form-group label {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.rename-options-modal textarea {
+    min-height: 58px;
+    line-height: 1.45;
 }
 
 /* 重命名预览弹窗 */
 .preview-rename-modal .modal-content {
     max-width: 1000px;
-    max-height: 60vh;
+    max-height: 78vh;
     margin-top: 2vh;
+}
+
+.preview-rename-modal .form-body table {
+    min-width: 800px;
 }
