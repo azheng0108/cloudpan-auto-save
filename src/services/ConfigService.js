@@ -8,12 +8,14 @@ class ConfigService {
     this._configPath = path.join(__dirname, '../../data');
     this._configFile = this._configPath + '/config.json';
     this._config = {
+        configVersion: 2, // 配置版本号：用于未来迁移管理
         task: {
           taskExpireDays: 3,
           taskCheckCron: '0 19-23 * * *',
-          retryTaskCron: '*/1 * * * *',
+          retryTaskCron: '*/10 * * * *',
           cleanRecycleCron: '0 */8 * * *',
         cloud139Concurrency: 3,
+        // cloud189Concurrency: 保留用于 legacy189 兼容层
         cloud189Concurrency: 5,
         maxRetries: 3,        // 最大重试次数
         retryInterval: 300,   // 重试间隔（秒）
@@ -51,7 +53,7 @@ class ConfigService {
         password: '',
         services: {
           telegram: true,
-          cloud189: false
+          cloud139: false
         }
       },
       bark: {
@@ -74,6 +76,7 @@ class ConfigService {
         apiKey: '',
         sessionSecret: ''
       },
+      // legacy: 保留用于 189 运行时特性开关（telegramBot/emby 使用）
       legacy: {
         enableCloud189Runtime: false
       },
@@ -96,6 +99,28 @@ class ConfigService {
         const data = fs.readFileSync(this._configFile, 'utf8');
         const fileConfig = JSON.parse(data);
         this._config = this._deepMerge(this._config, fileConfig);
+        
+        // 配置迁移逻辑
+        let needSave = false;
+        
+        // v1 -> v2: 代理配置键名迁移 cloud189 -> cloud139
+        if (this._config.proxy?.services?.cloud189 !== undefined) {
+          this._config.proxy.services.cloud139 = this._config.proxy.services.cloud189;
+          delete this._config.proxy.services.cloud189;
+          logger.info('配置迁移：proxy.services.cloud189 已自动迁移为 cloud139');
+          needSave = true;
+        }
+        
+        // 更新配置版本号
+        if (!this._config.configVersion || this._config.configVersion < 2) {
+          this._config.configVersion = 2;
+          needSave = true;
+        }
+        
+        if (needSave) {
+          this._saveConfig();
+          logger.info(`配置已升级到 v${this._config.configVersion}`);
+        }
       }else {
         this._saveConfig();
       }

@@ -111,6 +111,17 @@ const registerApiRoutes = (app, deps) => {
 
     app.delete('/api/accounts/recycle', async (req, res) => {
         try {
+            // 检查是否存在 189 账号
+            const accounts = await accountRepo.find();
+            const has189Account = accounts.some(acc => acc.accountType !== 'cloud139');
+            
+            if (!has189Account) {
+                return res.json({ 
+                    success: false, 
+                    error: '系统当前仅支持移动云盘(139)模式，回收站清理功能不可用' 
+                });
+            }
+            
             taskService.clearRecycleBin(true, true);
             res.json({ success: true, data: 'ok' });
         } catch (error) {
@@ -592,6 +603,71 @@ const registerApiRoutes = (app, deps) => {
             platform: '移动云盘 (139) 专用版',
             timestamp: new Date().toISOString()
         });
+    });
+
+    app.get('/api/system/capabilities', async (req, res) => {
+        try {
+            // 检测系统运行模式：基于账号类型判断
+            const accounts = await accountRepo.find();
+            const has189Account = accounts.some(acc => acc.accountType !== 'cloud139');
+            const has139Account = accounts.some(acc => acc.accountType === 'cloud139');
+            
+            let mode = 'cloud139'; // 默认 139 模式
+            if (has189Account && !has139Account) {
+                mode = 'cloud189'; // 纯 189 模式（保留兼容）
+            } else if (has189Account && has139Account) {
+                mode = 'mixed'; // 混合模式
+            }
+            
+            res.json({
+                success: true,
+                data: {
+                    mode: mode,
+                    features: {
+                        recycle: has189Account, // 回收站功能仅 189 可用
+                        cloud139: has139Account,
+                        cloud189: has189Account
+                    },
+                    platform: mode === 'cloud139' ? '移动云盘(139)' : 
+                              mode === 'cloud189' ? '天翼云盘(189)' : 
+                              '混合模式'
+                }
+            });
+        } catch (error) {
+            res.json({ 
+                success: false, 
+                error: error.message 
+            });
+        }
+    });
+    
+    app.get('/api/system/scheduler/status', async (req, res) => {
+        try {
+            const jobs = [];
+            for (const [key, job] of SchedulerService.taskJobs.entries()) {
+                const task = await taskRepo.findOne({ where: { id: key } });
+                jobs.push({
+                    id: key,
+                    taskName: task ? `${task.resourceName}${task.shareFolderName ? '/' + task.shareFolderName : ''}` : '系统任务',
+                    cronExpression: task ? task.cronExpression : '未知',
+                    enableCron: task ? task.enableCron : true,
+                    status: 'running'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: {
+                    totalJobs: jobs.length,
+                    jobs: jobs
+                }
+            });
+        } catch (error) {
+            res.json({
+                success: false,
+                error: error.message
+            });
+        }
     });
 
     app.post('/api/share/parse', async (req, res) => {

@@ -9,9 +9,12 @@ class TaskRecycleService {
 
     async clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
         const accounts = await this.taskService.accountRepo.find();
+        let has189Account = false;
+        
         if (accounts) {
             for (const account of accounts) {
                 if (account.accountType === 'cloud139') continue;
+                has189Account = true;
                 const username = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
                 try {
                     const cloud189 = Cloud189Service.getInstance(account);
@@ -20,6 +23,10 @@ class TaskRecycleService {
                     logTaskEvent(`定时[${username}]清空回收站任务执行失败:${error.message}`);
                 }
             }
+        }
+        
+        if (!has189Account) {
+            logTaskEvent('系统当前仅支持移动云盘(139)，回收站清理功能已跳过');
         }
     }
 

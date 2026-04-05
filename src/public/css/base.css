@@ -156,44 +156,45 @@ button {
 }
 .favorite-icon {
     cursor: pointer;
-    display: inline-block;
-    /* align-items: center; */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     margin-right: 8px;
-    filter: grayscale(100%);
     opacity: 0.6;
     transition: all 0.2s ease;
     vertical-align: middle;
+    color: #6b7280;
 }
 
+[data-theme="dark"] .favorite-icon,
+.dark .favorite-icon {
+    color: #94a3b8;
+}
 
 @media (hover: hover) {
     .favorite-icon:hover {
-        opacity: 0.9;
-        filter: grayscale(0%);
+        opacity: 1;
+        color: #fbbf24;
+        transform: scale(1.1);
     }
 }
 
 .favorite-icon.active {
     opacity: 1;
-    filter: none;
+    color: #fbbf24;
 }
 
-.favorite-icon img {
-    width: 20px;
-    height: 20px;
+[data-theme="dark"] .favorite-icon.active,
+.dark .favorite-icon.active {
+    color: #fbbf24;
+}
+
+.favorite-icon i {
     transition: transform 0.2s ease;
 }
 
-.favorite-icon:hover img {
-    transform: scale(1.1);
-}
-@media (hover: hover) {
-    .favorite-icon:hover img {
-        transform: scale(1.1);
-    }
-}
-
-#favoriteFolderBtn {
+#favoriteFolderBtn,
+#editFavoriteFolderBtn {
     height: 33px;
     line-height: 20px;
     padding: 7px 16px;
@@ -201,6 +202,7 @@ button {
     align-items: center;
     justify-content: center;
     white-space: nowrap;
+    margin-left: 0;
 }
 #executeAllBtn {
     margin-left: 1rem;

@@ -2,6 +2,23 @@ const { CloudClient, FileTokenStore } = require('cloud189-sdk');
 const { logTaskEvent } = require('../../utils/logUtils');
 const crypto = require('crypto');
 const got = require('got');
+/**
+ * Cloud189Service — 天翼云盘（189）API 封装
+ * 
+ * 【保留原因】R2阶段系统主流程已迁移至移动云盘（139），但保留 legacy189 目录
+ * 用于向后兼容已有的 189 账号和功能（回收站清理、Telegram Bot 189 指令等）。
+ * 
+ * 【使用位置】
+ * - src/routes/api.js: clearAllInstances() - 配置变更时清理实例缓存
+ * - src/services/task.js: 处理 189 账号的分享链接解析和任务创建
+ * - src/services/taskStorageService.js: 189 账号的云盘文件删除
+ * - src/services/taskRecycleService.js: 189 账号的回收站清理
+ * - src/services/emby.js: 189 账号的 Emby 通知
+ * - src/services/telegramBot.js: 189 相关的 Telegram Bot 指令处理
+ * 
+ * 【清理策略】当系统完全停止支持 189 账号时，可整体移除 legacy189 目录。
+ * 当前阶段：保留用于兼容，不影响 139 主链路。
+ */
 const pLimit = require('p-limit');
 const ProxyUtil = require('../../utils/ProxyUtil');
 const ConfigService = require('../../services/ConfigService');

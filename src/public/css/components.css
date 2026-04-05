@@ -86,6 +86,10 @@
     margin-top: 2px;
 }
 
+.is-hidden {
+    display: none;
+}
+
 .task-error-text {
     font-size: 11px;
     margin-top: 3px;
@@ -195,13 +199,226 @@
     width: auto;
 }
 
+.settings-section {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 14px;
+    background: var(--card-bg);
+}
+
+.settings-section-title {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: var(--text-color);
+}
+
+.settings-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 10px;
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-color);
+}
+
+.settings-subsection-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.modal-group-title {
+    margin: 6px 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+    padding-bottom: 6px;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.cron-builder {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 10px;
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+}
+
+.cron-builder-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cron-builder-row label {
+    min-width: 72px;
+    font-size: 12px;
+    color: var(--text-color);
+}
+
+.cron-builder-row input,
+.cron-builder-row select {
+    flex: 1;
+}
+
+.cron-weekdays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.cron-weekdays label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: auto;
+}
+
 .proxy-settings {
     display: flex;
     grid-template-columns: 2fr 1fr 1fr;
     gap: 8px;
 }
 
+.settings-cloudsaver-box {
+    border: 1px solid var(--border-color);
+    padding: 12px;
+}
+
+.share-input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.share-input-main {
+    flex: 2;
+}
+
+.share-input-access {
+    flex: 1;
+}
+
+.share-parse-error {
+    color: #ff4d4f;
+    font-size: 10px;
+    margin-top: 2px;
+    min-height: 12px;
+}
+
+.share-folders-panel {
+    border: 1px solid var(--border-color);
+    padding: 0;
+    border-radius: 4px;
+}
+
+.match-input-wide {
+    flex: 2 1 200px;
+}
+
+.match-input-narrow {
+    flex: 1 1 100px;
+}
+
+.match-rule-stacked {
+    flex-direction: column;
+    gap: 8px;
+}
+
+.help-text-compact {
+    margin-top: 4px;
+}
+
+.cron-toggle-label {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.cron-toggle-checkbox {
+    width: auto !important;
+    margin: 0 !important;
+}
+
+.folder-picker-row {
+    display: flex;
+    gap: 10px;
+}
+
+.folder-picker-main {
+    flex: 1;
+    position: relative;
+}
+
+.system-api-key-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.system-api-key-input {
+    flex: 1;
+}
+
+.system-api-key-btn {
+    margin-top: 0 !important;
+}
+
+.folder-picker-row .btn-default,
+.system-api-key-row .btn-default {
+    margin-left: 0;
+    margin-top: 0;
+}
+
+#settingsTab .settings-section > label,
+#systemTab .settings-section > label {
+    font-weight: 600;
+}
+
+#settingsTab .push-settings {
+    gap: 12px;
+}
+
+#settingsTab .push-item {
+    gap: 10px;
+}
+
+.push-channel-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.push-channel-item {
+    background: var(--bg-color);
+}
+
+.push-channel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 2px;
+}
+
+.proxy-options {
+    margin-top: 10px;
+}
+
+.proxy-options-title {
+    display: block;
+    margin-bottom: 5px;
+}
+
 #settingsForm button {
+    margin-top: 20px;
+}
+
+#systemTab > button {
     margin-top: 20px;
 }
 
@@ -226,14 +443,15 @@
 }
 
 .form-header {
-    display: flex; 
-    align-items: center; /* 添加这行确保所有元素垂直居中 */
+    display: flex;
+    align-items: center;
 }
 
 .task-operations {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
+    width: 100%;
 }
 
 .task-filter {
@@ -251,87 +469,80 @@
     cursor: pointer;
 }
 
-.search-input {
-    display: flex;
-    gap: 8px;
-    border-radius: 4px;
-    align-items: center;
-}
-
-.search-input select {
-    border-right: 1px solid var(--border-color);
-    padding-right: 15px;
-    width: 100px;
-    flex: none; /* 防止下拉框被拉伸 */
-}
-
-.search-input input {
-    flex: 1;
-    min-width: 100px; /* 确保输入框有最小宽度 */
-}
-
-
-.search-input select:focus,
-.search-input input:focus {
-    outline: none;
-}
-
-
-/* 任务操作区域响应式布局 */
-.task-operations {
-    width: 100%;
-}
-
 .operation-group {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 12px;
 }
 
 .button-group {
     display: flex;
     gap: 8px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    flex: 0 0 auto;
 }
 
 .search-bar {
     display: flex;
     align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 300px;
+}
+
+.filter-dropdown {
+    display: inline-flex;
+    flex: 0 0 160px;
+}
+
+.filter-dropdown select {
+    width: 100%;
+    height: 36px;
 }
 
 .search-input {
     display: flex;
     gap: 8px;
+    border-radius: 4px;
+    align-items: center;
+    flex: 1;
+    min-width: 220px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    padding: 0 4px;
 }
 
-/* 移动端适配 */
-@media (max-width: 768px) {
-    .operation-group {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .button-group, .search-bar {
-        width: 100%;
-    }
-    
-    .search-input {
-        width: 100%;
-    }
-    
-    .search-input select, 
-    .search-input input {
-        flex: 1;
-    }
+.search-input input {
+    flex: 1;
+    min-width: 120px;
+    border: none;
+    background: transparent;
 }
 
+.search-input input:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+.search-input .btn-icon {
+    flex: 0 0 auto;
+}
+
+.delete-cloud-options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-left: 0;
+}
 
 .delete-cloud-option {
     display: inline-flex !important;
     align-items: center;
     gap: 5px;
-    margin-left: 10px;
+    margin-left: 0;
 }
 
 .delete-cloud-option input[type="checkbox"] {
@@ -343,9 +554,70 @@
     line-height: normal;
 }
 
+/* 移动端适配 */
 @media (max-width: 768px) {
+    .operation-group {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .button-group,
+    .search-bar {
+        width: 100%;
+    }
+
+    .search-bar {
+        flex-direction: column;
+        align-items: stretch;
+        min-width: 0;
+    }
+
+    .filter-dropdown {
+        flex: 1 1 auto;
+    }
+
+    .search-input {
+        width: 100%;
+        min-width: 0;
+    }
+
     .delete-cloud-option {
-        margin-top: 8px;
+        margin-top: 4px;
+    }
+
+    .settings-section {
+        padding: 12px;
+    }
+
+    .settings-section-title {
+        margin-bottom: 8px;
+    }
+
+    .push-item {
+        padding: 10px;
+    }
+
+    .proxy-settings,
+    .folder-picker-row,
+    .system-api-key-row,
+    .share-input-group {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .push-channel-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .folder-picker-row .btn-default,
+    .system-api-key-row .btn-default,
+    #settingsForm > button,
+    #systemTab > button {
+        width: 100%;
+    }
+
+    .modal-group-title {
+        margin-top: 2px;
     }
 }
 
@@ -580,6 +852,10 @@
     -webkit-backdrop-filter: blur(10px);
 }
 
+.regex-tooltip-note {
+    font-size: 12px;
+}
+
 .regex-tooltip table {
     width: 100%;
     border-collapse: collapse;
@@ -657,6 +933,40 @@
 
 .help-text-container {
     margin-top: 8px;
+}
+
+.custom-push-help-title {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+.custom-push-help-text {
+    font-size: 0.9em;
+    margin-bottom: 5px;
+}
+
+.custom-push-help-list {
+    font-size: 0.9em;
+    margin-left: 20px;
+    padding-left: 0;
+    list-style-type: disc;
+}
+
+.custom-push-help-code {
+    background-color: var(--code-background-color);
+    color: var(--text-color);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.custom-push-help-warning {
+    font-size: 0.85em;
+    display: block;
+    margin-top: 8px;
+    margin-bottom: 0;
 }
 
 #strmModal input[type='checkbox'] {

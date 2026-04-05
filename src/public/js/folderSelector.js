@@ -282,7 +282,7 @@ class FolderSelector {
         const isFavorite = this.favorites.some(f => f.id === newNode.id);
         const favoriteIcon = this.enableFavorites ? `
             <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${newNode.id}" data-name="${newNode.name}">
-                    <img src="/icons/star.svg${this._assetQuery()}" alt="star" width="16" height="16">
+                <i data-lucide="star" class="w-5 h-5"></i>
             </span>
         ` : '';
         const newItem = document.createElement('div');
@@ -324,6 +324,10 @@ class FolderSelector {
         }
         parentElement.insertBefore(newItem, insertBefore);
         this.selectFolder(newNode, newItem);
+        // 插入新元素后初始化Lucide图标
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+        }
     }
 
     async show(accountId = '') {
@@ -409,7 +413,7 @@ class FolderSelector {
             const isFavorite = favorites.some(f => f.id === node.id);
             const favoriteIcon = this.enableFavorites ? `
                 <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${node.id}" data-name="${node.name}">
-                    <img src="/icons/star.svg${this._assetQuery()}" alt="star" width="16" height="16">
+                    <i data-lucide="star" class="w-5 h-5"></i>
                 </span>
             ` : '';
 
@@ -466,6 +470,10 @@ class FolderSelector {
             });
             parentElement.appendChild(item);
         });
+        // 渲染完成后初始化Lucide图标
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+        }
     }
 
     selectFolder(node, element) {
@@ -505,7 +513,7 @@ class FolderSelector {
             message.warning('请先选择账号');
             return;
         }
-        this.modal.style.display = 'block';
+        this.modal.style.display = 'flex';
         this.modal.style.zIndex = 1001;
         this.selectedNode = null;
         this.isShowingFavorites = true;

@@ -255,6 +255,17 @@ function _getDefaultFormats() {
 function openCreateTaskModal() {
     document.getElementById('targetFolderId').value = '';
     document.getElementById('targetFolder').value = '';
+    document.getElementById('cronPresetType').value = 'custom';
+    document.getElementById('cronPresetTime').value = '02:00';
+    const monthDayChecks = document.querySelectorAll('input[name="cronMonthDay"]');
+    monthDayChecks.forEach((cb) => {
+        cb.checked = false;
+    });
+    const defaultMonthDay = document.querySelector('input[name="cronMonthDay"][value="1"]') || monthDayChecks[0];
+    if (defaultMonthDay) {
+        defaultMonthDay.checked = true;
+    }
+    updateCreateCronBuilderUI();
     document.getElementsByClassName('cronExpression-box')[0].style.display = 'none';
     document.getElementById('createTaskModal').style.display = 'flex';
 }
@@ -265,6 +276,7 @@ function closeCreateTaskModal() {
     document.getElementById('createTaskModal').style.display = 'none';
     document.getElementById('taskName').readOnly = true
     document.getElementById('taskForm').reset();
+    updateCreateCronBuilderUI();
 }
 
 // 初始化任务表单
@@ -291,9 +303,11 @@ function initTaskForm() {
         const matchValue = document.getElementById('matchValue').value;
         const remark = document.getElementById('remark').value;
         const enableCron = document.getElementById('enableCron').checked;
-        const cronExpression = document.getElementById('cronExpression').value;
+        const cronExpression = enableCron ? buildCreateCronExpression() : document.getElementById('cronExpression').value;
         const sourceRegex = document.getElementById('ctSourceRegex').value;
         const targetRegex = document.getElementById('ctTargetRegex').value;
+        const movieRenameFormat = document.getElementById('movieRenameFormat').value;
+        const tvRenameFormat = document.getElementById('tvRenameFormat').value;
         const taskName = document.getElementById('taskName').value.trim();
         if (!taskName) {
             message.warning('任务名称不能为空');
@@ -320,7 +334,27 @@ function initTaskForm() {
             message.warning('请至少选择一个目录');
             return;
         }
-        const body = { accountId, shareLink, totalEpisodes, targetFolderId, accessCode, matchPattern, matchOperator, matchValue, overwriteFolder: 0, remark, enableCron, cronExpression, targetFolder, selectedFolders, sourceRegex, targetRegex, taskName };
+        const body = {
+            accountId,
+            shareLink,
+            totalEpisodes,
+            targetFolderId,
+            accessCode,
+            matchPattern,
+            matchOperator,
+            matchValue,
+            overwriteFolder: 0,
+            remark,
+            enableCron,
+            cronExpression,
+            targetFolder,
+            selectedFolders,
+            sourceRegex,
+            targetRegex,
+            taskName,
+            movieRenameFormat,
+            tvRenameFormat
+        };
         await createTask(e,body)
             
     });
@@ -363,8 +397,8 @@ function initTaskForm() {
                     fetchTasks(); 
                 }, 2500);
                 closeCreateTaskModal();
-                // 触发任务页签的切换 .tab且data-tab='tasks'
-                const tasksTab = document.querySelector('.tab[data-tab="tasks"]');
+                // 触发任务页签切换
+                const tasksTab = document.querySelector('.tab[data-tab="task"]');
                 if (tasksTab) {
                     tasksTab.click();
                 }
@@ -915,11 +949,101 @@ function formatStatus(status) {
 }
 
 // 监听enableCron的变化
-document.getElementById('enableCron').addEventListener('change', function() {
-    // 如果为选中 则显示cron表达式输入框
-    const cronInput = document.getElementsByClassName('cronExpression-box')[0];
-    cronInput.style.display = this.checked? 'block' : 'none';
+const enableCronEl = document.getElementById('enableCron');
+if (enableCronEl) {
+    enableCronEl.addEventListener('change', function() {
+        // 如果为选中 则显示cron表达式输入框
+        const cronInput = document.getElementsByClassName('cronExpression-box')[0];
+        cronInput.style.display = this.checked? 'block' : 'none';
+        if (this.checked) {
+            const value = buildCreateCronExpression();
+            if (value) {
+                document.getElementById('cronExpression').value = value;
+            }
+        }
+    });
+}
+
+const cronPresetTypeEl = document.getElementById('cronPresetType');
+if (cronPresetTypeEl) {
+    cronPresetTypeEl.addEventListener('change', () => {
+        updateCreateCronBuilderUI();
+        const value = buildCreateCronExpression();
+        if (value) {
+            document.getElementById('cronExpression').value = value;
+        }
+    });
+}
+
+const cronPresetTimeEl = document.getElementById('cronPresetTime');
+if (cronPresetTimeEl) {
+    cronPresetTimeEl.addEventListener('change', () => {
+        const value = buildCreateCronExpression();
+        if (value) {
+            document.getElementById('cronExpression').value = value;
+        }
+    });
+}
+
+document.querySelectorAll('input[name="cronMonthDay"]').forEach((el) => {
+    el.addEventListener('change', () => {
+        const value = buildCreateCronExpression();
+        if (value) {
+            document.getElementById('cronExpression').value = value;
+        }
+    });
 });
+
+document.querySelectorAll('input[name="cronWeekday"]').forEach((el) => {
+    el.addEventListener('change', () => {
+        const value = buildCreateCronExpression();
+        if (value) {
+            document.getElementById('cronExpression').value = value;
+        }
+    });
+});
+
+function updateCreateCronBuilderUI() {
+    const type = document.getElementById('cronPresetType').value;
+    const weeklyRow = document.getElementById('cronWeeklyRow');
+    const monthlyRow = document.getElementById('cronMonthlyRow');
+    if (weeklyRow) {
+        weeklyRow.classList.toggle('is-hidden', type !== 'weekly');
+    }
+    if (monthlyRow) {
+        monthlyRow.classList.toggle('is-hidden', type !== 'monthly');
+    }
+}
+
+function buildCreateCronExpression() {
+    const type = document.getElementById('cronPresetType').value;
+    if (type === 'custom') {
+        return document.getElementById('cronExpression').value.trim();
+    }
+
+    const time = document.getElementById('cronPresetTime').value || '02:00';
+    const [hourRaw, minuteRaw] = time.split(':');
+    const hour = Number.isFinite(Number(hourRaw)) ? Number(hourRaw) : 2;
+    const minute = Number.isFinite(Number(minuteRaw)) ? Number(minuteRaw) : 0;
+
+    if (type === 'daily') {
+        return `0 ${minute} ${hour} * * *`;
+    }
+
+    if (type === 'weekly') {
+        const weekdays = Array.from(document.querySelectorAll('input[name="cronWeekday"]:checked')).map((cb) => cb.value);
+        const normalizedWeekdays = weekdays.length > 0 ? weekdays.join(',') : '1';
+        return `0 ${minute} ${hour} * * ${normalizedWeekdays}`;
+    }
+
+    if (type === 'monthly') {
+        const monthDays = Array.from(document.querySelectorAll('input[name="cronMonthDay"]:checked')).map((cb) => cb.value);
+        const normalizedDays = monthDays.length > 0 ? monthDays.join(',') : '1';
+        return `0 ${minute} ${hour} ${normalizedDays} * *`;
+    }
+
+    return document.getElementById('cronExpression').value.trim();
+}
 
 // 解析分享链接获取分享目录组合
 async function parseShareLink() {

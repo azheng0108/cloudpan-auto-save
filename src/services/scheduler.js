@@ -8,7 +8,7 @@ class SchedulerService {
     static taskJobs = new Map();
     static messageUtil = new MessageUtil();
     static DEFAULT_TASK_CHECK_CRON = '0 19-23 * * *';
-    static DEFAULT_RETRY_TASK_CRON = '*/1 * * * *';
+    static DEFAULT_RETRY_TASK_CRON = '*/10 * * * *';
     static DEFAULT_CLEAN_RECYCLE_CRON = '0 */8 * * *';
     static DEFAULT_VACUUM_CRON = '0 4 * * 0';
 
@@ -36,16 +36,25 @@ class SchedulerService {
     static saveTaskJob(task, taskService) {
         if (this.taskJobs.has(task.id)) {
             this.taskJobs.get(task.id).stop();
+            logTaskEvent(`[Scheduler] 停止已存在的定时任务: ${task.id}`);
         }
         const taskName = task.shareFolderName?(task.resourceName + '/' + task.shareFolderName): task.resourceName || '未知'
+        
+        // 标准化 cron 表达式
+        const normalized = this.normalizeCronExpression(task.cronExpression);
+        
+        if (task.cronExpression !== normalized) {
+            logTaskEvent(`[Scheduler] Cron 标准化: "${task.cronExpression}" → "${normalized}"`);
+        }
+        
         // 校验表达式是否有效
-        if (!cron.validate(task.cronExpression)) {
-            logTaskEvent(`定时任务[${taskName}]表达式无效，跳过...`);
+        if (!cron.validate(normalized)) {
+            logTaskEvent(`[Scheduler] 定时任务[${taskName}]表达式无效: ${task.cronExpression} (标准化后: ${normalized})，跳过...`);
             return;
         }
-        if (task.enableCron && task.cronExpression) {
-            logTaskEvent(`创建定时任务 ${taskName}, 表达式: ${task.cronExpression}`)
-            const job = cron.schedule(task.cronExpression, async () => {
+        if (task.enableCron && normalized) {
+            logTaskEvent(`[Scheduler] 创建定时任务 ${taskName}, 表达式: ${normalized}`)
+            const job = cron.schedule(normalized, async () => {
                 logTaskEvent(`================================`);
                 logTaskEvent(`任务[${taskName}]自定义定时检查...`);
                 // 重新获取最新的任务信息
@@ -62,7 +71,9 @@ class SchedulerService {
                 logTaskEvent(`================================`);
             });
             this.taskJobs.set(task.id, job);
-            logTaskEvent(`定时任务 ${taskName}, 表达式: ${task.cronExpression} 已设置`)
+            logTaskEvent(`[Scheduler] 定时任务 ${taskName} (ID: ${task.id}), 表达式: ${normalized} 已设置并加载`)
+        } else if (!task.enableCron) {
+            logTaskEvent(`[Scheduler] 任务 ${taskName} 未启用定时调度，跳过...`);
         }
     }
 
@@ -71,15 +82,41 @@ class SchedulerService {
         if (this.taskJobs.has(name)) {
             this.taskJobs.get(name).stop();
         }
+        
+        // 标准化 cron 表达式：5位自动补0秒
+        const normalized = this.normalizeCronExpression(cronExpression);
+        
         // 校验表达式是否有效
-        if (!cron.validate(cronExpression)) {
-            logTaskEvent(`定时任务[${name}]表达式无效，跳过...`);
+        if (!cron.validate(normalized)) {
+            logTaskEvent(`定时任务[${name}]表达式无效: ${cronExpression} (标准化后: ${normalized})，跳过...`);
             return;
         }
-        const job = cron.schedule(cronExpression, task);
+        const job = cron.schedule(normalized, task);
         this.taskJobs.set(name, job);
-        logTaskEvent(`定时任务 ${name}, 表达式: ${cronExpression} 已设置`)
+        logTaskEvent(`定时任务 ${name}, 表达式: ${normalized} 已设置`)
         return job;
+    }
+    
+    /**
+     * 标准化 cron 表达式：统一为 6 位格式（秒 分 时 日 月 周）
+     * @param {string} expression - 5位或6位cron表达式
+     * @returns {string} - 6位cron表达式
+     */
+    static normalizeCronExpression(expression) {
+        if (!expression || typeof expression !== 'string') {
+            return expression;
+        }
+        
+        const trimmed = expression.trim();
+        const parts = trimmed.split(/\s+/);
+        
+        // 如果是5位，补0秒在开头
+        if (parts.length === 5) {
+            return `0 ${trimmed}`;
+        }
+        
+        // 6位或其他格式直接返回
+        return trimmed;
     }
 
     static removeTaskJob(taskId) {
