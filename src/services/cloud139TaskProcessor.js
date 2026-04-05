@@ -28,6 +28,13 @@ async function saveShareBatchWithRetryAndVerify(cloud139, linkID, coPathLst, tar
     }
 }
 
+function toPlainObject(value) {
+    if (!value) return {};
+    if (value instanceof Map) return Object.fromEntries(value);
+    if (typeof value === 'object' && !Array.isArray(value)) return { ...value };
+    return {};
+}
+
 async function processCloud139Task(taskService, task, account) {
     const cloud139 = Cloud139Service.getInstance(account);
     try {
@@ -266,8 +273,8 @@ async function processCloud139Task(taskService, task, account) {
         if (!checkpoint || !isResuming) {
             // 创建新检查点
             checkpoint = CheckpointManager.createCheckpoint({
-                catalogMap: Object.fromEntries(catalogMap),
-                physicalFolderMap: Object.fromEntries(physicalFolderMap),
+                catalogMap: toPlainObject(catalogMap),
+                physicalFolderMap: toPlainObject(physicalFolderMap),
                 metadata: {
                     totalBatches: groupedByFolder.size,
                     startTime: new Date().toISOString()
