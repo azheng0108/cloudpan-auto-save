@@ -72,7 +72,7 @@ module.exports = {
   testTimeout: 30000,
   
   // 全局设置文件
-  setupFilesAfterEnv: ['<rootDir>/test/setup.js'],
+  setupFilesAfterEnv: ['<rootDir>/__tests__/setup.js'],
   
   // 忽略的文件
   testPathIgnorePatterns: [
