@@ -65,11 +65,11 @@ class StrmService {
         try {
             // mediaSuffixs转为小写
             const mediaSuffixs = ConfigService.getConfigValue('task.mediaSuffix').split(';').map(suffix => suffix.toLowerCase())
-            let taskName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1)
-            // 去掉头尾/
-            taskName = taskName.replace(/^\/|\/$/g, '');
+            // 使用完整 realFolderName（不裁剪目标目录前缀），normalize Windows 反斜杠
+            // 修复：原来会裁掉第一段（目标目录），导致多目标目录时路径错误
+            let taskName = (task.realFolderName || '').replace(/\\/g, '/').replace(/^\/|\/$/g, '');
             // 构建完整的目标目录路径
-            const targetDir = path.join(this.baseDir,task.account.localStrmPrefix, taskName);
+            const targetDir = path.join(this.baseDir, task.account.localStrmPrefix, taskName);
             if (compare) {
                 // 查询出所有目录下的.strm文件
                 const strmFiles = await this.listStrmFiles(path.join(task.account.localStrmPrefix, taskName));
@@ -424,7 +424,8 @@ class StrmService {
 
     // 根据文件名获取STRM文件路径
     getStrmPath(task) {
-        let taskName = task.realFolderName.substring(task.realFolderName.indexOf('/') + 1);
+        // 使用完整 realFolderName（不裁剪目标目录前缀），normalize Windows 反斜杠
+        let taskName = (task.realFolderName || '').replace(/\\/g, '/').replace(/^\/|\/$/g, '');
         if (!this.enable){
             // 如果cloudStrmPrefix存在 且不是url地址
             if (task.account.cloudStrmPrefix && !task.account.cloudStrmPrefix.startsWith('http')) {
