@@ -1071,8 +1071,13 @@
                             <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">媒体服务配置（可选）</p>
                             <div class="form-group mb-0">
                                 <label for="cloudStrmPrefix">STRM URL 前缀</label>
-                                <input type="text" id="cloudStrmPrefix" class="input-base font-mono text-xs" placeholder="如: http://openlist:5244/d/strm_115">
-                                <small class="form-text">OpenList STRM 驱动挂载路径对应的完整 URL 前缀</small>
+                                <input type="text" id="cloudStrmPrefix" class="input-base font-mono text-xs" placeholder="如: http://openlist:5244/d/移动云盘/159">
+                                <small class="form-text">账号在 OpenList 中的根路径对应的完整 URL（不含目标目录），用于生成 .strm 文件内容</small>
+                            </div>
+                            <div class="form-group mb-0 mt-3">
+                                <label for="alistStrmPath">OpenList 刷新路径</label>
+                                <input type="text" id="alistStrmPath" class="input-base font-mono text-xs" placeholder="如: /strm/移动云盘/159 或 /strm_139">
+                                <small class="form-text">OpenList 中该账号 STRM 文件的根路径（不含主机地址），追更后用于刷新 OpenList 缓存</small>
                             </div>
                             <div class="form-group mb-0 mt-3">
                                 <label for="embyPathReplace">Emby 路径替换</label>

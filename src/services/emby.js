@@ -39,11 +39,13 @@ class EmbyService {
         }
         const taskName = task.resourceName
         logTaskEvent(`执行Emby通知: ${taskName}`);
-        // 处理路径
-        this.embyPathReplace = task.account.embyPathReplace
-        const path = this._replacePath(task.realFolderName)
-        const item = await this.searchItemsByPathRecursive(path);
-        logTaskEvent(`Emby搜索结果: ${ JSON.stringify(item)}`);
+        // 处理路径：将云盘 realFolderName 通过 embyPathReplace 规则转换为 Emby 本地路径
+        this.embyPathReplace = task.account.embyPathReplace;
+        const rawPath = task.realFolderName;
+        const convertedPath = this._replacePath(rawPath);
+        logTaskEvent(`Emby路径转换 | realFolderName=${rawPath} | embyPathReplace=${this.embyPathReplace || '(未配置)'} | 转换结果=${convertedPath}`);
+        const item = await this.searchItemsByPathRecursive(convertedPath);
+        logTaskEvent(`Emby搜索结果: ${JSON.stringify(item)}`);
         if (item) {
             await this.refreshItemById(item.Id);
             this.messageUtil.sendMessage('🎉通知Emby入库成功, 资源名:' + task.resourceName);
@@ -90,9 +92,9 @@ class EmbyService {
         })
         return true;
     }
-    // 4. 根据路径搜索 /Items
+    // 4. 根据路径搜索 /emby/Items（使用与其他方法统一的 /emby/ 前缀）
     async searchItemsByPath(path) {
-        const url = `${this.embyUrl}/Items`;
+        const url = `${this.embyUrl}/emby/Items`;
         const params = {
             Path: path,
             Recursive: true,

@@ -58,6 +58,10 @@ class TaskEventHandler {
      * 递归调用 OpenList STRM 驱动路径，触发 .strm 文件同步生成。
      * 原理：OpenList STRM 驱动在 /api/fs/list 被调用时同步写入当前目录的 .strm 文件，
      * 递归完成即代表任务目录下所有 .strm 文件已落盘。
+     *
+     * 刷新路径 = alistStrmPath（账号级 OpenList 根路径） + 完整 realFolderName
+     * alistStrmPath 与 cloudStrmPrefix 解耦：前者用于刷新，后者用于 .strm URL 生成。
+     * 支持任意目标目录（tv / 临时存放 / 电影…）和任意账号挂载结构。
      * @param {TaskCompleteEventDto} dto
      */
     async _handleOpenListStrmRefresh(dto) {
@@ -67,31 +71,25 @@ class TaskEventHandler {
         }
 
         const task = dto.task;
-        const alistBaseUrl = ConfigService.getConfigValue('alist.baseUrl');
-        const cloudStrmPrefix = task.account?.cloudStrmPrefix;
+        // 使用账号专用的 alistStrmPath 字段，与 cloudStrmPrefix 解耦
+        const alistStrmPath = task.account?.alistStrmPath?.trim();
 
-        // cloudStrmPrefix 必须以 alist.baseUrl 开头，否则不是 OpenList STRM 驱动 URL
-        if (!cloudStrmPrefix || !alistBaseUrl || !cloudStrmPrefix.startsWith(alistBaseUrl)) {
-            logTaskEvent(`cloudStrmPrefix 未配置或不匹配 Alist 地址，跳过 STRM 刷新`);
+        if (!alistStrmPath) {
+            logTaskEvent(`alistStrmPath 未配置，跳过 STRM 刷新 | realFolderName=${task.realFolderName} | cloudStrmPrefix=${task.account?.cloudStrmPrefix}`);
             return;
         }
 
-        // 从 cloudStrmPrefix 中提取 OpenList 内的 STRM 驱动挂载路径
-        // 例：http://openlist:5244/d/strm_115  →  /strm_115
-        const strmDriverPath = cloudStrmPrefix
-            .replace(alistBaseUrl, '')
-            .replace(/^\/d/, '');
-
-        // 任务子目录：realFolderName 去掉账号根目录前缀（第一段）
-        const taskSubfolder = task.realFolderName
-            ?.substring(task.realFolderName.indexOf('/') + 1)
-            ?.replace(/^\/|\/$/g, '');
+        // 使用完整 realFolderName（不裁剪任何段），normalize Windows 反斜杠
+        // 修复：原逻辑裁掉第一段导致多目标目录时路径错误，且 Windows 下 path.join 产生 \ 会使 indexOf('/') 返回 -1
+        const taskSubfolder = (task.realFolderName || '')
+            .replace(/\\/g, '/')
+            .replace(/^\/|\/$/g, '');
 
         const refreshPath = taskSubfolder
-            ? `${strmDriverPath}/${taskSubfolder}`
-            : strmDriverPath;
+            ? `${alistStrmPath.replace(/\/$/, '')}/${taskSubfolder}`
+            : alistStrmPath;
 
-        logTaskEvent(`触发 OpenList STRM 刷新: ${refreshPath}`);
+        logTaskEvent(`触发 OpenList STRM 刷新 | alistStrmPath=${alistStrmPath} | realFolderName=${task.realFolderName} | refreshPath=${refreshPath}`);
         await alistService.recursiveRefresh(refreshPath);
         logTaskEvent(`OpenList STRM 刷新完成: ${refreshPath}`);
     }

@@ -40,6 +40,12 @@ export class Account {
     localStrmPrefix!: string;
     @Column('text', { nullable: true, default: '' })
     cloudStrmPrefix!: string;
+    /** OpenList STRM 刷新根路径（与 cloudStrmPrefix 解耦，仅用于追更后触发 OpenList 缓存刷新）
+     *  填写 OpenList 中该账号 STRM 文件所在的根路径，不含主机地址
+     *  例：/strm/移动云盘/159  或  /strm_139
+     */
+    @Column('text', { nullable: true, default: '' })
+    alistStrmPath!: string;
     @Column('text', { nullable: true, default: '' })
     embyPathReplace!:string;
 
