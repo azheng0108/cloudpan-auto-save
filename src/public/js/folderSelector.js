@@ -180,9 +180,9 @@ class FolderSelector {
                 button.addEventListener('click', () => this.buttonCallbacks[btn.action]());
             }
         });
-        // 渲染 header 区域的 Lucide 图标
+        // 渲染 header 区域的 Lucide 图标（全量调用兼容旧版 Play CDN）
         if (typeof lucide !== 'undefined' && lucide.createIcons) {
-            lucide.createIcons({ nodes: [this.modal] });
+            lucide.createIcons();
         }
     }
 
@@ -242,15 +242,17 @@ class FolderSelector {
             return;
         }
 
-        // 创建内联输入行
+        // 创建内联输入行（使用 Lucide folder 图标保持风格一致）
         const inputRow = document.createElement('div');
         inputRow.className = 'folder-tree-item mkdir-input-row';
         inputRow.innerHTML = `
-            <span class="folder-icon">📁</span>
+            <span class="folder-icon-wrap"><i data-lucide="folder" class="w-4 h-4"></i></span>
             <input type="text" class="mkdir-input" placeholder="新文件夹名称" />
             <span class="mkdir-confirm" title="确定（Enter）">✓</span>
             <span class="mkdir-cancel" title="取消（Esc）">✗</span>
         `;
+        // 渲染输入行中的 Lucide 图标
+        if (typeof lucide !== 'undefined' && lucide.createIcons) { lucide.createIcons(); }
         parentElement.insertBefore(inputRow, insertBefore);
         const input = inputRow.querySelector('.mkdir-input');
         input.focus();
@@ -303,9 +305,9 @@ class FolderSelector {
         newItem.dataset.path = nodePath;
         newItem.innerHTML = `
             ${favoriteIcon}
-            <span class="folder-icon">📁</span>
+            <span class="folder-icon-wrap"><i data-lucide="folder" class="w-4 h-4"></i></span>
             <span class="folder-name">${newNode.name}</span>
-            <span class="expand-icon">▶</span>
+            <span class="expand-icon"><i data-lucide="chevron-right" class="w-4 h-4"></i></span>
         `;
         const children = document.createElement('div');
         children.className = 'folder-children';
@@ -337,9 +339,9 @@ class FolderSelector {
         }
         parentElement.insertBefore(newItem, insertBefore);
         this.selectFolder(newNode, newItem);
-        // 插入新元素后，局部初始化 Lucide 图标，避免重复渲染全局图标
+        // 渲染新插入节点的 Lucide 图标（全量调用兼容旧版 CDN）
         if (typeof lucide !== 'undefined' && lucide.createIcons) {
-            lucide.createIcons({ nodes: [newItem] });
+            lucide.createIcons();
         }
     }
 
@@ -421,12 +423,14 @@ class FolderSelector {
         nodes.forEach(node => {
             const item = document.createElement('div');
             item.className = 'folder-tree-item';
-            // 常用目录视图不显示展开图标
-            const expandIcon = (this.isShowingFavorites || node.isFile) ? '' : '<span class="expand-icon">▶</span>';
+            // 常用目录视图和文件节点不显示展开箭头
+            const expandIcon = (this.isShowingFavorites || node.isFile)
+                ? ''
+                : '<span class="expand-icon"><i data-lucide="chevron-right" class="w-4 h-4"></i></span>';
             const isFavorite = favorites.some(f => f.id === node.id);
             const favoriteIcon = this.enableFavorites ? `
                 <span class="favorite-icon ${isFavorite ? 'active' : ''}" data-id="${node.id}" data-name="${node.name}">
-                    <i data-lucide="star" class="w-5 h-5"></i>
+                    <i data-lucide="star" class="w-4 h-4"></i>
                 </span>
             ` : '';
 
@@ -440,9 +444,12 @@ class FolderSelector {
             // 树形视图显示文件夹名，收藏视图显示完整路径
             const displayName = this.isShowingFavorites ? nodePath : node.name;
 
+            // 用 Lucide folder/file 图标替代 emoji，保持与整体图标风格一致
             item.innerHTML = `
                 ${favoriteIcon}
-                <span class="folder-icon">${node.isFile ? '📃' : '📁'}</span>
+                <span class="folder-icon-wrap">
+                    <i data-lucide="${node.isFile ? 'file' : 'folder'}" class="w-4 h-4"></i>
+                </span>
                 <span class="folder-name">${displayName}</span>
                 ${expandIcon}
             `;
@@ -483,9 +490,9 @@ class FolderSelector {
             });
             parentElement.appendChild(item);
         });
-        // 渲染完成后局部初始化 Lucide 图标，限定范围到当前容器避免重复初始化全局图标
+        // 渲染完成后初始化 Lucide 图标（全量调用兼容旧版 Play CDN，不限定 nodes）
         if (typeof lucide !== 'undefined' && lucide.createIcons) {
-            lucide.createIcons({ nodes: [this.modal] });
+            lucide.createIcons();
         }
     }
 

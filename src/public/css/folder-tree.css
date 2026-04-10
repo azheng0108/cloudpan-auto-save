@@ -10,88 +10,107 @@
     width: max-content;   /* 宽度撑开至内容实际宽度，触发父容器 form-body 的横向滚动条 */
 }
 
+/* 文件夹行：flex 布局，图标 + 名称 + 展开箭头一行对齐 */
 .folder-tree-item {
-    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 14px;
     cursor: pointer;
-    display: block;
-    transition: background-color 0.2s;
+    border-radius: 6px;
+    transition: background-color 0.15s;
     position: relative;
-    min-width: fit-content;  /* 确保内容不会被截断 */
-}
-
-.folder-name {
-    display: inline-block;
-    vertical-align: middle;
-    /* 移除最大宽度限制 */
-    white-space: nowrap;
+    min-width: fit-content;
 }
 
 .folder-tree-item:hover {
-    background-color: #f5f5f5;
+    background-color: #f5f7fa;
+}
+
+[data-theme="dark"] .folder-tree-item:hover {
+    background-color: #1e2533;
 }
 
 .folder-tree-item.selected {
-    background-color: #e6f7ff;
+    background-color: #e6f4ff;
+    color: #1677ff;
 }
 
-.folder-icon {
-    display: inline-block;
-    margin-right: 8px;
-    color: #1890ff;
-    vertical-align: middle;
+[data-theme="dark"] .folder-tree-item.selected {
+    background-color: #1d3a5f;
+    color: #60a5fa;
+}
+
+/* 文件夹/文件图标包装层（提供橙色）*/
+.folder-icon-wrap {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    color: #fa8c16;   /* 橙色，与 UI 原型一致 */
+}
+
+[data-theme="dark"] .folder-icon-wrap {
+    color: #ffa940;
+}
+
+/* 选中状态下图标也变蓝 */
+.folder-tree-item.selected .folder-icon-wrap {
+    color: #1677ff;
+}
+
+[data-theme="dark"] .folder-tree-item.selected .folder-icon-wrap {
+    color: #60a5fa;
 }
 
 .folder-name {
+    flex: 1;              /* 文件名占满剩余宽度 */
     display: inline-block;
-    vertical-align: middle;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
+/* 展开箭头推到最右，展开时旋转 90° */
 .expand-icon {
-    display: inline-block;
-    margin-left: 8px;
-    transition: transform 0.2s;
-    vertical-align: middle;
+    flex-shrink: 0;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary, #9ca3af);
+    transition: transform 0.2s ease;
 }
 
 .expanded > .expand-icon {
     transform: rotate(90deg);
 }
 
-.folder-tree-item {
-    position: relative;
-}
-
+/* 子目录容器 */
 .folder-children {
+    padding-left: 24px;
+    display: none;
     position: relative;
+    min-width: fit-content;
 }
 
+/* 左侧纵向连接线 */
 .folder-children::before {
     content: '';
     position: absolute;
-    left: 20px;
+    left: 22px;
     top: 0;
     bottom: 0;
     width: 1px;
-    background-color: #e8e8e8;
+    background-color: var(--border-color, #e5e7eb);
 }
 
 .folder-children .folder-tree-item::before {
     content: '';
     position: absolute;
-    left: -20px;
+    left: -14px;
     top: 50%;
-    width: 20px;
+    width: 14px;
     height: 1px;
-    background-color: #e8e8e8;
-}
-
-.folder-children {
-    margin-top: 0;
-    padding-left: 40px;
-    display: none;
-    position: relative;
-    min-width: fit-content;  /* 确保子目录也不会被截断 */
+    background-color: var(--border-color, #e5e7eb);
 }
 
 .expanded > .folder-children {
@@ -103,22 +122,26 @@
     cursor: default;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     background-color: #f0f7ff;
     border: 1px dashed #91caff;
-    border-radius: 4px;
-    padding: 4px 12px;
+    border-radius: 6px;
+    padding: 6px 14px;
     /*
      * 当目录树有超长文件名导致水平滚动时，输入行会随之变宽，
      * 确认/取消按钮被推到视口外不可见。
-     * position: sticky + left: 0 使输入行始终贴左可见，
-     * box-sizing + max-width 限制宽度不超出 form-body 可见区域。
+     * position: sticky + left: 0 使输入行始终贴左可见。
      */
     position: sticky;
     left: 0;
     box-sizing: border-box;
     max-width: 100%;
     z-index: 2;
+}
+
+[data-theme="dark"] .mkdir-input-row {
+    background-color: #1a2744;
+    border-color: #3b5998;
 }
 
 .mkdir-input {
@@ -129,7 +152,7 @@
     outline: none;
     font-size: 13px;
     padding: 2px 4px;
-    min-width: 80px;    /* 适当降低最小宽度，为确认/取消按钮留出空间 */
+    min-width: 80px;
     max-width: 100%;
     color: inherit;
 }
