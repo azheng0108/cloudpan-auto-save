@@ -126,6 +126,9 @@ async function editAccount(id) {
     document.getElementById('username').value = chooseAccount.original_username || chooseAccount.username;
     document.getElementById('password').value = '';
     document.getElementById('cookie').value = chooseAccount.cookies || '';
+    // 媒体服务配置字段
+    document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
+    document.getElementById('embyPathReplace').value = chooseAccount.embyPathReplace || '';
     // 账号不允许修改
     document.getElementById('username').setAttribute('readonly', true )
     // 修改提交按钮文本
@@ -171,11 +174,13 @@ async function createAccount() {
     if (chooseAccount?.id) {
         username = chooseAccount.original_username
     }
+    const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
+    const embyPathReplace = document.getElementById('embyPathReplace').value;
     loading.show()
     const response = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chooseAccount?.id, username, accountType, password, cookies, validateCode })
+        body: JSON.stringify({ id: chooseAccount?.id, username, accountType, password, cookies, validateCode, cloudStrmPrefix, embyPathReplace })
     });
     const data = await response.json();
     if (data.success) {
