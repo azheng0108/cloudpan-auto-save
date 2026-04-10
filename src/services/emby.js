@@ -14,7 +14,8 @@ const { Not, IsNull, Like } = require('typeorm');
 // emby接口
 class EmbyService {
     constructor(taskService) {
-        this.enable = ConfigService.getConfigValue('emby');
+        // 使用 emby.enable 布尔字段，避免整个对象存在时永远 truthy 的问题
+        this.enable = ConfigService.getConfigValue('emby.enable');
         this.embyUrl = ConfigService.getConfigValue('emby.serverUrl');
         this.embyApiKey = ConfigService.getConfigValue('emby.apiKey');
         this.embyPathReplace = ''

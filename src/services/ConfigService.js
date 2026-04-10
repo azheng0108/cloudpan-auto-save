@@ -85,6 +85,18 @@ class ConfigService {
         username: '',
         password: ''
       },
+      // Alist/OpenList 连接配置，供 StrmService.generateAll 和追更 STRM 刷新使用
+      alist: {
+        enable: false,
+        baseUrl: '',
+        apiKey: ''
+      },
+      // Emby 媒体库通知配置
+      emby: {
+        enable: false,
+        serverUrl: '',
+        apiKey: ''
+      },
       customPush: [] // 自定义推送
     };
     this._init();

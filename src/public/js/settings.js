@@ -130,6 +130,16 @@ async function loadSettings() {
             document.getElementById('cloudSaverUsername').value = settings.cloudSaver?.username || '';
             document.getElementById('cloudSaverPassword').value = settings.cloudSaver?.password || '';
 
+            // Alist / OpenList 设置
+            document.getElementById('alistEnable').checked = settings.alist?.enable || false;
+            document.getElementById('alistBaseUrl').value = settings.alist?.baseUrl || '';
+            document.getElementById('alistApiKey').value = settings.alist?.apiKey || '';
+
+            // Emby 通知设置
+            document.getElementById('embyEnable').checked = settings.emby?.enable || false;
+            document.getElementById('embyServerUrl').value = settings.emby?.serverUrl || '';
+            document.getElementById('embyApiKey').value = settings.emby?.apiKey || '';
+
             // pushplus
             document.getElementById('enablePushPlus').checked = settings.pushplus?.enable || false;
             document.getElementById('pushplusToken').value = settings.pushplus?.token || '';
@@ -212,6 +222,16 @@ async function saveSettings() {
             username: document.getElementById('cloudSaverUsername').value,
             password: document.getElementById('cloudSaverPassword').value
         },
+        alist: {
+            enable: document.getElementById('alistEnable').checked,
+            baseUrl: document.getElementById('alistBaseUrl').value,
+            apiKey: document.getElementById('alistApiKey').value
+        },
+        emby: {
+            enable: document.getElementById('embyEnable').checked,
+            serverUrl: document.getElementById('embyServerUrl').value,
+            apiKey: document.getElementById('embyApiKey').value
+        },
         pushplus: {
             enable: document.getElementById('enablePushPlus').checked,
             token: document.getElementById('pushplusToken').value,
@@ -259,4 +279,43 @@ function generateApiKey() {
         apiKey += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     document.getElementById('systemApiKey').value = apiKey;
+}
+
+/**
+ * 保存媒体 Tab 中的服务配置（CloudSaver / Alist / Emby）
+ * 复用 POST /api/settings/media 端点，仅提交媒体服务相关字段
+ */
+async function saveMediaSettings() {
+    const settings = {
+        cloudSaver: {
+            baseUrl: document.getElementById('cloudSaverUrl').value,
+            username: document.getElementById('cloudSaverUsername').value,
+            password: document.getElementById('cloudSaverPassword').value
+        },
+        alist: {
+            enable: document.getElementById('alistEnable').checked,
+            baseUrl: document.getElementById('alistBaseUrl').value,
+            apiKey: document.getElementById('alistApiKey').value
+        },
+        emby: {
+            enable: document.getElementById('embyEnable').checked,
+            serverUrl: document.getElementById('embyServerUrl').value,
+            apiKey: document.getElementById('embyApiKey').value
+        }
+    };
+    try {
+        const response = await fetch('/api/settings/media', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        const data = await response.json();
+        if (data.success) {
+            message.success('保存成功');
+        } else {
+            message.warning('保存失败: ' + data.error);
+        }
+    } catch (error) {
+        message.warning('保存失败: ' + error.message);
+    }
 }
