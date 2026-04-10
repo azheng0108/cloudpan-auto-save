@@ -120,28 +120,33 @@ class FolderSelector {
     }
 
     initModal() {
-        // 创建模态框HTML
+        // 创建模态框HTML，与主页面 Modal 结构对齐：modal > modal-wrapper > modal-content
+        // 使用 Lucide 图标替代 emoji，保持全局图标风格一致
         const modalHtml = `
             <div id="${this.modalId}" class="modal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3 class="modal-title">${this.title}</h3>
-                        <div style="display:flex;gap:12px;align-items:center">
-                            <a href="javascript:;" class="mkdir-link" data-action="mkdir" title="在当前选中目录下新建文件夹">
-                                <span>📁+</span> 新建
-                            </a>
-                            <a href="javascript:;" class="refresh-link" data-action="refresh">
-                                <span class="refresh-icon">🔄</span> 刷新
-                            </a>
+                <div class="modal-wrapper">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3 class="modal-title">${this.title}</h3>
+                            <div style="display:flex;gap:12px;align-items:center">
+                                <a href="javascript:;" class="mkdir-link" data-action="mkdir" title="在当前选中目录下新建文件夹"
+                                   style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--primary-color);text-decoration:none;">
+                                    <i data-lucide="folder-plus" class="w-4 h-4"></i> 新建
+                                </a>
+                                <a href="javascript:;" class="refresh-link" data-action="refresh"
+                                   style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--primary-color);text-decoration:none;">
+                                    <i data-lucide="refresh-cw" class="w-4 h-4"></i> 刷新
+                                </a>
+                            </div>
                         </div>
-                    </div>
-                    <div class="form-body">
-                        <div id="${this.treeId}" class="folder-tree"></div>
-                    </div>
-                    <div class="form-actions">
-                    ${this.buttons.map(btn => `
-                        <button class="${btn.class}" data-action="${btn.action}">${btn.text}</button>
-                    `).join('')}
+                        <div class="form-body">
+                            <div id="${this.treeId}" class="folder-tree"></div>
+                        </div>
+                        <div class="form-actions">
+                        ${this.buttons.map(btn => `
+                            <button class="${btn.class}" data-action="${btn.action}">${btn.text}</button>
+                        `).join('')}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -155,12 +160,16 @@ class FolderSelector {
         this.modal = document.getElementById(this.modalId);
         this.folderTree = document.getElementById(this.treeId);
         this.currentPath = []
-        // 绑定事件
-        this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) {
-                this.close();
-            }
-        });
+
+        // 背景遮罩点击关闭：绑定到 modal-wrapper 与主页面 Modal 行为一致
+        const wrapper = this.modal.querySelector('.modal-wrapper');
+        if (wrapper) {
+            wrapper.addEventListener('click', (e) => {
+                if (e.target === wrapper) {
+                    this.close();
+                }
+            });
+        }
         // 添加刷新事件监听
         this.modal.querySelector('[data-action="refresh"]').addEventListener('click', () => this.refreshTree());
         // 新建文件夹按钮
@@ -171,6 +180,10 @@ class FolderSelector {
                 button.addEventListener('click', () => this.buttonCallbacks[btn.action]());
             }
         });
+        // 渲染 header 区域的 Lucide 图标
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons({ nodes: [this.modal] });
+        }
     }
 
     // 添加刷新方法
@@ -324,9 +337,9 @@ class FolderSelector {
         }
         parentElement.insertBefore(newItem, insertBefore);
         this.selectFolder(newNode, newItem);
-        // 插入新元素后初始化Lucide图标
+        // 插入新元素后，局部初始化 Lucide 图标，避免重复渲染全局图标
         if (typeof lucide !== 'undefined' && lucide.createIcons) {
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [newItem] });
         }
     }
 
@@ -470,9 +483,9 @@ class FolderSelector {
             });
             parentElement.appendChild(item);
         });
-        // 渲染完成后初始化Lucide图标
+        // 渲染完成后局部初始化 Lucide 图标，限定范围到当前容器避免重复初始化全局图标
         if (typeof lucide !== 'undefined' && lucide.createIcons) {
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [this.modal] });
         }
     }
 
