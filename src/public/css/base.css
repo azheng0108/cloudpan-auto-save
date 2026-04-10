@@ -184,9 +184,12 @@ button {
     color: #fbbf24;
 }
 
-/* 使 Lucide star SVG 由空心轮廓变为实心金色星标 */
-.favorite-icon.active svg {
-    fill: currentColor;
+/* 使 Lucide star SVG 由空心轮廓变为实心金色星标。
+ * 同时覆盖 SVG 根元素及所有子元素（polygon/path）的 fill 表示属性，
+ * 需要 !important 才能优先于 SVG 元素上内联的 fill="none" 属性值。 */
+.favorite-icon.active svg,
+.favorite-icon.active svg * {
+    fill: currentColor !important;
     stroke: currentColor;
 }
 
