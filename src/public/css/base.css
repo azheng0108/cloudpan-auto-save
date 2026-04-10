@@ -184,6 +184,12 @@ button {
     color: #fbbf24;
 }
 
+/* 使 Lucide star SVG 由空心轮廓变为实心金色星标 */
+.favorite-icon.active svg {
+    fill: currentColor;
+    stroke: currentColor;
+}
+
 [data-theme="dark"] .favorite-icon.active,
 .dark .favorite-icon.active {
     color: #fbbf24;
