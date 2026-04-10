@@ -1101,16 +1101,9 @@
                 <form id="taskForm" class="flex flex-col min-h-0 flex-1">
                     <div class="form-body space-y-5">
                         
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
-                            <div class="form-group mb-0">
-                                <label for="accountId">执行账号</label>
-                                <select id="accountId" class="input-base" required></select>
-                            </div>
-                            <div class="form-group mb-0">
-                                <label for="taskName">任务名称</label>
-                                <input type="text" id="taskName" class="input-base" required readonly>
-                                <small class="form-text">默认使用分享目录第一个文件夹名称</small>
-                            </div>
+                        <div class="form-group mb-0">
+                            <label for="accountId">执行账号</label>
+                            <select id="accountId" class="input-base" required></select>
                         </div>
 
                         <div class="form-group mb-0">
@@ -1120,6 +1113,13 @@
                                 <input type="text" id="accessCode" class="input-base flex-1" data-share-input placeholder="访问码 (选填)">
                             </div>
                             <div id="shareParseError" class="text-red-500 text-sm mt-1"></div>
+                        </div>
+
+                        <!-- 任务名称移至分享链接下方，解析后自动填入更符合操作流程 -->
+                        <div class="form-group mb-0">
+                            <label for="taskName">任务名称</label>
+                            <input type="text" id="taskName" class="input-base" required readonly>
+                            <small class="form-text">默认使用分享目录第一个文件夹名称</small>
                         </div>
 
                         <div class="form-group mb-0 share-folders-group" style="display:none">
