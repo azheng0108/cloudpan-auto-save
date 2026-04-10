@@ -4,6 +4,9 @@ let taskFilterParams = {
     search: ''
 };
 
+// 记录上次成功解析的 shareLink+accessCode 组合，防止 accessCode blur 二次触发覆盖已有结果
+let _lastParsedShareCombo = null;
+
 
 // 任务相关功能
 function escapeHtml(str) {
@@ -278,6 +281,8 @@ function closeCreateTaskModal() {
     document.getElementById('taskName').readOnly = true
     document.getElementById('taskForm').reset();
     updateCreateCronBuilderUI();
+    // 重置解析去重状态，下次打开时可重新解析
+    _lastParsedShareCombo = null;
 }
 
 // 初始化任务表单
@@ -1066,6 +1071,12 @@ async function parseShareLink() {
         accessCode = parseAccessCode;
         document.getElementById('accessCode').value = accessCode;
     }
+
+    // 去重：相同的 link+code 组合已经成功解析过，跳过重复请求
+    // 防止 accessCode 失焦二次触发时因网络波动清空已展示的目录列表
+    const comboKey = `${parseShareLink}|${accessCode || ''}`;
+    if (comboKey === _lastParsedShareCombo) return;
+
     const shareFoldersGroup = document.querySelector('.share-folders-group');
     const shareFoldersList = document.getElementById('shareFoldersList');
     try {
@@ -1078,6 +1089,8 @@ async function parseShareLink() {
         loading.hide()
         const data = await response.json();
         if (data.success) {
+            // 记录本次成功组合，后续相同输入直接跳过
+            _lastParsedShareCombo = comboKey;
             shareFoldersGroup.style.display = 'block';
             const rootFolderMeta = data.data.find(f => (f.level || 0) === 0);
             const subFolders = data.data.filter(f => (f.level || 0) > 0);
@@ -1136,15 +1149,23 @@ async function parseShareLink() {
                 taskNameEl.readOnly = false;
             }
         } else {
-            shareFoldersGroup.style.display = 'none';
-            shareFoldersList.innerHTML = '';
+            // 解析失败：重置去重状态（允许用户修改链接后再次尝试）
+            _lastParsedShareCombo = null;
+            // 若已有展示内容则保留（防止网络抖动一次性清空成功结果）
+            if (!shareFoldersList.innerHTML.trim()) {
+                shareFoldersGroup.style.display = 'none';
+            }
             if (data.error) {
                 shareParseError.textContent = `解析失败: ${data.error}`;
             }
         }
     } catch (error) {
-        shareFoldersGroup.style.display = 'none';
-        shareFoldersList.innerHTML = '';
+        loading.hide()
+        // 异常：重置去重状态，但不破坏已有目录展示
+        _lastParsedShareCombo = null;
+        if (!shareFoldersList.innerHTML.trim()) {
+            shareFoldersGroup.style.display = 'none';
+        }
         shareParseError.textContent = `操作失败: ${error.message}`;
     }
 }
