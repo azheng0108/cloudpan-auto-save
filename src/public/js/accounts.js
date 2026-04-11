@@ -84,6 +84,9 @@ function openAddAccountModal() {
     document.getElementById('accountType').value = 'cloud139';
     onAccountTypeChange('cloud139');
     modal.style.display = 'flex';
+    // 账号弹窗可能在任务弹窗（z-index:1000）或文件夹选择器（1001）之上打开，
+    // 设为 1002 确保始终处于最顶层。
+    modal.style.zIndex = '1002';
 }
 
 function closeAddAccountModal() {
@@ -115,9 +118,10 @@ async function editAccount(id) {
         return;
     }
 
-    // 打开模态框
+    // 打开模态框，z-index 设为 1002 确保浮于任务弹窗（1000）和文件夹选择器（1001）之上
     const modal = document.getElementById('addAccountModal');
     modal.style.display = 'flex';
+    modal.style.zIndex = '1002';
 
     // 修改标题
     const modalTitle = modal.querySelector('h3');
