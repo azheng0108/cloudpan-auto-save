@@ -1087,12 +1087,12 @@
                                     <summary class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">本地 STRM 生成（高级，通常无需配置）</summary>
                                     <div class="form-group mb-0 mt-2">
                                         <label for="localStrmPrefix">本地 STRM 根目录</label>
-                                        <input type="text" id="localStrmPrefix" class="input-base font-mono text-xs" placeholder="如: /host/strm/移动云盘/159">
+                                        <input type="text" id="localStrmPrefix" class="input-base font-mono text-xs" placeholder="如: /host/strm/网盘名称">
                                         <small class="form-text">宿主机上存放 .strm 文件的根目录（139-auto-save 自行生成 STRM 时才需要）</small>
                                     </div>
                                     <div class="form-group mb-0 mt-2">
                                         <label for="cloudStrmPrefix">STRM URL 前缀</label>
-                                        <input type="text" id="cloudStrmPrefix" class="input-base font-mono text-xs" placeholder="如: http://openlist:5244/d/移动云盘/159">
+                                        <input type="text" id="cloudStrmPrefix" class="input-base font-mono text-xs" placeholder="如: http://openlist:5244/d/网盘名称">
                                         <small class="form-text">写入 .strm 文件内的播放地址前缀（OpenList 自动生成 STRM 时无需填写）</small>
                                     </div>
                                 </details>
@@ -1103,10 +1103,10 @@
                                 <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Emby 通知配置（可选）</p>
                                 <div class="form-group mb-0">
                                     <label for="embyLibraryPath">Emby 库根路径</label>
-                                    <input type="text" id="embyLibraryPath" class="input-base font-mono text-xs" placeholder="如: /media/移动云盘/130 或 /tv_strm">
+                                    <input type="text" id="embyLibraryPath" class="input-base font-mono text-xs" placeholder="如: /media/网盘名称 或 /tv_strm">
                                     <small class="form-text">
                                         该账号内容在 Emby 容器内的挂载根路径，填写后可精准定位媒体项、避免全库扫描。<br>
-                                        · OpenList STRM 用户：填 Emby 内 OpenList 挂载点，如 /media/移动云盘/130<br>
+                                        · OpenList STRM 用户：填 Emby 内 OpenList 挂载点，如 /media/网盘名称<br>
                                         · 本地 STRM 用户：填 Emby 内 .strm 文件挂载点，如 /tv_strm
                                     </small>
                                 </div>

@@ -461,6 +461,9 @@ class FolderSelector {
         this.isShowingFavorites  = false;
         this.favorites = await this.getFavorites();
         this.modal.querySelector('.modal-title').textContent = this.title;
+        // 等待 Shoelace sl-tree-item 自定义元素注册完成，再渲染节点。
+        // 若直接渲染，未升级的元素会以普通内联 HTML 呈现，导致节点横排成一行。
+        await customElements.whenDefined('sl-tree-item');
         await this.loadFolderNodes('-11', this.folderTree, false, '');
     }
 
@@ -479,6 +482,8 @@ class FolderSelector {
         // 收藏视图中隐藏新建按钮
         const mkdirLink = this.modal.querySelector('.mkdir-link');
         if (mkdirLink) mkdirLink.style.display = 'none';
+        // 同 show()：等待自定义元素注册，避免节点以内联方式渲染
+        await customElements.whenDefined('sl-tree-item');
         await this.renderFolderNodes(this.favorites, this.folderTree, '');
     }
 
