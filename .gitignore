@@ -150,6 +150,8 @@ deploy/
 # 本地临时/原型文件
 src/public/*.backup
 src/public/index_part*.txt
+src/public/preview.html
 refactor_index.py
 test_cron.js
 ui原型.html
+preview.html
