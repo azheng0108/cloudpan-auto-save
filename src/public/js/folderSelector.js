@@ -1,107 +1,156 @@
 /**
  * FolderSelector — 统一目录选择器组件
  *
- * 内部使用 Shoelace <sl-tree> / <sl-tree-item> 渲染，解决多层嵌套排版与滚动穿透问题。
- * 外部 API（构造参数、show / showFavorites / close / setAccountId）保持不变，
- * main.js 和 edit-task.js 中的 3 个实例无需任何修改即可获得新体验。
+ * 使用纯原生 HTML/CSS 实现树形视图，零外部依赖（无 Shoelace、无 Lucide）。
+ * 图标以内联 SVG 常量实现，彻底消除 CDN 加载时序问题。
  *
- * 依赖（由 index.html 全局引入）：
- *   - Lucide (lucide.createIcons)
- *   - Shoelace sl-tree + sl-tree-item (CDN ES module)
+ * 外部 API（构造参数、show / showFavorites / close / setAccountId）保持不变，
+ * main.js 和 edit-task.js 中的实例无需任何修改。
+ *
+ * 树 DOM 结构：
+ *   div.ft-tree
+ *     div.ft-item[data-id][data-name][data-path]
+ *       div.ft-row
+ *         span.ft-chevron   ← SVG chevron，叶节点加 data-leaf 隐藏
+ *         span.ft-icon      ← SVG folder/file，选中时变蓝
+ *         span.ft-name      ← 文件夹名，超长截断
+ *         span.ft-star      ← SVG star，enableFavorites 时才有
+ *       div.ft-children     ← 子节点容器，展开时 display:block
  */
+
+// ── 内联 SVG 图标常量（不依赖 Lucide）────────────────────────────────────────
+
+/** chevron-right：展开箭头，由 CSS rotate(90deg) 实现展开态 */
+const SVG_CHEVRON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="9 18 15 12 9 6"/>
+</svg>`;
+
+/** folder：橙色文件夹图标 */
+const SVG_FOLDER = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+</svg>`;
+
+/** file：文件图标（isFile 节点使用） */
+const SVG_FILE = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+  <polyline points="13 2 13 9 20 9"/>
+</svg>`;
+
+/** star：收藏星标，active 时 fill 实心 */
+const SVG_STAR = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+</svg>`;
+
+/** folder-plus：新建文件夹图标（header 用，保留 Lucide 兼容） */
+const SVG_FOLDER_PLUS = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+  <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
+</svg>`;
+
+/** refresh-cw：刷新图标（header 用） */
+const SVG_REFRESH = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="23 4 23 10 17 10"/>
+  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+</svg>`;
+
+// ── FolderSelector 类 ────────────────────────────────────────────────────────
+
 class FolderSelector {
     constructor(options = {}) {
-        this.title = options.title || '选择目录';
+        this.title    = options.title    || '选择目录';
         this.onSelect = options.onSelect || (() => {});
         this.accountId = options.accountId || '';
+
+        /** 当前选中的 .ft-item 元素 */
+        this._selectedEl  = null;
         this.selectedNode = null;
-        /** 当前选中的 <sl-tree-item> DOM 元素，供 promptCreateFolder 定位父目录 */
-        this._selectedEl = null;
+        this.currentPath  = [];
+
         this.modalId = 'folderModal_' + Math.random().toString(36).substr(2, 9);
         this.treeId  = 'folderTree_'  + Math.random().toString(36).substr(2, 9);
-        this.enableFavorites = options.enableFavorites || false;
-        this.favoritesKey    = options.favoritesKey    || 'defaultFavoriteDirectories';
-        this.isShowingFavorites = false;
-        this.currentPath = [];
-        this.favorites   = [];
 
-        // API 配置（外部可通过 options 覆盖，与原版完全兼容）
+        this.enableFavorites = options.enableFavorites || false;
+        this.isShowingFavorites = false;
+        this.favorites = [];
+
+        // API 配置（保持与原版兼容）
         this.apiConfig = {
-            url:             options.apiUrl       || '/api/folders',
-            buildParams:     options.buildParams  || ((accountId, folderId) => `${accountId}?folderId=${folderId}`),
-            parseResponse:   options.parseResponse   || ((data) => data.data),
-            validateResponse: options.validateResponse || ((data) => data.success)
+            url:              options.apiUrl          || '/api/folders',
+            buildParams:      options.buildParams     || ((accountId, folderId) => `${accountId}?folderId=${folderId}`),
+            parseResponse:    options.parseResponse   || ((data) => data.data),
+            validateResponse: options.validateResponse || ((data) => data.success),
         };
 
         this.buttons = options.buttons || [
             { text: '确定', class: 'btn-primary', action: 'confirm' },
-            { text: '取消', class: 'btn-default', action: 'cancel'  }
+            { text: '取消', class: 'btn-default', action: 'cancel'  },
         ];
 
         this.buttonCallbacks = {
             confirm: options.onConfirm || this.defaultConfirm.bind(this),
             cancel:  options.onCancel  || this.defaultCancel.bind(this),
-            ...options.buttonCallbacks
+            ...options.buttonCallbacks,
         };
 
         this.initModal();
     }
 
-    // ─── 常用目录（收藏夹）API ──────────────────────────────────────────────
+    // ── 收藏夹 API ────────────────────────────────────────────────────────────
 
-    /** 从服务端获取当前账号的常用目录列表 */
     async getFavorites() {
         try {
-            const response = await fetch(`/api/favorites/${this.accountId}`);
-            const data = await response.json();
+            const res  = await fetch(`/api/favorites/${this.accountId}`);
+            const data = await res.json();
             if (!data.success) throw new Error(data.error || '获取常用目录失败');
             return data.data || [];
-        } catch (error) {
-            console.error('获取常用目录失败:', error);
+        } catch (err) {
+            console.error('获取常用目录失败:', err);
             message.error('获取常用目录失败');
             return [];
         }
     }
 
-    /** 将目录添加到收藏夹 */
-    async addToFavorites(id, name, path) {
+    async addToFavorites(id, name, nodePath) {
         if (this.favorites.find(f => f.id === id)) return;
-        const finalPath = path || name;
+        const finalPath = nodePath || name;
         try {
-            const res = await fetch('/api/favorites/add', {
-                method: 'POST',
+            const res  = await fetch('/api/favorites/add', {
+                method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accountId: this.accountId, id, name, path: finalPath })
+                body:    JSON.stringify({ accountId: this.accountId, id, name, path: finalPath }),
             });
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
             this.favorites.push({ id, name, path: finalPath });
-        } catch (error) {
-            console.error('添加常用目录失败:', error);
+        } catch (err) {
+            console.error('添加常用目录失败:', err);
             message.error('添加常用目录失败');
         }
     }
 
-    /** 从收藏夹移除目录 */
     async removeFromFavorites(id) {
         try {
-            const res = await fetch(`/api/favorites/${this.accountId}/${id}`, { method: 'DELETE' });
+            const res  = await fetch(`/api/favorites/${this.accountId}/${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
-            const index = this.favorites.findIndex(f => f.id === id);
-            if (index !== -1) this.favorites.splice(index, 1);
-        } catch (error) {
-            console.error('移除常用目录失败:', error);
+            const idx = this.favorites.findIndex(f => f.id === id);
+            if (idx !== -1) this.favorites.splice(idx, 1);
+        } catch (err) {
+            console.error('移除常用目录失败:', err);
             message.error('移除常用目录失败');
         }
     }
 
-    // ─── 弹窗初始化 ─────────────────────────────────────────────────────────
+    // ── 弹窗初始化 ────────────────────────────────────────────────────────────
 
     /**
-     * 构建弹窗 HTML 并绑定基础事件。
-     * 树容器改为 <sl-tree>，并通过 expand-icon / collapse-icon slot
-     * 注入 Lucide chevron-right 图标，与全局 icon 风格保持一致。
+     * 构建弹窗 HTML（使用原生 div.ft-tree，无需任何 Web Components 库）并绑定事件。
      */
     initModal() {
         const modalHtml = `
@@ -111,30 +160,28 @@ class FolderSelector {
                         <div class="modal-header">
                             <h3 class="modal-title">${this.title}</h3>
                             <div style="display:flex;gap:12px;align-items:center">
-                                <a href="javascript:;" class="mkdir-link" data-action="mkdir" title="在当前选中目录下新建文件夹"
+                                <a href="javascript:;" class="mkdir-link" data-action="mkdir"
+                                   title="在当前选中目录下新建文件夹"
                                    style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--primary-color);text-decoration:none;">
-                                    <i data-lucide="folder-plus" class="w-4 h-4"></i> 新建
+                                    ${SVG_FOLDER_PLUS} 新建
                                 </a>
                                 <a href="javascript:;" class="refresh-link" data-action="refresh"
                                    style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--primary-color);text-decoration:none;">
-                                    <i data-lucide="refresh-cw" class="w-4 h-4"></i> 刷新
+                                    ${SVG_REFRESH} 刷新
                                 </a>
                             </div>
                         </div>
                         <div class="form-body">
-                            <!-- sl-tree 替代手写嵌套 div 树；expand/collapse 图标使用 Shoelace 内置样式，
-                                 不注入 slot，避免 light DOM 渲染时出现多余可见箭头 -->
-                            <sl-tree id="${this.treeId}"></sl-tree>
+                            <div class="ft-tree" id="${this.treeId}"></div>
                         </div>
                         <div class="form-actions">
-                        ${this.buttons.map(btn => `
-                            <button class="${btn.class}" data-action="${btn.action}">${btn.text}</button>
-                        `).join('')}
+                            ${this.buttons.map(btn =>
+                                `<button class="${btn.class}" data-action="${btn.action}">${btn.text}</button>`
+                            ).join('')}
                         </div>
                     </div>
                 </div>
-            </div>
-        `;
+            </div>`;
 
         if (!document.getElementById(this.modalId)) {
             document.body.insertAdjacentHTML('beforeend', modalHtml);
@@ -144,7 +191,7 @@ class FolderSelector {
         this.folderTree = document.getElementById(this.treeId);
         this.currentPath = [];
 
-        // 遮罩点击关闭（与主页面 Modal 行为一致）
+        // 遮罩点击关闭
         const wrapper = this.modal.querySelector('.modal-wrapper');
         if (wrapper) {
             wrapper.addEventListener('click', (e) => {
@@ -152,157 +199,180 @@ class FolderSelector {
             });
         }
 
-        // 全局选中事件：sl-tree 统一触发，替代原来每个 item 的 click 处理
-        this.folderTree.addEventListener('sl-selection-change', (e) => {
-            const selected = e.detail.selection[0];
-            if (!selected) return;
-            this._selectedEl  = selected;
-            this.selectedNode = { id: selected.dataset.id, name: selected.dataset.name };
-            this.currentPath  = (selected.dataset.path || '').split('/').filter(Boolean);
-        });
-
         this.modal.querySelector('[data-action="refresh"]').addEventListener('click', () => this.refreshTree());
         this.modal.querySelector('[data-action="mkdir"]').addEventListener('click',   () => this.promptCreateFolder());
 
         this.buttons.forEach(btn => {
-            const button = this.modal.querySelector(`[data-action="${btn.action}"]`);
-            if (button && this.buttonCallbacks[btn.action]) {
-                button.addEventListener('click', () => this.buttonCallbacks[btn.action]());
+            const el = this.modal.querySelector(`[data-action="${btn.action}"]`);
+            if (el && this.buttonCallbacks[btn.action]) {
+                el.addEventListener('click', () => this.buttonCallbacks[btn.action]());
             }
         });
-
-        // 渲染 header 中的 Lucide 图标（全量调用兼容旧版 CDN）
-        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
     }
 
-    // ─── 树操作 ─────────────────────────────────────────────────────────────
+    // ── 树操作 ────────────────────────────────────────────────────────────────
 
-    /** 刷新目录树（保留原有行为：重新从根或收藏夹加载） */
+    /** 刷新目录树 */
     async refreshTree() {
-        const refreshLink = this.modal.querySelector('.refresh-link');
-        refreshLink.classList.add('loading');
+        const link = this.modal.querySelector('.refresh-link');
+        link.classList.add('loading');
         this.currentPath = [];
         try {
             if (this.isShowingFavorites) {
                 this.favorites = await this.getFavorites();
-                this.renderFolderNodes(this.favorites, this.folderTree, '');
+                await this.renderFolderNodes(this.favorites, this.folderTree, '');
             } else {
                 await this.loadFolderNodes('-11', this.folderTree, true, '');
             }
         } finally {
-            refreshLink.classList.remove('loading');
+            link.classList.remove('loading');
         }
     }
 
     /**
-     * 移除 <sl-tree> 或 <sl-tree-item> 的直接子 sl-tree-item（保留 slot 注入的图标元素）。
-     * 替代原有的 parentElement.innerHTML = ''，避免清除 expand/collapse icon slot。
-     * @param {Element} el - sl-tree 或 sl-tree-item 元素
+     * 清空容器内的直接子 .ft-item 元素（保留 .mkdir-input-row）。
+     * @param {Element} el — .ft-tree 或 .ft-children 容器
      */
     _clearTreeItems(el) {
-        Array.from(el.querySelectorAll(':scope > sl-tree-item')).forEach(c => c.remove());
+        Array.from(el.querySelectorAll(':scope > .ft-item')).forEach(c => c.remove());
     }
 
     /**
-     * 创建单个 <sl-tree-item> 节点，包含：
-     * - 橙色 Lucide folder/file 图标（.sl-folder-icon，light DOM，CSS 直接控制颜色）
-     * - 文件名 span（.sl-folder-name，超长截断）
-     * - 收藏星星（.favorite-icon，enableFavorites 时才有，margin-left:auto 推到最右）
-     * - 目录节点标记 lazy 属性，展开时触发 sl-lazy-load 异步加载子目录
+     * 创建单个原生 .ft-item 节点。
+     * - chevron 展开箭头（叶节点加 data-leaf，CSS 隐藏但保留占位）
+     * - ft-icon   文件夹/文件 SVG 图标
+     * - ft-name   目录名（超长截断）
+     * - ft-star   收藏星星（enableFavorites && !isFile 时才渲染）
+     * - ft-children 子节点容器（懒加载，展开时填充）
      *
-     * @param {object} node       - { id, name, isFile? }
-     * @param {string} nodePath   - 完整相对路径（用于 dataset.path 和 currentPath）
-     * @param {boolean} isFavorite - 是否已收藏（控制星星 active 状态）
-     * @returns {HTMLElement} sl-tree-item 元素
+     * @param {object}  node       — { id, name, isFile? }
+     * @param {string}  nodePath   — 完整相对路径
+     * @param {boolean} isFavorite — 是否已收藏
+     * @returns {HTMLElement}
      */
-    _makeSlTreeItem(node, nodePath, isFavorite) {
-        const item = document.createElement('sl-tree-item');
+    _makeTreeItem(node, nodePath, isFavorite) {
+        const item = document.createElement('div');
+        item.className    = 'ft-item';
         item.dataset.id   = node.id;
         item.dataset.name = node.name;
         item.dataset.path = nodePath;
 
-        // 橙色文件夹/文件图标（light DOM，folder-tree.css 直接通过 .sl-folder-icon 控制颜色）
-        const iconWrap = document.createElement('span');
-        iconWrap.className = 'sl-folder-icon';
-        iconWrap.innerHTML = `<i data-lucide="${node.isFile ? 'file' : 'folder'}" class="w-4 h-4"></i>`;
-        item.appendChild(iconWrap);
+        // ── 行（可点击区域）───────────────────────────────────────────
+        const row = document.createElement('div');
+        row.className = 'ft-row';
 
-        // 文件名（收藏视图显示完整路径，树形视图显示单级名称）
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'sl-folder-name';
-        nameSpan.textContent = this.isShowingFavorites ? nodePath : node.name;
-        item.appendChild(nameSpan);
+        // 展开箭头
+        const chevron = document.createElement('span');
+        chevron.className   = 'ft-chevron';
+        chevron.innerHTML   = SVG_CHEVRON;
+        if (node.isFile) item.dataset.leaf = '';   // 叶节点：CSS visibility:hidden
+        row.appendChild(chevron);
 
-        // 收藏星星（enableFavorites 开启且不是文件时才渲染）
+        // 文件夹/文件图标
+        const icon = document.createElement('span');
+        icon.className = 'ft-icon';
+        icon.innerHTML = node.isFile ? SVG_FILE : SVG_FOLDER;
+        row.appendChild(icon);
+
+        // 目录名（收藏视图显示完整路径）
+        const nameEl = document.createElement('span');
+        nameEl.className   = 'ft-name';
+        nameEl.textContent = this.isShowingFavorites ? nodePath : node.name;
+        row.appendChild(nameEl);
+
+        // 收藏星星
         if (this.enableFavorites && !node.isFile) {
             const star = document.createElement('span');
-            star.className   = `favorite-icon${isFavorite ? ' active' : ''}`;
-            star.dataset.id  = node.id;
-            star.dataset.name = node.name;
-            star.innerHTML   = '<i data-lucide="star" class="w-4 h-4"></i>';
-            // 阻止冒泡，避免触发 sl-tree 的选中事件
+            star.className = 'ft-star' + (isFavorite ? ' active' : '');
+            star.innerHTML = SVG_STAR;
             star.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const { id, name } = star.dataset;
-                const isFav = this.favorites.some(f => f.id === id);
+                const isFav = this.favorites.some(f => f.id === node.id);
                 if (!isFav) {
-                    this.addToFavorites(id, name, nodePath);
+                    this.addToFavorites(node.id, node.name, nodePath);
                     star.classList.add('active');
                 } else {
-                    this.removeFromFavorites(id);
+                    this.removeFromFavorites(node.id);
                     if (this.isShowingFavorites) {
-                        item.remove(); // 收藏视图中移除后直接消失
+                        item.remove();
                     } else {
                         star.classList.remove('active');
                     }
                 }
             });
-            item.appendChild(star);
+            row.appendChild(star);
         }
 
-        // 目录节点：标记 lazy，sl-tree 展开时触发 sl-lazy-load 异步加载子目录
-        if (!this.isShowingFavorites && !node.isFile) {
-            item.setAttribute('lazy', '');
-            item.addEventListener('sl-lazy-load', async () => {
-                await this.loadFolderNodes(node.id, item, false, nodePath);
-                // 加载完成后移除 lazy，下次展开直接显示已加载的子项
-                item.removeAttribute('lazy');
-            });
-        }
+        item.appendChild(row);
+
+        // ── 子节点容器 ─────────────────────────────────────────────────
+        const children = document.createElement('div');
+        children.className = 'ft-children';
+        item.appendChild(children);
+
+        // ── 点击行：选中 + 展开/折叠（含懒加载）──────────────────────
+        row.addEventListener('click', async (e) => {
+            if (e.target.closest('.ft-star')) return; // 星星自行处理
+
+            this._selectItem(item);
+
+            if (node.isFile) return; // 文件节点不展开
+
+            if ('expanded' in item.dataset) {
+                // 已展开 → 折叠
+                delete item.dataset.expanded;
+            } else {
+                // 未展开 → 懒加载（只在第一次展开时请求 API）
+                if (!('loaded' in item.dataset)) {
+                    chevron.classList.add('ft-loading');
+                    await this.loadFolderNodes(node.id, children, false, nodePath);
+                    chevron.classList.remove('ft-loading');
+                    item.dataset.loaded = '';
+                }
+                item.dataset.expanded = '';
+            }
+        });
 
         return item;
     }
 
     /**
+     * 将 .ft-item 设为选中态，清除旧选中，同步内部状态。
+     * @param {HTMLElement} item
+     */
+    _selectItem(item) {
+        if (this._selectedEl) delete this._selectedEl.dataset.selected;
+        item.dataset.selected = '';
+        this._selectedEl  = item;
+        this.selectedNode = { id: item.dataset.id, name: item.dataset.name };
+        this.currentPath  = (item.dataset.path || '').split('/').filter(Boolean);
+    }
+
+    /**
      * 渲染目录/收藏夹节点列表到 parentElement。
-     * parentElement 可以是 <sl-tree>（根级）或 <sl-tree-item>（子级懒加载时）。
+     * @param {Array}   nodes
+     * @param {Element} parentElement — .ft-tree 或 .ft-children
+     * @param {string}  parentPath
      */
     async renderFolderNodes(nodes, parentElement = this.folderTree, parentPath = '') {
-        // 清空已有 sl-tree-item（保留 sl-tree 的 slot 图标）
         this._clearTreeItems(parentElement);
 
         for (const node of nodes) {
-            // 计算完整路径：收藏视图取 DB 存的 path，树形视图逐层累积
             const nodePath = this.isShowingFavorites
                 ? (node.path && node.path !== node.id ? node.path : (node.name || node.id))
                 : (parentPath ? `${parentPath}/${node.name}` : node.name);
 
             const isFavorite = this.favorites.some(f => f.id === node.id);
-            const item = this._makeSlTreeItem(node, nodePath, isFavorite);
-            parentElement.appendChild(item);
+            parentElement.appendChild(this._makeTreeItem(node, nodePath, isFavorite));
         }
-
-        // 渲染所有新插入节点中的 Lucide 图标
-        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
     }
 
     /**
      * 从 API 异步加载目录子项并渲染。
-     * 收藏视图模式下直接读取本地 favorites 列表。
-     * @param {string}  folderId      - 要加载的目录 ID
-     * @param {Element} parentElement - 注入子项的 sl-tree 或 sl-tree-item 元素
-     * @param {boolean} refresh       - 是否强制刷新（追加 &refresh=true 参数）
-     * @param {string}  parentPath    - 父目录的完整路径前缀
+     * @param {string}  folderId
+     * @param {Element} parentElement
+     * @param {boolean} refresh
+     * @param {string}  parentPath
      */
     async loadFolderNodes(folderId, parentElement = this.folderTree, refresh = false, parentPath = '') {
         try {
@@ -310,83 +380,86 @@ class FolderSelector {
             if (this.isShowingFavorites) {
                 nodes = await this.getFavorites();
             } else {
-                const params = this.apiConfig.buildParams(this.accountId, folderId, this);
+                const params   = this.apiConfig.buildParams(this.accountId, folderId, this);
                 const response = await fetch(`${this.apiConfig.url}/${params}${refresh ? '&refresh=true' : ''}`);
-                const data = await response.json();
+                const data     = await response.json();
                 if (!this.apiConfig.validateResponse(data)) {
                     throw new Error('获取目录失败: ' + (data.error || '未知错误'));
                 }
                 nodes = this.apiConfig.parseResponse(data);
             }
             await this.renderFolderNodes(nodes, parentElement, parentPath);
-        } catch (error) {
-            console.error('加载目录失败:', error);
+        } catch (err) {
+            console.error('加载目录失败:', err);
             message.warning('加载目录失败');
         }
     }
 
-    // ─── 新建文件夹 ──────────────────────────────────────────────────────────
+    // ── 新建文件夹 ────────────────────────────────────────────────────────────
 
     /**
-     * 在当前选中目录（或根目录）弹出内联输入行，创建新文件夹。
-     * 输入行以临时 <sl-tree-item> 包裹，保持缩进层级与整体样式一致。
+     * 在当前选中目录（或根目录）插入内联输入行，创建新文件夹。
      */
     async promptCreateFolder() {
-        const selectedId      = this.selectedNode?.id;
+        const selectedId       = this.selectedNode?.id;
         const hasRealSelection = selectedId && selectedId !== '-11';
 
         let parentFileId  = hasRealSelection ? selectedId : '/';
-        let parentElement = this.folderTree;    // 默认插入根级
-        let insertBefore  = this.folderTree.querySelector(':scope > sl-tree-item'); // 插到最前
+        let parentElement = this.folderTree;
+        let insertBefore  = this.folderTree.querySelector(':scope > .ft-item');
 
         if (hasRealSelection && this._selectedEl) {
             if (this.isShowingFavorites) {
-                // 收藏视图：插入到选中项后方（同级）
                 parentElement = this._selectedEl.parentElement || this.folderTree;
                 insertBefore  = this._selectedEl.nextElementSibling;
             } else {
-                // 树形视图：确保选中项已展开，插入到其子项最前
-                if (!this._selectedEl.expanded) {
-                    await this.loadFolderNodes(selectedId, this._selectedEl, false,
-                        this._selectedEl.dataset.path || '');
-                    this._selectedEl.expanded = true;
+                const childContainer = this._selectedEl.querySelector('.ft-children');
+                // 确保选中项已展开（需要先加载子项）
+                if (!('expanded' in this._selectedEl.dataset)) {
+                    if (!('loaded' in this._selectedEl.dataset)) {
+                        await this.loadFolderNodes(selectedId, childContainer, false,
+                            this._selectedEl.dataset.path || '');
+                        this._selectedEl.dataset.loaded = '';
+                    }
+                    this._selectedEl.dataset.expanded = '';
                 }
-                parentElement = this._selectedEl;
-                insertBefore  = this._selectedEl.querySelector(':scope > sl-tree-item');
+                parentElement = childContainer;
+                insertBefore  = childContainer.querySelector(':scope > .ft-item');
             }
         }
 
-        // 防止重复创建输入行
+        // 防止重复插入输入行
         if (parentElement.querySelector('.mkdir-input-row')) {
             parentElement.querySelector('.mkdir-input')?.focus();
             return;
         }
 
-        // 用临时 sl-tree-item 包裹输入行，保持缩进层级
-        const inputItem = document.createElement('sl-tree-item');
-        inputItem.className = 'mkdir-input-row';
-        inputItem.innerHTML = `
-            <span class="sl-folder-icon"><i data-lucide="folder" class="w-4 h-4"></i></span>
-            <input type="text" class="mkdir-input" placeholder="新文件夹名称" />
-            <span class="mkdir-confirm" title="确定（Enter）">✓</span>
-            <span class="mkdir-cancel"  title="取消（Esc）">✗</span>
-        `;
-        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
-        parentElement.insertBefore(inputItem, insertBefore);
+        // 内联输入行（样式由 folder-tree.css 的 .mkdir-input-row 控制）
+        const inputRow = document.createElement('div');
+        inputRow.className = 'ft-item mkdir-input-row';
+        inputRow.innerHTML = `
+            <div class="ft-row" style="padding-left:0">
+                <span class="ft-chevron" style="visibility:hidden">${SVG_CHEVRON}</span>
+                <span class="ft-icon">${SVG_FOLDER}</span>
+                <input type="text" class="mkdir-input" placeholder="新文件夹名称" />
+                <span class="mkdir-confirm" title="确定（Enter）">✓</span>
+                <span class="mkdir-cancel"  title="取消（Esc）">✗</span>
+            </div>`;
 
-        const input = inputItem.querySelector('.mkdir-input');
-        // 等待 Web Component 升级后 focus（sl-tree-item 有 shadow DOM 渲染延迟）
-        setTimeout(() => input?.focus(), 50);
+        parentElement.insertBefore(inputRow, insertBefore);
+
+        const input = inputRow.querySelector('.mkdir-input');
+        setTimeout(() => input?.focus(), 20);
 
         const doCreate = async () => {
             const name = input.value.trim();
             if (!name) { input.focus(); return; }
-            inputItem.remove();
+            inputRow.remove();
             try {
-                const res = await fetch('/api/folders/mkdir', {
-                    method: 'POST',
+                const res  = await fetch('/api/folders/mkdir', {
+                    method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ accountId: this.accountId, parentFileId, folderName: name })
+                    body:    JSON.stringify({ accountId: this.accountId, parentFileId, folderName: name }),
                 });
                 const data = await res.json();
                 if (!data.success) throw new Error(data.error || '创建失败');
@@ -398,56 +471,41 @@ class FolderSelector {
             }
         };
 
-        const doCancel = () => inputItem.remove();
-        inputItem.querySelector('.mkdir-confirm').addEventListener('click', doCreate);
-        inputItem.querySelector('.mkdir-cancel').addEventListener('click',  doCancel);
+        const doCancel = () => inputRow.remove();
+        inputRow.querySelector('.mkdir-confirm').addEventListener('click', doCreate);
+        inputRow.querySelector('.mkdir-cancel').addEventListener('click',  doCancel);
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter')  doCreate();
             if (e.key === 'Escape') doCancel();
         });
-        // 阻止点击输入行触发 sl-tree 选中事件
-        inputItem.addEventListener('click', (e) => e.stopPropagation());
+        // 阻止点击输入行触发父容器事件
+        inputRow.addEventListener('click', (e) => e.stopPropagation());
     }
 
     /**
-     * 创建 API 成功后，直接插入新的 sl-tree-item 节点（不刷新整棵树）。
-     * 与 promptCreateFolder 配套使用。
+     * API 创建成功后直接插入新的 .ft-item，不刷新整棵树。
      */
     _insertNewFolderItem(newNode, parentElement, insertBefore = null) {
-        // 父目录路径来自选中项（树形视图）或根（根级新建）
         const parentPath = this._selectedEl?.dataset?.path || '';
         const nodePath   = parentPath ? `${parentPath}/${newNode.name}` : newNode.name;
-
         const isFavorite = this.favorites.some(f => f.id === newNode.id);
-        const item = this._makeSlTreeItem(newNode, nodePath, isFavorite);
+        const item       = this._makeTreeItem(newNode, nodePath, isFavorite);
         parentElement.insertBefore(item, insertBefore);
-
-        // 新建完成后自动选中该节点
-        item.selected    = true;
-        this._selectedEl  = item;
-        this.selectedNode = { id: newNode.id, name: newNode.name };
-        this.currentPath  = nodePath.split('/').filter(Boolean);
-
-        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        this._selectItem(item);
     }
 
-    // ─── 选中状态 ────────────────────────────────────────────────────────────
+    // ── 选中状态（外部调用兼容接口）─────────────────────────────────────────
 
     /**
-     * 以编程方式选中某个 sl-tree-item，并同步内部状态。
-     * 收藏夹视图单击后通过此方法触发，树形视图由 sl-selection-change 全局处理。
-     * @param {object}  node    - { id, name }
-     * @param {Element} element - 对应的 sl-tree-item 元素
+     * 以编程方式选中某个 .ft-item。
+     * @param {object}  node    — { id, name }
+     * @param {Element} element — 对应的 .ft-item 元素
      */
     selectFolder(node, element) {
-        element.selected  = true;  // sl-tree 会自动清除其他项的选中状态
-        this._selectedEl  = element;
-        this.selectedNode = node;
-        const fullPath    = element.dataset.path || node.name || '';
-        this.currentPath  = fullPath ? fullPath.split('/').filter(Boolean) : [];
+        this._selectItem(element);
     }
 
-    // ─── 公共方法（外部调用 API）────────────────────────────────────────────
+    // ── 公共方法 ──────────────────────────────────────────────────────────────
 
     /** 打开弹窗，展示普通目录树 */
     async show(accountId = '') {
@@ -461,13 +519,10 @@ class FolderSelector {
         this.isShowingFavorites  = false;
         this.favorites = await this.getFavorites();
         this.modal.querySelector('.modal-title').textContent = this.title;
-        // 等待 Shoelace sl-tree-item 自定义元素注册完成，再渲染节点。
-        // 若直接渲染，未升级的元素会以普通内联 HTML 呈现，导致节点横排成一行。
-        await customElements.whenDefined('sl-tree-item');
         await this.loadFolderNodes('-11', this.folderTree, false, '');
     }
 
-    /** 打开弹窗，展示常用目录（收藏夹）列表 */
+    /** 打开弹窗，展示常用目录（收藏夹） */
     async showFavorites(accountId = '') {
         if (accountId) this.accountId = accountId;
         if (!this.accountId) { message.warning('请先选择账号'); return; }
@@ -479,15 +534,12 @@ class FolderSelector {
         this.isShowingFavorites  = true;
         this.favorites = await this.getFavorites();
         this.modal.querySelector('.modal-title').textContent = '常用目录';
-        // 收藏视图中隐藏新建按钮
         const mkdirLink = this.modal.querySelector('.mkdir-link');
         if (mkdirLink) mkdirLink.style.display = 'none';
-        // 同 show()：等待自定义元素注册，避免节点以内联方式渲染
-        await customElements.whenDefined('sl-tree-item');
         await this.renderFolderNodes(this.favorites, this.folderTree, '');
     }
 
-    /** 关闭弹窗并重置 DOM（重新 initModal 保证下次打开状态干净） */
+    /** 关闭弹窗并重置 DOM */
     close() {
         this.modal.style.display = 'none';
         const mkdirLink = this.modal.querySelector('.mkdir-link');
@@ -501,13 +553,13 @@ class FolderSelector {
         this.accountId = accountId;
     }
 
-    /** 确定按钮默认行为：将选中节点回调给 onSelect，然后关闭弹窗 */
+    /** 确定按钮默认行为 */
     defaultConfirm() {
         if (this.selectedNode) {
             this.onSelect({
                 id:   this.selectedNode.id,
                 name: this.selectedNode.name,
-                path: this.currentPath.join('/')
+                path: this.currentPath.join('/'),
             });
             this.close();
         } else {

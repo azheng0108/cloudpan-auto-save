@@ -31,12 +31,9 @@
             }
         }
     </script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Shoelace tree 组件：由 scripts/copy-vendor.js 在构建时复制到 public/vendor/shoelace/，
-         本地托管避免国内网络访问 CDN 失败 -->
-    <link id="sl-theme-css" rel="stylesheet" href="/vendor/shoelace/themes/light.css">
-    <link rel="stylesheet" href="/vendor/shoelace/themes/dark.css">
-    <script type="module" src="/vendor/shoelace/components/tree/tree.js"></script>
+    <!-- Lucide 图标库：由 scripts/copy-vendor.js 在构建时从 node_modules 复制到 public/vendor/，
+         本地托管避免国内网络访问 unpkg CDN 失败 -->
+    <script src="/vendor/lucide/lucide.js"></script>
 
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.3s, color 0.3s; }

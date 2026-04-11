@@ -31,6 +31,7 @@
     "got": "11.8.2",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
+    "lucide": "^1.8.0",
     "node-cron": "^3.0.2",
     "node-telegram-bot-api": "^0.66.0",
     "nunjucks": "^3.2.4",
