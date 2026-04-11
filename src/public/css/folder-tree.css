@@ -50,6 +50,11 @@
     font-size: 13px;
 }
 
+/* Shoelace 内置展开箭头颜色（::part 穿透 shadow DOM） */
+.folder-modal-content sl-tree-item::part(expand-button) {
+    color: var(--text-secondary, #9ca3af);
+}
+
 /* ── 3. Label 区 flex 布局（::part 穿透 Shadow DOM） ────────────────────── */
 
 /*

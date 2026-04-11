@@ -32,10 +32,11 @@
         }
     </script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Shoelace: 按需加载 tree 组件（sl-tree + sl-tree-item），约 30KB -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/dark.css">
-    <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/components/tree/tree.js"></script>
+    <!-- Shoelace tree 组件：由 scripts/copy-vendor.js 在构建时复制到 public/vendor/shoelace/，
+         本地托管避免国内网络访问 CDN 失败 -->
+    <link id="sl-theme-css" rel="stylesheet" href="/vendor/shoelace/themes/light.css">
+    <link rel="stylesheet" href="/vendor/shoelace/themes/dark.css">
+    <script type="module" src="/vendor/shoelace/components/tree/tree.js"></script>
 
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.3s, color 0.3s; }

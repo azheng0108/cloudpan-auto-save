@@ -122,11 +122,9 @@ class FolderSelector {
                             </div>
                         </div>
                         <div class="form-body">
-                            <!-- sl-tree 替代手写嵌套 div 树，Lucide 图标通过 slot 注入 -->
-                            <sl-tree id="${this.treeId}">
-                                <i slot="expand-icon"   data-lucide="chevron-right" class="w-4 h-4"></i>
-                                <i slot="collapse-icon" data-lucide="chevron-right" class="w-4 h-4" style="rotate:90deg"></i>
-                            </sl-tree>
+                            <!-- sl-tree 替代手写嵌套 div 树；expand/collapse 图标使用 Shoelace 内置样式，
+                                 不注入 slot，避免 light DOM 渲染时出现多余可见箭头 -->
+                            <sl-tree id="${this.treeId}"></sl-tree>
                         </div>
                         <div class="form-actions">
                         ${this.buttons.map(btn => `

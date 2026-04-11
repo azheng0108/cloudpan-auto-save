@@ -16,7 +16,8 @@ RUN yarn install --ignore-engines
 
 # 复制源码并编译
 COPY . .
-RUN npx tsc && cp -r src/public dist/public
+# 复制第三方前端组件到 public/vendor（本地托管，避免 CDN 依赖）
+RUN node scripts/copy-vendor.js && npx tsc && cp -r src/public dist/public
 
 # 原地裁剪 node_modules 为纯生产依赖（不重新下载，只删除 devDependencies）
 # 同时清理运行时完全不需要的文件，进一步瘦身：
