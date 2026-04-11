@@ -261,11 +261,11 @@ class FolderSelector {
         const row = document.createElement('div');
         row.className = 'ft-row';
 
-        // 展开箭头
+        // 展开箭头（收藏夹视图扁平展示，目录也不可展开，标记为叶节点隐藏箭头）
         const chevron = document.createElement('span');
         chevron.className   = 'ft-chevron';
         chevron.innerHTML   = SVG_CHEVRON;
-        if (node.isFile) item.dataset.leaf = '';   // 叶节点：CSS visibility:hidden
+        if (node.isFile || this.isShowingFavorites) item.dataset.leaf = '';
         row.appendChild(chevron);
 
         // 文件夹/文件图标
@@ -315,6 +315,9 @@ class FolderSelector {
             if (e.target.closest('.ft-star')) return; // 星星自行处理
 
             this._selectItem(item);
+
+            // 收藏夹视图是扁平列表，点击只选中，不展开子节点
+            if (this.isShowingFavorites) return;
 
             if (node.isFile) return; // 文件节点不展开
 
