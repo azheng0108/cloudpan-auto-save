@@ -794,9 +794,23 @@
     padding: 3px 0;
 }
 
-/* 图标 SVG 垂直居中 */
+/* 图标 SVG 垂直居中，固定尺寸避免被父容器拉伸 */
 .folder-item label svg {
+    display: inline-block;
     flex-shrink: 0;
+    vertical-align: middle;
+    width: 15px;
+    height: 15px;
+    min-width: 15px;
+}
+
+/* checkbox 同行对齐，不允许被 flex 拉伸 */
+.folder-item label input[type="checkbox"] {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin: 0;
     vertical-align: middle;
 }
 
