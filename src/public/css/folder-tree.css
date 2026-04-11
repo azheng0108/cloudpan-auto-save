@@ -1,143 +1,144 @@
+/*
+ * folder-tree.css
+ *
+ * 目录树现由 Shoelace <sl-tree> + <sl-tree-item> 渲染，原手写树样式已删除。
+ * 本文件负责：
+ *   1. 将项目主色（#1677ff）映射到 Shoelace CSS 变量，使选中态与全局一致
+ *   2. 通过 ::part(label) 穿透 Shadow DOM，实现 flex 布局（图标 + 文件名 + 星星）
+ *   3. 内联新建文件夹输入行样式（mkdir-input-row）
+ *   4. 弹窗宽度约束（folder-modal-content）
+ */
 
-/* 树状目录样式 */
-.folder-tree {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    /* 横向滚动已上移至 .form-body 统一管理，此处不再设置 overflow-x */
-    white-space: nowrap;  /* 防止文件名换行，配合父容器 overflow-x: auto 实现水平滑动 */
-    min-width: 200px;
-    width: max-content;   /* 宽度撑开至内容实际宽度，触发父容器 form-body 的横向滚动条 */
+/* ── 1. Shoelace 主题变量覆盖 ──────────────────────────────────────────────── */
+
+/* Light 模式：将 Ant Design #1677ff 映射到 Shoelace primary token */
+:root {
+    --sl-color-primary-50:  #e6f4ff;
+    --sl-color-primary-100: #bae0ff;
+    --sl-color-primary-300: #69b1ff;
+    --sl-color-primary-400: #4096ff;
+    --sl-color-primary-500: #1677ff;   /* 选中高亮主色 */
+    --sl-color-primary-600: #0958d9;
+    --sl-color-primary-700: #003eb3;
+    --sl-color-neutral-200: #e5e7eb;   /* 缩进导轨颜色 */
 }
 
-/* 文件夹行：flex 布局，图标 + 名称 + 展开箭头一行对齐 */
-.folder-tree-item {
+/* Dark 模式：与 dark:text-[#3b82f6]（HTML 内全局暗色主色）保持一致 */
+.sl-theme-dark {
+    --sl-color-primary-400: #60a5fa;
+    --sl-color-primary-500: #3b82f6;
+    --sl-color-neutral-200: #374151;
+}
+
+/* ── 2. 树容器：填满弹窗、垂直滚动、防穿透 ──────────────────────────────── */
+
+.folder-modal-content sl-tree {
+    display: block;
+    width: 100%;
+    /* Shoelace 内置缩进和导轨变量 */
+    --indent-size: 20px;
+    --indent-guide-width: 1px;
+    --indent-guide-color: var(--border-color, #e5e7eb);
+    overflow-y: auto;
+    max-height: 440px;
+    /* 防止 wheel/touch 事件穿透到弹窗背景页 */
+    overscroll-behavior: contain;
+}
+
+/* 统一字体大小（Shoelace 默认 14px，项目设计为 13px） */
+.folder-modal-content sl-tree-item {
+    font-size: 13px;
+}
+
+/* ── 3. Label 区 flex 布局（::part 穿透 Shadow DOM） ────────────────────── */
+
+/*
+ * sl-tree-item::part(label) 可从外部 CSS 样式化 Shadow DOM 内的 part 节点。
+ * 设为 flex 使 light DOM 中的 icon + name + star 横向对齐。
+ * 同时隐藏溢出，防止超长文件名撑宽弹窗。
+ */
+.folder-modal-content sl-tree-item::part(label) {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 9px 14px;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: background-color 0.15s;
-    position: relative;
-    min-width: fit-content;
+    min-width: 0;
+    overflow: hidden;
 }
 
-.folder-tree-item:hover {
-    background-color: #f5f7fa;
-}
+/* ── 4. Light DOM 子元素样式（图标、文件名、收藏星星） ──────────────────── */
 
-[data-theme="dark"] .folder-tree-item:hover {
-    background-color: #1e2533;
-}
-
-.folder-tree-item.selected {
-    background-color: #e6f4ff;
-    color: #1677ff;
-}
-
-[data-theme="dark"] .folder-tree-item.selected {
-    background-color: #1d3a5f;
-    color: #60a5fa;
-}
-
-/* 文件夹/文件图标包装层（提供橙色）*/
-.folder-icon-wrap {
+/* 橙色文件夹/文件图标（与原版 .folder-icon-wrap 颜色一致） */
+.folder-modal-content .sl-folder-icon {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
-    color: #fa8c16;   /* 橙色，与 UI 原型一致 */
+    color: #fa8c16;
 }
 
-[data-theme="dark"] .folder-icon-wrap {
+[data-theme="dark"] .folder-modal-content .sl-folder-icon {
     color: #ffa940;
 }
 
-/* 选中状态下图标也变蓝 */
-.folder-tree-item.selected .folder-icon-wrap {
+/* 选中态下图标同步变蓝（与原版行为一致） */
+.folder-modal-content sl-tree-item[aria-selected="true"] .sl-folder-icon {
     color: #1677ff;
 }
 
-[data-theme="dark"] .folder-tree-item.selected .folder-icon-wrap {
-    color: #60a5fa;
+[data-theme="dark"] .folder-modal-content sl-tree-item[aria-selected="true"] .sl-folder-icon {
+    color: #3b82f6;
 }
 
-.folder-name {
-    flex: 1;              /* 文件名占满剩余宽度 */
-    display: inline-block;
-    white-space: nowrap;
+/* 文件名：超长截断，flex 填充剩余宽度 */
+.folder-modal-content .sl-folder-name {
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
-/* 展开箭头推到最右，展开时旋转 90° */
-.expand-icon {
-    flex-shrink: 0;
+/* 收藏星星：margin-left:auto 推到最右侧 */
+.folder-modal-content .favorite-icon {
     margin-left: auto;
+    flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     color: var(--text-secondary, #9ca3af);
-    transition: transform 0.2s ease;
+    cursor: pointer;
+    transition: color 0.15s;
 }
 
-.expanded > .expand-icon {
-    transform: rotate(90deg);
+.folder-modal-content .favorite-icon.active,
+.folder-modal-content .favorite-icon:hover {
+    color: #fa8c16;
 }
 
-/* 子目录容器 */
-.folder-children {
-    padding-left: 24px;
-    display: none;
-    position: relative;
-    /* 约束每列宽度：避免深层展开时弹窗无限横向扩张。
-     * 超出 max-width 的文件名由 .folder-name 的 text-overflow: ellipsis 截断；
-     * 子项过多时纵向滚动（max-height 配合 overflow-y）。 */
-    min-width: 180px;
-    max-width: 280px;
-    overflow-y: auto;
-    max-height: 420px;
+[data-theme="dark"] .folder-modal-content .favorite-icon.active,
+[data-theme="dark"] .folder-modal-content .favorite-icon:hover {
+    color: #ffa940;
 }
 
-/* 左侧纵向连接线 */
-.folder-children::before {
-    content: '';
-    position: absolute;
-    left: 22px;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background-color: var(--border-color, #e5e7eb);
+/* star svg/i 子元素不捕获鼠标事件，点击穿透到父 span */
+.folder-modal-content .favorite-icon svg,
+.folder-modal-content .favorite-icon i {
+    pointer-events: none;
 }
 
-.folder-children .folder-tree-item::before {
-    content: '';
-    position: absolute;
-    left: -14px;
-    top: 50%;
-    width: 14px;
-    height: 1px;
-    background-color: var(--border-color, #e5e7eb);
-}
+/* ── 5. 内联新建文件夹输入行 ──────────────────────────────────────────────── */
 
-.expanded > .folder-children {
-    display: block;
-}
-
-/* 内联新建文件夹输入行 */
+/*
+ * 输入行以 sl-tree-item.mkdir-input-row 呈现，其 label 区显示 icon + input + 确认/取消。
+ * position: sticky + left: 0 保证超长文件名水平滚动时输入行始终可见。
+ */
 .mkdir-input-row {
     cursor: default;
-    display: flex;
-    align-items: center;
-    gap: 6px;
     background-color: #f0f7ff;
     border: 1px dashed #91caff;
     border-radius: 6px;
-    padding: 6px 14px;
-    /*
-     * 当目录树有超长文件名导致水平滚动时，输入行会随之变宽，
-     * 确认/取消按钮被推到视口外不可见。
-     * position: sticky + left: 0 使输入行始终贴左可见。
-     */
+}
+
+/* 覆盖 sl-tree-item 的 label part，给输入行专用的 padding 和样式 */
+.mkdir-input-row::part(base) {
     position: sticky;
     left: 0;
     box-sizing: border-box;
@@ -172,25 +173,17 @@
     line-height: 1.6;
 }
 
-.mkdir-confirm {
-    color: #52c41a;
-}
+.mkdir-confirm { color: #52c41a; }
+.mkdir-confirm:hover { background-color: #f6ffed; }
+.mkdir-cancel  { color: #ff4d4f; }
+.mkdir-cancel:hover  { background-color: #fff2f0; }
 
-.mkdir-confirm:hover {
-    background-color: #f6ffed;
-}
+/* ── 6. 弹窗宽度约束 ─────────────────────────────────────────────────────── */
 
-.mkdir-cancel {
-    color: #ff4d4f;
-}
-
-.mkdir-cancel:hover {
-    background-color: #fff2f0;
-}
-
-/* 目录选择器弹窗宽度限制：防止多列（Finder 风格）展开后弹窗无限横向扩张。
- * 覆盖 modal-content 默认的 max-w-md，改为响应式宽度上限 720px。
- * 超出部分在 .form-body（overflow-x: auto）内横向滚动。 */
+/*
+ * 覆盖 modal-content 默认 max-w-md，改为响应式上限 720px。
+ * 超出内容在 .form-body（overflow-x: auto）内横向滚动，弹窗本身不再无限扩张。
+ */
 .folder-modal-content {
     width: min(92vw, 720px);
     max-width: none;
