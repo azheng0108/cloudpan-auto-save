@@ -202,6 +202,13 @@ button {
     transition: transform 0.2s ease;
 }
 
+/* 确保 Lucide 渲染的 SVG 及 <i> 不吞噬点击事件，
+ * 让点击始终冒泡到父 <span.favorite-icon>（有事件监听器的元素）。 */
+.favorite-icon svg,
+.favorite-icon i {
+    pointer-events: none;
+}
+
 #favoriteFolderBtn,
 #editFavoriteFolderBtn {
     height: 33px;

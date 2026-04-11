@@ -46,6 +46,10 @@ async function fetchAccounts(updateSelect = false) {
                 }
             }
         });
+        // 账号列表刷新后同步更新 STRM 配置提示（使用默认选中的账号）
+        if (updateSelect) {
+            onTaskAccountChange(null);
+        }
     }
 }
 
@@ -127,6 +131,7 @@ async function editAccount(id) {
     document.getElementById('password').value = '';
     document.getElementById('cookie').value = chooseAccount.cookies || '';
     // 媒体服务配置字段
+    document.getElementById('localStrmPrefix').value = chooseAccount.localStrmPrefix || '';
     document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
     document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
     document.getElementById('embyPathReplace').value = chooseAccount.embyPathReplace || '';
@@ -175,6 +180,7 @@ async function createAccount() {
     if (chooseAccount?.id) {
         username = chooseAccount.original_username
     }
+    const localStrmPrefix = document.getElementById('localStrmPrefix').value;
     const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
     const alistStrmPath = document.getElementById('alistStrmPath').value;
     const embyPathReplace = document.getElementById('embyPathReplace').value;
@@ -182,7 +188,7 @@ async function createAccount() {
     const response = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chooseAccount?.id, username, accountType, password, cookies, validateCode, cloudStrmPrefix, alistStrmPath, embyPathReplace })
+        body: JSON.stringify({ id: chooseAccount?.id, username, accountType, password, cookies, validateCode, localStrmPrefix, cloudStrmPrefix, alistStrmPath, embyPathReplace })
     });
     const data = await response.json();
     if (data.success) {
@@ -221,6 +227,34 @@ function formatBytes(bytes) {
     
     return value.toFixed(exponent > 0 ? 2 : 0) + units[exponent];
 }
+/**
+ * 任务表单账号切换时，检查所选账号是否配置了 alistStrmPath，
+ * 动态显示/隐藏 STRM 刷新路径未配置的警告提示。
+ * @param {HTMLSelectElement|null} selectEl - 账号下拉框元素（为 null 时自动查找）
+ */
+function onTaskAccountChange(selectEl) {
+    const el = selectEl || document.getElementById('accountId');
+    const hint = document.getElementById('strmConfigHint');
+    if (!hint || !el) return;
+    const selectedId = parseInt(el.value, 10);
+    const account = accountsList.find(a => a.id === selectedId);
+    // alistStrmPath 未填写时显示提示
+    const missing = !account || !account.alistStrmPath?.trim();
+    hint.style.display = missing ? '' : 'none';
+}
+
+/**
+ * 打开当前任务表单所选账号的编辑弹窗，方便用户快速填写媒体路径配置。
+ */
+function editCurrentTaskAccount() {
+    const el = document.getElementById('accountId');
+    if (!el || !el.value) {
+        message.warning('请先选择账号');
+        return;
+    }
+    editAccount(parseInt(el.value, 10));
+}
+
 async function setDefaultAccount(id) {
     try {
         const response = await fetch(`/api/accounts/${id}/default`, {

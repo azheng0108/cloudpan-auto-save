@@ -89,7 +89,13 @@
     padding-left: 24px;
     display: none;
     position: relative;
-    min-width: fit-content;
+    /* 约束每列宽度：避免深层展开时弹窗无限横向扩张。
+     * 超出 max-width 的文件名由 .folder-name 的 text-overflow: ellipsis 截断；
+     * 子项过多时纵向滚动（max-height 配合 overflow-y）。 */
+    min-width: 180px;
+    max-width: 280px;
+    overflow-y: auto;
+    max-height: 420px;
 }
 
 /* 左侧纵向连接线 */
@@ -180,4 +186,12 @@
 
 .mkdir-cancel:hover {
     background-color: #fff2f0;
+}
+
+/* 目录选择器弹窗宽度限制：防止多列（Finder 风格）展开后弹窗无限横向扩张。
+ * 覆盖 modal-content 默认的 max-w-md，改为响应式宽度上限 720px。
+ * 超出部分在 .form-body（overflow-x: auto）内横向滚动。 */
+.folder-modal-content {
+    width: min(92vw, 720px);
+    max-width: none;
 }

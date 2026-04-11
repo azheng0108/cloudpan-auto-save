@@ -125,7 +125,7 @@ class FolderSelector {
         const modalHtml = `
             <div id="${this.modalId}" class="modal">
                 <div class="modal-wrapper">
-                    <div class="modal-content">
+                    <div class="modal-content folder-modal-content">
                         <div class="modal-header">
                             <h3 class="modal-title">${this.title}</h3>
                             <div style="display:flex;gap:12px;align-items:center">
