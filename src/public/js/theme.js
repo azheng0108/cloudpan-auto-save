@@ -37,6 +37,9 @@ function setTheme(theme) {
         const currentTheme = isDark ? 'dark' : 'light';
         const statusBarColor = isDark ? '#1a1a1a' : '#ffffff';
         document.documentElement.setAttribute('data-theme', currentTheme);
+        // 桥接 Shoelace 暗色主题：将 sl-theme-dark class 与 data-theme 同步，使 sl-tree 等
+        // Web Components 能正确响应项目的主题切换，保持视图风格一致。
+        document.documentElement.classList.toggle('sl-theme-dark', isDark);
         document.querySelector('meta[name="theme-color"]').setAttribute('content', statusBarColor);
     };
     if (theme === 'auto') {
