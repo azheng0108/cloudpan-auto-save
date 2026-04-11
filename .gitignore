@@ -138,6 +138,9 @@ _test_*.mjs
 package-lock.json
 /vender/
 
+# 第三方前端组件（由 scripts/copy-vendor.js 在 build/dev 时从 node_modules 复制）
+src/public/vendor/
+
 # 本地保留，不上传 GitHub
 docs/
 test/

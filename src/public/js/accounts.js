@@ -266,24 +266,15 @@ function editCurrentTaskAccount() {
 }
 
 /**
- * 根据全局配置（alistUrl / embyEnable）控制账号弹窗中媒体子区块的显示/隐藏。
- * - accountStrmSection：只有配置了全局 OpenList 地址时才显示
- * - accountEmbySection：只有启用了全局 Emby 通知时才显示
- * 若全局配置不可读，则默认两个区块均显示，不影响正常操作。
+ * 确保账号弹窗中的媒体配置子区块（STRM / Emby）始终可见。
+ * 账号级别的路径配置与全局 OpenList / Emby 开关无关，用户应能随时填写，
+ * 因此不再根据全局配置条件性隐藏，避免字段"消失"导致的困惑。
  */
 function _syncAccountMediaSections() {
-    // globalConfig 由 settings.js 或 index.html 内嵌的全局变量注入（若未注入则 fallback 显示）
-    const cfg = window.globalConfig || {};
     const strmSection = document.getElementById('accountStrmSection');
     const embySection = document.getElementById('accountEmbySection');
-    if (strmSection) {
-        // OpenList 地址已填写时显示 STRM 刷新子区块
-        strmSection.style.display = cfg.alistUrl ? '' : 'none';
-    }
-    if (embySection) {
-        // Emby 通知已启用时显示 Emby 通知子区块
-        embySection.style.display = cfg.embyEnable ? '' : 'none';
-    }
+    if (strmSection) strmSection.style.display = '';
+    if (embySection) embySection.style.display = '';
 }
 
 async function setDefaultAccount(id) {
