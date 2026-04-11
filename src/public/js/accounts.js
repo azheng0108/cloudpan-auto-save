@@ -87,6 +87,8 @@ function openAddAccountModal() {
     // 账号弹窗可能在任务弹窗（z-index:1000）或文件夹选择器（1001）之上打开，
     // 设为 1002 确保始终处于最顶层。
     modal.style.zIndex = '1002';
+    // 根据全局配置同步显示/隐藏媒体子区块
+    _syncAccountMediaSections();
 }
 
 function closeAddAccountModal() {
@@ -138,12 +140,15 @@ async function editAccount(id) {
     document.getElementById('localStrmPrefix').value = chooseAccount.localStrmPrefix || '';
     document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
     document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
+    document.getElementById('embyLibraryPath').value = chooseAccount.embyLibraryPath || '';
     document.getElementById('embyPathReplace').value = chooseAccount.embyPathReplace || '';
     // 账号不允许修改
     document.getElementById('username').setAttribute('readonly', true )
     // 修改提交按钮文本
     const submitBtn = modal.querySelector('button[type="submit"]');
     submitBtn.textContent = '修改';
+    // 根据全局配置同步显示/隐藏媒体子区块
+    _syncAccountMediaSections();
 }
 
 function onAccountTypeChange(type) {
@@ -187,12 +192,13 @@ async function createAccount() {
     const localStrmPrefix = document.getElementById('localStrmPrefix').value;
     const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
     const alistStrmPath = document.getElementById('alistStrmPath').value;
+    const embyLibraryPath = document.getElementById('embyLibraryPath').value;
     const embyPathReplace = document.getElementById('embyPathReplace').value;
     loading.show()
     const response = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chooseAccount?.id, username, accountType, password, cookies, validateCode, localStrmPrefix, cloudStrmPrefix, alistStrmPath, embyPathReplace })
+        body: JSON.stringify({ id: chooseAccount?.id, username, accountType, password, cookies, validateCode, localStrmPrefix, cloudStrmPrefix, alistStrmPath, embyLibraryPath, embyPathReplace })
     });
     const data = await response.json();
     if (data.success) {
@@ -257,6 +263,27 @@ function editCurrentTaskAccount() {
         return;
     }
     editAccount(parseInt(el.value, 10));
+}
+
+/**
+ * 根据全局配置（alistUrl / embyEnable）控制账号弹窗中媒体子区块的显示/隐藏。
+ * - accountStrmSection：只有配置了全局 OpenList 地址时才显示
+ * - accountEmbySection：只有启用了全局 Emby 通知时才显示
+ * 若全局配置不可读，则默认两个区块均显示，不影响正常操作。
+ */
+function _syncAccountMediaSections() {
+    // globalConfig 由 settings.js 或 index.html 内嵌的全局变量注入（若未注入则 fallback 显示）
+    const cfg = window.globalConfig || {};
+    const strmSection = document.getElementById('accountStrmSection');
+    const embySection = document.getElementById('accountEmbySection');
+    if (strmSection) {
+        // OpenList 地址已填写时显示 STRM 刷新子区块
+        strmSection.style.display = cfg.alistUrl ? '' : 'none';
+    }
+    if (embySection) {
+        // Emby 通知已启用时显示 Emby 通知子区块
+        embySection.style.display = cfg.embyEnable ? '' : 'none';
+    }
 }
 
 async function setDefaultAccount(id) {

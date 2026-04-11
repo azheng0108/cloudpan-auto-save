@@ -574,6 +574,8 @@ class TaskService {
                     username: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
+                    alistStrmPath: true,
+                    embyLibraryPath: true,
                     embyPathReplace: true
                 }
             },
@@ -597,6 +599,8 @@ class TaskService {
                     username: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
+                    alistStrmPath: true,
+                    embyLibraryPath: true,
                     embyPathReplace: true
                 }
             }
@@ -1306,6 +1310,8 @@ class TaskService {
                     username: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
+                    alistStrmPath: true,
+                    embyLibraryPath: true,
                     embyPathReplace: true
                 }
             }
