@@ -716,12 +716,13 @@
     display: block;
 }
 
-/* 分享目录样式优化 */
+/* ── 分享目录 ─────────────────────────────────────────────────────────────── */
 .share-folders-group {
-    margin-top: 15px;
+    margin-top: 12px;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 8px;
     background: var(--bg-color);
+    overflow: hidden;   /* 配合 border-radius 裁剪子元素背景 */
 }
 
 .share-folders-list {
@@ -771,7 +772,7 @@
 .folder-item {
     padding: 0 10px;
     border-radius: 4px;
-    transition: background-color 0.2s;
+    transition: background-color 0.15s;
 }
 
 .folder-item:hover {
@@ -781,10 +782,12 @@
 .folder-item label {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
     cursor: pointer;
     color: var(--text-color);
+    font-size: 13px;    /* 与主 UI 表单字体对齐 */
+    line-height: 1.75;  /* 舒适行高 */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
