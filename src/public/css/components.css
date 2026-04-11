@@ -791,6 +791,13 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding: 3px 0;
+}
+
+/* 图标 SVG 垂直居中 */
+.folder-item label svg {
+    flex-shrink: 0;
+    vertical-align: middle;
 }
 
 .share-folders-list {
