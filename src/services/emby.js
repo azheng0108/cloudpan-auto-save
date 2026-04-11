@@ -39,11 +39,13 @@ class EmbyService {
         }
         const taskName = task.resourceName
         logTaskEvent(`执行Emby通知: ${taskName}`);
-        // 处理路径：将云盘 realFolderName 通过 embyPathReplace 规则转换为 Emby 本地路径
-        this.embyPathReplace = task.account.embyPathReplace;
+        // 读取路径相关字段：优先使用 embyLibraryPath 精准拼接，fallback 到旧 embyPathReplace 替换模式
+        this.embyLibraryPath = task.account.embyLibraryPath?.trim() || '';
+        this.embyPathReplace  = task.account.embyPathReplace;
         const rawPath = task.realFolderName;
         const convertedPath = this._replacePath(rawPath);
-        logTaskEvent(`Emby路径转换 | realFolderName=${rawPath} | embyPathReplace=${this.embyPathReplace || '(未配置)'} | 转换结果=${convertedPath}`);
+        const pathMode = this.embyLibraryPath ? `精准模式(embyLibraryPath=${this.embyLibraryPath})` : `替换模式(embyPathReplace=${this.embyPathReplace || '(未配置)'})`;
+        logTaskEvent(`Emby路径转换 | realFolderName=${rawPath} | ${pathMode} | 转换结果=${convertedPath}`);
         const item = await this.searchItemsByPathRecursive(convertedPath);
         logTaskEvent(`Emby搜索结果: ${JSON.stringify(item)}`);
         if (item) {
@@ -177,8 +179,20 @@ class EmbyService {
             // 移除额外的空格
             .trim();
     }
-    // 路径替换
+    /**
+     * 将 realFolderName 转换为 Emby 可搜索的完整路径
+     * 精准模式（推荐）：embyLibraryPath + '/' + realFolderName
+     *   适用于 OpenList STRM 和本地 STRM 两种场景，只需填写 Emby 内该账号内容的根路径
+     * 兼容模式（旧）：对路径应用 embyPathReplace 替换规则
+     *   适用于路径结构差异复杂的边缘场景
+     */
     _replacePath(path) {
+        if (this.embyLibraryPath) {
+            // 精准模式：去除 realFolderName 的前导斜杠后拼接库根路径
+            const rel = path.replace(/^\/+/, '');
+            return this.embyLibraryPath.replace(/\/+$/, '') + '/' + rel;
+        }
+        // 兼容旧模式：embyPathReplace 规则替换
         if (!path.startsWith('/')) {
             path = '/' + path;
         }
