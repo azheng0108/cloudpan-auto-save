@@ -1096,13 +1096,18 @@ async function parseShareLink() {
             const subFolders = data.data.filter(f => (f.level || 0) > 0);
             const hasRootFiles = rootFolderMeta?.hasRootFiles || false;
 
+            // SVG 图标（与 folderSelector.js 风格统一，不依赖 Lucide）
+            const _svgFolder = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:#fa8c16"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+            const _svgFile   = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:#9ca3af"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
+
             // 根目录条目（id=-1）：代表「同步整个分享」，选中后其余 checkbox 自动禁用
             const rootName = rootFolderMeta ? rootFolderMeta.name : '';
             const rootItemHtml = rootFolderMeta
                 ? `<div class="folder-item folder-item-root">
                     <label>
                         <input type="checkbox" name="chooseShareFolder" value="-1" checked>
-                        🗂️ ${rootName}（全部内容）
+                        ${_svgFolder} <span>${rootName}（全部内容）</span>
+                        <span class="root-hint" style="color:var(--text-secondary);font-size:11px;margin-left:4px;">（递归同步所有内容）</span>
                     </label>
                 </div>`
                 : '';
@@ -1112,7 +1117,7 @@ async function parseShareLink() {
             const rootFilesItemHtml = `<div class="folder-item" style="border-top:1px dashed var(--border-color);">
                     <label>
                         <input type="checkbox" name="chooseShareFolder" value="root-files">
-                        📄 ${rootName} 里的散文件
+                        ${_svgFile} <span>${rootName} 里的散文件</span>
                         <small style="color:var(--text-secondary);margin-left:4px;font-size:11px;">仅文件，不含子文件夹</small>
                     </label>
                 </div>`;
@@ -1122,14 +1127,14 @@ async function parseShareLink() {
                 ? subFolders.map(folder => `<div class="folder-item" style="padding-left:20px;opacity:0.45;">
                     <label>
                         <input type="checkbox" name="chooseShareFolder" value="${folder.id}" checked disabled>
-                        📁 ${folder.name}
+                        ${_svgFolder} <span>${folder.name}</span>
                     </label>
                 </div>`).join('')
                 : '';
 
             // 底部提示：用通俗语言说明子目录同步行为
             const hintHtml = `<div id="subDirRecursiveHint" style="display:none; padding:6px 12px; color:var(--primary-color); font-size:12px; border-top:1px solid var(--border-color);">
-                💡 选中的文件夹里所有文件（包括文件夹内套的文件夹）都会被同步
+                ℹ️ 选中的文件夹里所有文件（包括文件夹内套的文件夹）都会被同步
             </div>`;
 
             shareFoldersList.innerHTML = rootItemHtml + rootFilesItemHtml + folderItemsHtml + hintHtml;
