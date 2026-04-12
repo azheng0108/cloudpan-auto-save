@@ -1014,6 +1014,34 @@ class TaskService {
         return currentId;
     }
 
+    _normalizeSegment(value) {
+        return String(value || '').trim().replace(/^[\\/]+|[\\/]+$/g, '');
+    }
+
+    _getPathTail(folderPath) {
+        const normalized = String(folderPath || '').trim().replace(/[\\/]+$/g, '');
+        if (!normalized) return '';
+        const parts = normalized.split(/[\\/]/).filter(Boolean);
+        return parts.length ? parts[parts.length - 1].trim() : '';
+    }
+
+    _shouldReuseTargetFolder(targetFolderPath, folderName) {
+        const baseTail = this._normalizeSegment(this._getPathTail(targetFolderPath));
+        const folder = this._normalizeSegment(folderName);
+        return !!baseTail && !!folder && baseTail === folder;
+    }
+
+    _joinFolderPath(basePath, folderName) {
+        const base = String(basePath || '').trim();
+        const name = String(folderName || '').trim();
+        if (!base) return name;
+        if (!name) return base;
+        if (this._shouldReuseTargetFolder(base, name)) {
+            return base;
+        }
+        return path.join(base, name);
+    }
+
     /** 根据 catalogMap 计算 caID 相对于根目录的路径片段，如 ['G'] 表示 root/G */
     _getCatalogPathSegments(caID, rootCaID, catalogMap) {
         const rootStr = String(rootCaID);
@@ -1084,20 +1112,28 @@ class TaskService {
             }
         }
 
-        // 在目标目录下查找或创建同名根文件夹（与 cloud189 逻辑一致）
-        const matchedRootId = await this._findMatchingFolder139(cloud139, effectiveTargetFolderId, taskName);
         let realRootFolderId;
-        if (matchedRootId) {
-            realRootFolderId = matchedRootId;
-            logTaskEvent(`[139] 使用已有目录: "${taskName}" (${matchedRootId})`);
+        const reuseTargetAsRoot = this._shouldReuseTargetFolder(taskDto.targetFolder, taskName);
+
+        // 在目标目录下查找或创建同名根文件夹（与 cloud189 逻辑一致）
+        if (reuseTargetAsRoot) {
+            realRootFolderId = effectiveTargetFolderId;
+            logTaskEvent(`[139] 目标目录末级与任务目录同名，复用目标目录: "${taskDto.targetFolder}" (${realRootFolderId})`);
         } else {
-            // 目标目录下无同名文件夹，自动创建
-            logTaskEvent(`[139] 目标目录下无 "${taskName}"，自动创建`);
-            const created = await cloud139.createFolderHcy(effectiveTargetFolderId, taskName);
-            if (!created?.fileId) throw new Error(`创建目录 "${taskName}" 失败`);
-            realRootFolderId = created.fileId;
-            logTaskEvent(`[139] 已创建根目录: "${taskName}" (${realRootFolderId})`);
+            const matchedRootId = await this._findMatchingFolder139(cloud139, effectiveTargetFolderId, taskName);
+            if (matchedRootId) {
+                realRootFolderId = matchedRootId;
+                logTaskEvent(`[139] 使用已有目录: "${taskName}" (${matchedRootId})`);
+            } else {
+                // 目标目录下无同名文件夹，自动创建
+                logTaskEvent(`[139] 目标目录下无 "${taskName}"，自动创建`);
+                const created = await cloud139.createFolderHcy(effectiveTargetFolderId, taskName);
+                if (!created?.fileId) throw new Error(`创建目录 "${taskName}" 失败`);
+                realRootFolderId = created.fileId;
+                logTaskEvent(`[139] 已创建根目录: "${taskName}" (${realRootFolderId})`);
+            }
         }
+        const rootRealFolderName = this._joinFolderPath(taskDto.targetFolder || '', taskName);
 
         // 根目录任务（id = -1 或未选择特定子目录）
         const wantsRoot = !selectedFolders.length ||
@@ -1115,7 +1151,7 @@ class TaskService {
                 shareMode: 0,
                 targetFolderId: effectiveTargetFolderId,
                 realFolderId: realRootFolderId,
-                realFolderName: path.join(taskDto.targetFolder || '', taskName),
+                realFolderName: rootRealFolderName,
                 realRootFolderId: realRootFolderId,
                 resourceName: taskName,
                 status: 'pending',
@@ -1164,7 +1200,7 @@ class TaskService {
                 shareMode: 0,
                 targetFolderId: effectiveTargetFolderId,
                 realFolderId: realRootFolderId,
-                realFolderName: path.join(taskDto.targetFolder || '', taskName),
+                realFolderName: rootRealFolderName,
                 realRootFolderId: realRootFolderId,
                 resourceName: taskName,
                 status: 'pending',
@@ -1218,7 +1254,7 @@ class TaskService {
                 shareMode: 0,
                 targetFolderId: effectiveTargetFolderId,
                 realFolderId: realFolderId,
-                realFolderName: path.join(taskDto.targetFolder || '', taskName, folderName),
+                realFolderName: this._joinFolderPath(rootRealFolderName, folderName),
                 realRootFolderId: realRootFolderId,
                 resourceName: taskName,
                 status: 'pending',

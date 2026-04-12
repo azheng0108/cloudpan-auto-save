@@ -1,9 +1,33 @@
 function initLogs() {
     const logsContainer = document.getElementById('logsContainer');
+    const logsContainerModal = document.getElementById('logsContainerModal');
+    const logsContainers = [logsContainer, logsContainerModal].filter(Boolean);
     const logsModal = document.getElementById('logsModal');
+    if (logsContainers.length === 0) {
+        return;
+    }
     
     let eventSource = null;
     const MAX_VISIBLE_ITEMS = 200; // 增加到200条日志
+    let logLines = [];
+
+    function scrollToBottom() {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                logsContainers.forEach((container) => {
+                    container.scrollTop = container.scrollHeight;
+                });
+            });
+        });
+    }
+
+    function renderLogs() {
+        const text = logLines.join('\n');
+        logsContainers.forEach((container) => {
+            container.textContent = text;
+        });
+        scrollToBottom();
+    }
     
     function connectSSE() {
         eventSource = new EventSource('/api/logs/events');
@@ -15,21 +39,17 @@ function initLogs() {
             document.dispatchEvent(customEvent);
 
             if (data.type === 'history') {
-                const logs = data.logs.join('\n');
-                logsContainer.textContent = logs;
-                logsContainer.scrollTop = logsContainer.scrollHeight;
+                logLines = Array.isArray(data.logs) ? data.logs.slice(-MAX_VISIBLE_ITEMS) : [];
+                renderLogs();
             } else if (data.type === 'log') {
-                // 添加新日志
-                logsContainer.textContent += '\n' + data.message;
-                
-                // 如果日志行数超过限制，移除最旧的日志
-                const lines = logsContainer.textContent.split('\n');
-                if (lines.length > MAX_VISIBLE_ITEMS) {
-                    logsContainer.textContent = lines.slice(-MAX_VISIBLE_ITEMS).join('\n');
+                const message = String(data.message || '');
+                if (message) {
+                    logLines.push(message);
+                    if (logLines.length > MAX_VISIBLE_ITEMS) {
+                        logLines = logLines.slice(-MAX_VISIBLE_ITEMS);
+                    }
+                    renderLogs();
                 }
-                
-                // 自动滚动到底部
-                logsContainer.scrollTop = logsContainer.scrollHeight;
             }
         };
 
