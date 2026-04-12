@@ -48,6 +48,7 @@
     "@types/node": "^22.13.9",
     "@types/node-cron": "^3.0.11",
     "jest": "^30.3.0",
+    "lucide": "^1.8.0",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2"
