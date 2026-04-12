@@ -63,6 +63,20 @@ const alistService = {
     },
 
     /**
+     * 获取某个 OpenList 路径下第一层目录名称列表。
+     * @param {string} path
+     * @returns {Promise<string[]>}
+     */
+    async getFirstLevelFolders(path) {
+        const response = await this.listFiles(path);
+        const content = Array.isArray(response?.data?.content) ? response.data.content : [];
+        return content
+            .filter(item => item?.is_dir && item?.name)
+            .map(item => String(item.name).trim())
+            .filter(Boolean);
+    },
+
+    /**
      * 读取 OpenList 存储配置（需要具有管理权限的 token）。
      * @returns {Promise<Array<Object>>}
      */
@@ -77,15 +91,40 @@ const alistService = {
             throw new Error('AList apiKey 未配置');
         }
 
-        const response = await got.post(`${baseUrl}/api/admin/storage/list`, {
-            json: {
-                page: 1,
-                per_page: 0,
-            },
-            headers: {
-                'Authorization': apiKey,
+        const authCandidates = [apiKey, `Bearer ${apiKey}`];
+        const endpoints = [
+            { method: 'POST', path: '/api/admin/storage/list', json: { page: 1, per_page: 0 } },
+            { method: 'GET', path: '/api/admin/storage/list', searchParams: { page: 1, per_page: 0 } },
+            { method: 'POST', path: '/api/admin/storages/list', json: { page: 1, per_page: 0 } },
+            { method: 'GET', path: '/api/admin/storages/list', searchParams: { page: 1, per_page: 0 } },
+        ];
+
+        let lastError = null;
+        let response = null;
+        for (const authHeader of authCandidates) {
+            for (const endpoint of endpoints) {
+                try {
+                    response = await this._requestJson(`${baseUrl}${endpoint.path}`, {
+                        method: endpoint.method,
+                        headers: { 'Authorization': authHeader },
+                        json: endpoint.json,
+                        searchParams: endpoint.searchParams,
+                    });
+                    if (response && typeof response === 'object') {
+                        break;
+                    }
+                } catch (error) {
+                    lastError = error;
+                }
             }
-        }).json();
+            if (response && typeof response === 'object') {
+                break;
+            }
+        }
+
+        if (!response || typeof response !== 'object') {
+            throw new Error(`OpenList 存储接口不可用: ${lastError?.message || 'unknown error'}`);
+        }
 
         if (!response || typeof response !== 'object') {
             throw new Error('OpenList 存储接口返回空响应');
@@ -108,6 +147,32 @@ const alistService = {
         }
 
         throw new Error('OpenList 存储接口响应缺少 content');
+    },
+
+    async _requestJson(url, options) {
+        const response = await got(url, {
+            method: options.method,
+            headers: options.headers,
+            json: options.json,
+            searchParams: options.searchParams,
+            responseType: 'text',
+            throwHttpErrors: false,
+        });
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+            throw new Error(`HTTP ${response.statusCode} ${url}`);
+        }
+
+        const bodyText = String(response.body || '').trim();
+        if (!bodyText) {
+            throw new Error(`空响应: ${url}`);
+        }
+
+        try {
+            return JSON.parse(bodyText);
+        } catch (_) {
+            throw new Error(`返回非 JSON（可能被反代重写或权限不足）: ${url}`);
+        }
     },
 
     /**
