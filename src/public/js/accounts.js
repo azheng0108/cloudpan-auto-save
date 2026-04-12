@@ -46,7 +46,6 @@ async function fetchAccounts(updateSelect = false) {
                 }
             }
         });
-        // 账号列表刷新后同步更新 STRM 配置提示（使用默认选中的账号）
         if (updateSelect) {
             onTaskAccountChange(null);
         }
@@ -84,11 +83,6 @@ function openAddAccountModal() {
     document.getElementById('accountType').value = 'cloud139';
     onAccountTypeChange('cloud139');
     modal.style.display = 'flex';
-    // 账号弹窗可能在任务弹窗（z-index:1000）或文件夹选择器（1001）之上打开，
-    // 设为 1002 确保始终处于最顶层。
-    modal.style.zIndex = '1002';
-    // 根据全局配置同步显示/隐藏媒体子区块
-    _syncAccountMediaSections();
 }
 
 function closeAddAccountModal() {
@@ -120,10 +114,9 @@ async function editAccount(id) {
         return;
     }
 
-    // 打开模态框，z-index 设为 1002 确保浮于任务弹窗（1000）和文件夹选择器（1001）之上
+    // 打开模态框
     const modal = document.getElementById('addAccountModal');
     modal.style.display = 'flex';
-    modal.style.zIndex = '1002';
 
     // 修改标题
     const modalTitle = modal.querySelector('h3');
@@ -136,10 +129,10 @@ async function editAccount(id) {
     document.getElementById('username').value = chooseAccount.original_username || chooseAccount.username;
     document.getElementById('password').value = '';
     document.getElementById('cookie').value = chooseAccount.cookies || '';
-    // 媒体服务配置字段
+    document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
+    document.getElementById('rootFolderId').value = chooseAccount.rootFolderId || '';
     document.getElementById('localStrmPrefix').value = chooseAccount.localStrmPrefix || '';
     document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
-    document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
     document.getElementById('embyLibraryPath').value = chooseAccount.embyLibraryPath || '';
     document.getElementById('embyPathReplace').value = chooseAccount.embyPathReplace || '';
     // 账号不允许修改
@@ -147,8 +140,6 @@ async function editAccount(id) {
     // 修改提交按钮文本
     const submitBtn = modal.querySelector('button[type="submit"]');
     submitBtn.textContent = '修改';
-    // 根据全局配置同步显示/隐藏媒体子区块
-    _syncAccountMediaSections();
 }
 
 function onAccountTypeChange(type) {
@@ -168,6 +159,12 @@ async function createAccount() {
     const accountType = document.getElementById('accountType').value;
     const password = document.getElementById('password').value;
     const cookies  = document.getElementById('cookie').value;
+    const alistStrmPath = document.getElementById('alistStrmPath').value;
+    const rootFolderId = document.getElementById('rootFolderId').value;
+    const localStrmPrefix = document.getElementById('localStrmPrefix').value;
+    const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
+    const embyLibraryPath = document.getElementById('embyLibraryPath').value;
+    const embyPathReplace = document.getElementById('embyPathReplace').value;
     const validateCodeDom = document.getElementById('validateCode')
     let validateCode = "";
     if (validateCodeDom) {
@@ -189,16 +186,24 @@ async function createAccount() {
     if (chooseAccount?.id) {
         username = chooseAccount.original_username
     }
-    const localStrmPrefix = document.getElementById('localStrmPrefix').value;
-    const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
-    const alistStrmPath = document.getElementById('alistStrmPath').value;
-    const embyLibraryPath = document.getElementById('embyLibraryPath').value;
-    const embyPathReplace = document.getElementById('embyPathReplace').value;
     loading.show()
     const response = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: chooseAccount?.id, username, accountType, password, cookies, validateCode, localStrmPrefix, cloudStrmPrefix, alistStrmPath, embyLibraryPath, embyPathReplace })
+        body: JSON.stringify({
+            id: chooseAccount?.id,
+            username,
+            accountType,
+            password,
+            cookies,
+            validateCode,
+            alistStrmPath,
+            rootFolderId,
+            localStrmPrefix,
+            cloudStrmPrefix,
+            embyLibraryPath,
+            embyPathReplace,
+        })
     });
     const data = await response.json();
     if (data.success) {
@@ -237,25 +242,17 @@ function formatBytes(bytes) {
     
     return value.toFixed(exponent > 0 ? 2 : 0) + units[exponent];
 }
-/**
- * 任务表单账号切换时，检查所选账号是否配置了 alistStrmPath，
- * 动态显示/隐藏 STRM 刷新路径未配置的警告提示。
- * @param {HTMLSelectElement|null} selectEl - 账号下拉框元素（为 null 时自动查找）
- */
+
 function onTaskAccountChange(selectEl) {
     const el = selectEl || document.getElementById('accountId');
     const hint = document.getElementById('strmConfigHint');
     if (!hint || !el) return;
     const selectedId = parseInt(el.value, 10);
     const account = accountsList.find(a => a.id === selectedId);
-    // alistStrmPath 未填写时显示提示
     const missing = !account || !account.alistStrmPath?.trim();
     hint.style.display = missing ? '' : 'none';
 }
 
-/**
- * 打开当前任务表单所选账号的编辑弹窗，方便用户快速填写媒体路径配置。
- */
 function editCurrentTaskAccount() {
     const el = document.getElementById('accountId');
     if (!el || !el.value) {
@@ -263,18 +260,6 @@ function editCurrentTaskAccount() {
         return;
     }
     editAccount(parseInt(el.value, 10));
-}
-
-/**
- * 确保账号弹窗中的媒体配置子区块（STRM / Emby）始终可见。
- * 账号级别的路径配置与全局 OpenList / Emby 开关无关，用户应能随时填写，
- * 因此不再根据全局配置条件性隐藏，避免字段"消失"导致的困惑。
- */
-function _syncAccountMediaSections() {
-    const strmSection = document.getElementById('accountStrmSection');
-    const embySection = document.getElementById('accountEmbySection');
-    if (strmSection) strmSection.style.display = '';
-    if (embySection) embySection.style.display = '';
 }
 
 async function setDefaultAccount(id) {

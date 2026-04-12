@@ -4,9 +4,6 @@ let taskFilterParams = {
     search: ''
 };
 
-// 记录上次成功解析的 shareLink+accessCode 组合，防止 accessCode blur 二次触发覆盖已有结果
-let _lastParsedShareCombo = null;
-
 
 // 任务相关功能
 function escapeHtml(str) {
@@ -281,8 +278,6 @@ function closeCreateTaskModal() {
     document.getElementById('taskName').readOnly = true
     document.getElementById('taskForm').reset();
     updateCreateCronBuilderUI();
-    // 重置解析去重状态，下次打开时可重新解析
-    _lastParsedShareCombo = null;
 }
 
 // 初始化任务表单
@@ -1071,12 +1066,6 @@ async function parseShareLink() {
         accessCode = parseAccessCode;
         document.getElementById('accessCode').value = accessCode;
     }
-
-    // 去重：相同的 link+code 组合已经成功解析过，跳过重复请求
-    // 防止 accessCode 失焦二次触发时因网络波动清空已展示的目录列表
-    const comboKey = `${parseShareLink}|${accessCode || ''}`;
-    if (comboKey === _lastParsedShareCombo) return;
-
     const shareFoldersGroup = document.querySelector('.share-folders-group');
     const shareFoldersList = document.getElementById('shareFoldersList');
     try {
@@ -1089,29 +1078,18 @@ async function parseShareLink() {
         loading.hide()
         const data = await response.json();
         if (data.success) {
-            // 记录本次成功组合，后续相同输入直接跳过
-            _lastParsedShareCombo = comboKey;
             shareFoldersGroup.style.display = 'block';
             const rootFolderMeta = data.data.find(f => (f.level || 0) === 0);
             const subFolders = data.data.filter(f => (f.level || 0) > 0);
             const hasRootFiles = rootFolderMeta?.hasRootFiles || false;
 
-            // SVG 图标（与 folderSelector.js 风格统一，不依赖 Lucide）
-            // display:inline-block + vertical-align:middle 确保在任何容器中都能单行对齐
-            const _svgFolder = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0;color:#fa8c16;min-width:15px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
-            const _svgFile   = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0;color:#9ca3af;min-width:15px"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
-            // label 内联样式确保 flex 布局不被外部 CSS 覆盖
-            const _labelStyle = `display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.6;white-space:nowrap;overflow:hidden;cursor:pointer;`;
-
             // 根目录条目（id=-1）：代表「同步整个分享」，选中后其余 checkbox 自动禁用
             const rootName = rootFolderMeta ? rootFolderMeta.name : '';
             const rootItemHtml = rootFolderMeta
                 ? `<div class="folder-item folder-item-root">
-                    <label style="${_labelStyle}">
-                        <input type="checkbox" name="chooseShareFolder" value="-1" checked style="flex-shrink:0;width:16px;height:16px;margin:0;">
-                        ${_svgFolder}
-                        <span style="overflow:hidden;text-overflow:ellipsis;">${rootName}（全部内容）</span>
-                        <span class="root-hint" style="flex-shrink:0;color:var(--text-secondary);font-size:11px;">（递归同步所有内容）</span>
+                    <label>
+                        <input type="checkbox" name="chooseShareFolder" value="-1" checked>
+                        🗂️ ${rootName}（全部内容）
                     </label>
                 </div>`
                 : '';
@@ -1119,31 +1097,26 @@ async function parseShareLink() {
             // 散文件条目：始终显示，用实际文件夹名让描述更直观；
             // 若实际无直属文件，后端任务执行后会返回「0 个新文件」并正常结束。
             const rootFilesItemHtml = `<div class="folder-item" style="border-top:1px dashed var(--border-color);">
-                    <label style="${_labelStyle}">
-                        <input type="checkbox" name="chooseShareFolder" value="root-files" style="flex-shrink:0;width:16px;height:16px;margin:0;">
-                        ${_svgFile}
-                        <span style="overflow:hidden;text-overflow:ellipsis;">${rootName} 里的散文件</span>
-                        <span style="flex-shrink:0;color:var(--text-secondary);font-size:11px;">仅文件，不含子文件夹</span>
+                    <label>
+                        <input type="checkbox" name="chooseShareFolder" value="root-files">
+                        📄 ${rootName} 里的散文件
+                        <small style="color:var(--text-secondary);margin-left:4px;font-size:11px;">仅文件，不含子文件夹</small>
                     </label>
                 </div>`;
 
             // 子目录条目：初始禁用（因根目录默认选中），取消根目录后恢复可选
             const folderItemsHtml = subFolders.length > 0
                 ? subFolders.map(folder => `<div class="folder-item" style="padding-left:20px;opacity:0.45;">
-                    <label style="${_labelStyle}">
-                        <input type="checkbox" name="chooseShareFolder" value="${folder.id}" checked disabled style="flex-shrink:0;width:16px;height:16px;margin:0;">
-                        ${_svgFolder}
-                        <span style="overflow:hidden;text-overflow:ellipsis;">${folder.name}</span>
+                    <label>
+                        <input type="checkbox" name="chooseShareFolder" value="${folder.id}" checked disabled>
+                        📁 ${folder.name}
                     </label>
                 </div>`).join('')
                 : '';
 
-            // 底部提示：用通俗语言说明子目录同步行为（默认隐藏，勾选子目录后显示）
-            const hintHtml = `<div id="subDirRecursiveHint" style="display:none;padding:6px 12px;color:var(--primary-color);font-size:12px;border-top:1px solid var(--border-color);">
-                <span style="display:flex;align-items:center;gap:6px;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    选中的文件夹里所有文件（包括文件夹内套的文件夹）都会被同步
-                </span>
+            // 底部提示：用通俗语言说明子目录同步行为
+            const hintHtml = `<div id="subDirRecursiveHint" style="display:none; padding:6px 12px; color:var(--primary-color); font-size:12px; border-top:1px solid var(--border-color);">
+                💡 选中的文件夹里所有文件（包括文件夹内套的文件夹）都会被同步
             </div>`;
 
             shareFoldersList.innerHTML = rootItemHtml + rootFilesItemHtml + folderItemsHtml + hintHtml;
@@ -1163,23 +1136,15 @@ async function parseShareLink() {
                 taskNameEl.readOnly = false;
             }
         } else {
-            // 解析失败：重置去重状态（允许用户修改链接后再次尝试）
-            _lastParsedShareCombo = null;
-            // 若已有展示内容则保留（防止网络抖动一次性清空成功结果）
-            if (!shareFoldersList.innerHTML.trim()) {
-                shareFoldersGroup.style.display = 'none';
-            }
+            shareFoldersGroup.style.display = 'none';
+            shareFoldersList.innerHTML = '';
             if (data.error) {
                 shareParseError.textContent = `解析失败: ${data.error}`;
             }
         }
     } catch (error) {
-        loading.hide()
-        // 异常：重置去重状态，但不破坏已有目录展示
-        _lastParsedShareCombo = null;
-        if (!shareFoldersList.innerHTML.trim()) {
-            shareFoldersGroup.style.display = 'none';
-        }
+        shareFoldersGroup.style.display = 'none';
+        shareFoldersList.innerHTML = '';
         shareParseError.textContent = `操作失败: ${error.message}`;
     }
 }

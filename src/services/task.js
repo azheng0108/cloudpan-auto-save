@@ -575,6 +575,7 @@ class TaskService {
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     alistStrmPath: true,
+                    rootFolderId: true,
                     embyLibraryPath: true,
                     embyPathReplace: true
                 }
@@ -600,6 +601,7 @@ class TaskService {
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     alistStrmPath: true,
+                    rootFolderId: true,
                     embyLibraryPath: true,
                     embyPathReplace: true
                 }
@@ -1153,6 +1155,7 @@ class TaskService {
                 realFolderId: realRootFolderId,
                 realFolderName: rootRealFolderName,
                 realRootFolderId: realRootFolderId,
+                parentFileId: effectiveTargetFolderId,
                 resourceName: taskName,
                 status: 'pending',
                 totalEpisodes: taskDto.totalEpisodes,
@@ -1202,6 +1205,7 @@ class TaskService {
                 realFolderId: realRootFolderId,
                 realFolderName: rootRealFolderName,
                 realRootFolderId: realRootFolderId,
+                parentFileId: effectiveTargetFolderId,
                 resourceName: taskName,
                 status: 'pending',
                 totalEpisodes: taskDto.totalEpisodes,
@@ -1256,6 +1260,7 @@ class TaskService {
                 realFolderId: realFolderId,
                 realFolderName: this._joinFolderPath(rootRealFolderName, folderName),
                 realRootFolderId: realRootFolderId,
+                parentFileId: effectiveTargetFolderId,
                 resourceName: taskName,
                 status: 'pending',
                 totalEpisodes: taskDto.totalEpisodes,

@@ -94,7 +94,14 @@ const registerApiRoutes = (app, deps) => {
 
     app.post('/api/accounts', async (req, res) => {
         try {
-            const account = accountRepo.create(req.body);
+            const payload = { ...req.body };
+            ['alistStrmPath', 'rootFolderId', 'localStrmPrefix', 'cloudStrmPrefix', 'embyLibraryPath', 'embyPathReplace']
+                .forEach((field) => {
+                    if (typeof payload[field] === 'string') {
+                        payload[field] = payload[field].trim();
+                    }
+                });
+            const account = accountRepo.create(payload);
             if (account.accountType !== 'cloud139') {
                 return res.json({ success: false, error: 'R2阶段已停用天翼云盘（189）主流程，仅支持移动云盘（139）账号' });
             }

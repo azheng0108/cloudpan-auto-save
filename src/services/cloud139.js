@@ -953,6 +953,7 @@ class Cloud139Service {
         return {
             fileId: data.fileId ?? data.id,
             name: data.fileName ?? data.name ?? folderName,
+            parentFileId: data.parentFileId ?? catalogID,
         };
     }
 
@@ -980,6 +981,7 @@ class Cloud139Service {
             items: items.map(f => ({
                 fileId: f.fileId,
                 name: f.name,
+                parentFileId: f.parentFileId,
                 // 仅凭 fileType/category 判断类型，不依赖 fileExtension
                 // （压缩包等非媒体文件的 fileExtension 字段在 139 API 中可能为空）
                 type: f.fileType === 'folder' || f.category === 'folder' ? 'folder' : 'file',

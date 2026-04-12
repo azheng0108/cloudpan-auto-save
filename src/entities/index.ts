@@ -46,6 +46,9 @@ export class Account {
      */
     @Column('text', { nullable: true, default: '' })
     alistStrmPath!: string;
+    /** OpenList 实际挂载根目录 ID（用于路径偏移裁剪） */
+    @Column('text', { nullable: true, default: '' })
+    rootFolderId!: string;
     @Column('text', { nullable: true, default: '' })
     embyPathReplace!:string;
     /** Emby 媒体库根路径（账号级），用于精准拼接 Emby 搜索路径，避免全库扫描
@@ -117,6 +120,10 @@ export class Task {
 
     @Column('text', { nullable: true })
     realFolderId!: string;
+
+    /** 任务物理目录的参考父目录 ID（用于 OpenList 挂载偏移判断） */
+    @Column('text', { nullable: true })
+    parentFileId!: string;
 
     @Column('text', { nullable: true })
     realFolderName!: string;
