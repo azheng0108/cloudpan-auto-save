@@ -31,9 +31,7 @@
             }
         }
     </script>
-    <!-- Lucide 图标库：由 scripts/copy-vendor.js 在构建时从 node_modules 复制到 public/vendor/，
-         本地托管避免国内网络访问 unpkg CDN 失败 -->
-    <script src="/vendor/lucide/lucide.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.3s, color 0.3s; }
@@ -660,7 +658,6 @@
 
             <!-- ================= Tab: 媒体 ================= -->
             <div id="mediaTab" class="tab-content flex-1">
-                <!-- CloudSaver 全网搜索 -->
                 <div class="max-w-4xl mx-auto mt-4 md:mt-8">
                     <div class="flex flex-col sm:flex-row gap-3 relative shadow-sm rounded-md">
                         <div class="relative flex-1 w-full">
@@ -673,81 +670,31 @@
                 <div id="searchResults" class="cloudsaver-search-results is-hidden mt-6">
                     <div class="cloudsaver-results-list"></div>
                 </div>
-
-                <!-- 媒体服务配置（CloudSaver / Alist / Emby） -->
-                <div class="max-w-6xl mx-auto mt-6 space-y-4">
-
-                    <!-- CloudSaver 基础服务 -->
-                    <div class="settings-card mb-0">
-                        <h4><i data-lucide="server" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> CloudSaver 基础服务</h4>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div class="sm:col-span-3">
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">服务地址</label>
-                                <input type="text" id="cloudSaverUrl" placeholder="http://localhost:8008" class="input-base">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">通信账号</label>
-                                <input type="text" id="cloudSaverUsername" placeholder="用户名" class="input-base">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">通信密码</label>
-                                <input type="password" id="cloudSaverPassword" placeholder="密码" class="input-base">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Alist / OpenList 配置 -->
-                    <div class="settings-card mb-0">
-                        <h4><i data-lucide="database" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> Alist / OpenList</h4>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div class="sm:col-span-3">
-                                <label class="text-sm dark:text-gray-300">
-                                    <input type="checkbox" id="alistEnable">
-                                    <span class="ml-2">启用 Alist / OpenList（追更后触发 STRM 文件生成）</span>
-                                </label>
-                            </div>
-                            <div class="sm:col-span-2">
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">服务地址</label>
-                                <input type="text" id="alistBaseUrl" placeholder="http://localhost:5244" class="input-base">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">API Key（令牌）</label>
-                                <input type="text" id="alistApiKey" placeholder="后台 → 个人资料 → 令牌" class="input-base">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Emby 通知配置 -->
-                    <div class="settings-card mb-0">
-                        <h4><i data-lucide="tv-2" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> Emby 通知</h4>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div class="sm:col-span-3">
-                                <label class="text-sm dark:text-gray-300">
-                                    <input type="checkbox" id="embyEnable">
-                                    <span class="ml-2">转存后通知 Emby 刷新媒体库（需先启用 Alist / OpenList）</span>
-                                </label>
-                            </div>
-                            <div class="sm:col-span-2">
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">Emby 服务地址</label>
-                                <input type="text" id="embyServerUrl" placeholder="http://localhost:8096" class="input-base">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">API Key</label>
-                                <input type="text" id="embyApiKey" placeholder="Emby 控制台生成" class="input-base">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex justify-end">
-                        <button type="button" onclick="saveMediaSettings()" class="btn-primary">保存媒体设置</button>
-                    </div>
-                </div>
             </div>
 
             <!-- ================= Tab: 设置 ================= -->
             <form id="settingsForm" class="contents">
                 <div id="settingsTab" class="tab-content flex-1">
                     <div class="max-w-6xl mx-auto space-y-6">
+                        
+                        <!-- CloudSaver基础服务 -->
+                        <div class="settings-card mb-0">
+                            <h4><i data-lucide="server" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> CloudSaver 基础服务</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="sm:col-span-3">
+                                    <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">服务地址</label>
+                                    <input type="text" id="cloudSaverUrl" placeholder="http://localhost:8008" class="input-base">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">通信账号</label>
+                                    <input type="text" id="cloudSaverUsername" placeholder="用户名" class="input-base">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">通信密码</label>
+                                    <input type="password" id="cloudSaverPassword" placeholder="密码" class="input-base">
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- 任务策略配置 -->
                         <div class="settings-card mb-0">
@@ -1067,58 +1014,6 @@
                             <input type="text" id="cookie" class="input-base font-mono text-xs" placeholder="抓包获取到的完整 Cookie 字符串">
                         </div>
                         <small class="form-text" id="loginHint">移动云盘（139）只支持 Cookie 登录，请填写 Cookie</small>
-
-                        <!-- STRM / Emby 配置（每个账号独立配置） -->
-                        <div class="border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
-
-                            <!-- STRM 刷新子区块 -->
-                            <div id="accountStrmSection">
-                                <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">STRM 刷新配置（可选）</p>
-                                <div class="form-group mb-0">
-                                    <label for="alistStrmPath">OpenList 刷新路径</label>
-                                    <input type="text" id="alistStrmPath" class="input-base font-mono text-xs" placeholder="如: /qq_strm/夸克网盘 或 /strm_139">
-                                    <small class="form-text">OpenList 中该账号 STRM 所在根路径（不含主机地址），追更后用于触发 OpenList 缓存刷新</small>
-                                </div>
-                                <!-- 本地 STRM 生成（折叠，极少数场景） -->
-                                <details class="mt-3">
-                                    <summary class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">本地 STRM 生成（高级，通常无需配置）</summary>
-                                    <div class="form-group mb-0 mt-2">
-                                        <label for="localStrmPrefix">本地 STRM 根目录</label>
-                                        <input type="text" id="localStrmPrefix" class="input-base font-mono text-xs" placeholder="如: /host/strm/网盘名称">
-                                        <small class="form-text">宿主机上存放 .strm 文件的根目录（139-auto-save 自行生成 STRM 时才需要）</small>
-                                    </div>
-                                    <div class="form-group mb-0 mt-2">
-                                        <label for="cloudStrmPrefix">STRM URL 前缀</label>
-                                        <input type="text" id="cloudStrmPrefix" class="input-base font-mono text-xs" placeholder="如: http://openlist:5244/d/网盘名称">
-                                        <small class="form-text">写入 .strm 文件内的播放地址前缀（OpenList 自动生成 STRM 时无需填写）</small>
-                                    </div>
-                                </details>
-                            </div>
-
-                            <!-- Emby 通知子区块 -->
-                            <div id="accountEmbySection" class="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
-                                <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Emby 通知配置（可选）</p>
-                                <div class="form-group mb-0">
-                                    <label for="embyLibraryPath">Emby 库根路径</label>
-                                    <input type="text" id="embyLibraryPath" class="input-base font-mono text-xs" placeholder="如: /media/网盘名称 或 /tv_strm">
-                                    <small class="form-text">
-                                        该账号内容在 Emby 容器内的挂载根路径，填写后可精准定位媒体项、避免全库扫描。<br>
-                                        · OpenList STRM 用户：填 Emby 内 OpenList 挂载点，如 /media/网盘名称<br>
-                                        · 本地 STRM 用户：填 Emby 内 .strm 文件挂载点，如 /tv_strm
-                                    </small>
-                                </div>
-                                <!-- 路径替换规则（折叠，边缘场景保留） -->
-                                <details class="mt-3">
-                                    <summary class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">路径替换规则（高级，配置了上方库根路径后一般无需填写）</summary>
-                                    <div class="form-group mb-0 mt-2">
-                                        <label for="embyPathReplace">Emby 路径替换</label>
-                                        <input type="text" id="embyPathReplace" class="input-base font-mono text-xs" placeholder="如: 临时存放:/media/临时存放">
-                                        <small class="form-text">格式：云盘路径:Emby本地路径，多条用分号分隔</small>
-                                    </div>
-                                </details>
-                            </div>
-
-                        </div>
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn-default" onclick="closeAddAccountModal()">取消</button>
@@ -1140,34 +1035,28 @@
                 <form id="taskForm" class="flex flex-col min-h-0 flex-1">
                     <div class="form-body space-y-5">
                         
-                        <div class="form-group mb-0">
-                            <label for="accountId">执行账号</label>
-                            <select id="accountId" class="input-base" required onchange="onTaskAccountChange(this)"></select>
-                            <!-- 所选账号未配置 OpenList 刷新路径时的提示 -->
-                            <small id="strmConfigHint" class="form-text" style="display:none; color: #d97706;">
-                                ⚠ 该账号尚未配置 OpenList 刷新路径（alistStrmPath），追更后不会触发 STRM 刷新。如需开启，请在
-                                <a href="javascript:;" onclick="editCurrentTaskAccount()" style="color: inherit; text-decoration: underline;">账号设置</a>
-                                中填写。
-                            </small>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                            <div class="form-group mb-0">
+                                <label for="accountId">执行账号</label>
+                                <select id="accountId" class="input-base" required></select>
+                            </div>
+                            <div class="form-group mb-0">
+                                <label for="taskName">任务名称</label>
+                                <input type="text" id="taskName" class="input-base" required readonly>
+                                <small class="form-text">默认使用分享目录第一个文件夹名称</small>
+                            </div>
                         </div>
 
                         <div class="form-group mb-0">
                             <label>分享链接与提取码</label>
                             <div class="flex flex-col sm:flex-row gap-3">
-                                <input type="text" id="shareLink" required class="input-base flex-[2]" data-share-input placeholder="可自动解析带访问码的链接">
-                                <input type="text" id="accessCode" class="input-base flex-1" data-share-input placeholder="访问码 (选填)">
+                                <input type="text" id="shareLink" required class="input-base flex-[2]" placeholder="可自动解析带访问码的链接">
+                                <input type="text" id="accessCode" class="input-base flex-1" placeholder="访问码 (选填)">
                             </div>
                             <div id="shareParseError" class="text-red-500 text-sm mt-1"></div>
                         </div>
 
-                        <!-- 任务名称移至分享链接下方，解析后自动填入更符合操作流程 -->
-                        <div class="form-group mb-0">
-                            <label for="taskName">任务名称</label>
-                            <input type="text" id="taskName" class="input-base" required readonly>
-                            <small class="form-text">默认使用分享目录第一个文件夹名称</small>
-                        </div>
-
-                        <div class="form-group mb-0 share-folders-group" style="display:none">
+                        <div class="form-group mb-0 is-hidden share-folders-group">
                             <label>分享目录</label>
                             <div class="share-folders-list">
                                 <div id="shareFoldersList"></div>
@@ -1637,7 +1526,7 @@
                     <h3>系统日志</h3>
                     <button class="close-btn">&times;</button>
                 </div>
-                <div id="logsContainer"></div>
+                <div id="logsContainerModal"></div>
             </div>
         </div>
     </div>

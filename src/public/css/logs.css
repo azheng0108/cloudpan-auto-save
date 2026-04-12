@@ -1,5 +1,6 @@
 /* 日志容器样式 */
-#logsContainer {
+#logsContainer,
+#logsContainerModal {
     overflow-y: auto;
     overflow-x: hidden;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -12,45 +13,54 @@
 }
 
 @media (min-width: 640px) {
-    #logsContainer {
+    #logsContainer,
+    #logsContainerModal {
         font-size: 13px;
     }
 }
 
 @media (min-width: 1024px) {
-    #logsContainer {
+    #logsContainer,
+    #logsContainerModal {
         font-size: 13px;
     }
 }
 
-#logsContainer::-webkit-scrollbar {
+#logsContainer::-webkit-scrollbar,
+#logsContainerModal::-webkit-scrollbar {
     width: 8px;
 }
 
-#logsContainer::-webkit-scrollbar-track {
+#logsContainer::-webkit-scrollbar-track,
+#logsContainerModal::-webkit-scrollbar-track {
     background: rgba(0, 0, 0, 0.05);
     border-radius: 4px;
 }
 
-#logsContainer::-webkit-scrollbar-thumb {
+#logsContainer::-webkit-scrollbar-thumb,
+#logsContainerModal::-webkit-scrollbar-thumb {
     background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
 }
 
-#logsContainer::-webkit-scrollbar-thumb:hover {
+#logsContainer::-webkit-scrollbar-thumb:hover,
+#logsContainerModal::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 0, 0, 0.3);
 }
 
 /* 暗色模式滚动条 */
-.dark #logsContainer::-webkit-scrollbar-track {
+.dark #logsContainer::-webkit-scrollbar-track,
+.dark #logsContainerModal::-webkit-scrollbar-track {
     background: rgba(255, 255, 255, 0.05);
 }
 
-.dark #logsContainer::-webkit-scrollbar-thumb {
+.dark #logsContainer::-webkit-scrollbar-thumb,
+.dark #logsContainerModal::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
 }
 
-.dark #logsContainer::-webkit-scrollbar-thumb:hover {
+.dark #logsContainer::-webkit-scrollbar-thumb:hover,
+.dark #logsContainerModal::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
 }
 
@@ -134,20 +144,23 @@
     justify-content: center;
 }
 
-.logs-modal #logsContainer {
+.logs-modal #logsContainer,
+.logs-modal #logsContainerModal {
     flex: 1;
     padding: 12px;
     background: var(--bg-color);
 }
 
 @media (min-width: 640px) {
-    .logs-modal #logsContainer {
+    .logs-modal #logsContainer,
+    .logs-modal #logsContainerModal {
         padding: 16px;
     }
 }
 
 @media (min-width: 1024px) {
-    .logs-modal #logsContainer {
+    .logs-modal #logsContainer,
+    .logs-modal #logsContainerModal {
         padding: 20px;
     }
 }

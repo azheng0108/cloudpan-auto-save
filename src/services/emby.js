@@ -48,16 +48,17 @@ class EmbyService {
         logTaskEvent(`Emby路径转换 | realFolderName=${rawPath} | ${pathMode} | 转换结果=${convertedPath}`);
         const item = await this.searchItemsByPathRecursive(convertedPath);
         logTaskEvent(`Emby搜索结果: ${JSON.stringify(item)}`);
+        let refreshMode = '';
         if (item) {
             await this.refreshItemById(item.Id);
-            this.messageUtil.sendMessage('🎉通知Emby入库成功, 资源名:' + task.resourceName);
-            return item.Id
+            refreshMode = '路径命中';
         }else{
             logTaskEvent(`Emby未搜索到电影/剧集: ${taskName}, 执行全库扫描`);
             await this.refreshAllLibraries();
-            this.messageUtil.sendMessage('🎉通知Emby入库成功, 资源名:' + task.resourceName);
-            return null;
+            refreshMode = '全库刷新';
         }
+        this.messageUtil.sendMessage(`🎉通知Emby入库成功(${refreshMode}), 资源名:${task.resourceName}`);
+        return item ? item.Id : null;
     }
 
     // 1. /emby/Items 根据名称搜索
@@ -187,10 +188,17 @@ class EmbyService {
      *   适用于路径结构差异复杂的边缘场景
      */
     _replacePath(path) {
+        path = String(path || '').replace(/\\/g, '/').trim();
         if (this.embyLibraryPath) {
-            // 精准模式：去除 realFolderName 的前导斜杠后拼接库根路径
-            const rel = path.replace(/^\/+/, '');
-            return this.embyLibraryPath.replace(/\/+$/, '') + '/' + rel;
+            // 精准模式：若 realFolderName 已包含 embyLibraryPath 前缀（忽略前导斜杠），则不重复拼接
+            const libraryPath = String(this.embyLibraryPath).replace(/\\/g, '/').trim();
+            const libraryTrimmed = libraryPath.replace(/^\/+|\/+$/g, '');
+            const rel = path.replace(/^\/+/, '').replace(/\/+$/g, '');
+            if (libraryTrimmed && (rel === libraryTrimmed || rel.startsWith(`${libraryTrimmed}/`))) {
+                return ('/' + rel).replace(/\/+$/g, '');
+            }
+            const prefixed = `${libraryPath.replace(/\/+$/, '')}/${rel}`.replace(/\/+/g, '/');
+            return prefixed.replace(/\/+$/g, '');
         }
         // 兼容旧模式：embyPathReplace 规则替换
         if (!path.startsWith('/')) {
