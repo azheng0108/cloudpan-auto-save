@@ -185,11 +185,23 @@ async function processCloud139Task(taskService, task, account) {
 
         const uniquePCaIDs = [...new Set(allFiles.map((f) => String(f.pCaID)))];
         const physicalFolderMap = new Map();
-        await Promise.all(uniquePCaIDs.map(async (caID) => {
-            const segments = taskService._getCatalogPathSegments(caID, rootPCaID, catalogMap);
-            const physicalId = await taskService._ensureCloud139FolderPath(cloud139, task.realFolderId, segments);
-            physicalFolderMap.set(caID, physicalId);
-        }));
+        const pathIdCache = new Map();
+        const pathsWithSegments = uniquePCaIDs.map((caID) => ({
+            caID,
+            segments: taskService._getCatalogPathSegments(caID, rootPCaID, catalogMap),
+        })).sort((a, b) => a.segments.length - b.segments.length);
+
+        for (const item of pathsWithSegments) {
+            const normalizedSegments = item.segments.map(seg => String(seg || '').trim()).filter(Boolean);
+            const pathKey = `${task.realFolderId}/${normalizedSegments.join('/')}`;
+
+            if (!pathIdCache.has(pathKey)) {
+                const physicalId = await taskService._ensureCloud139FolderPath(cloud139, task.realFolderId, normalizedSegments);
+                pathIdCache.set(pathKey, physicalId);
+            }
+
+            physicalFolderMap.set(item.caID, pathIdCache.get(pathKey));
+        }
 
         const diskFilesMap = new Map();
         await Promise.all([...new Set(physicalFolderMap.values())].map(async (physicalId) => {

@@ -1082,7 +1082,7 @@
                                 <div class="form-group mb-0 mt-2">
                                     <label for="rootFolderId">OpenList 挂载根目录 ID</label>
                                     <input type="text" id="rootFolderId" class="input-base font-mono text-xs" placeholder="如: 00019700101000000001">
-                                    <small class="form-text">默认全自动识别（需 OpenList Token 有存储管理权限），通常无需填写。该值仅作兼容保留；用于路径偏移裁剪：当任务 parentFileId 与挂载根 ID 相同，会自动剔除 realFolderName 的首层目录</small>
+                                    <small class="form-text">建议手动填写并与 OpenList 存储中的“根文件夹 ID”保持一致。系统会通过 OpenList 配置接口做一致性校验；仅在校验通过且任务 parentFileId 命中时才执行首层目录裁剪（例如去掉 media/）</small>
                                 </div>
                                 <!-- 本地 STRM 生成（折叠，极少数场景） -->
                                 <details class="mt-3">

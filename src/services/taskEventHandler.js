@@ -13,56 +13,92 @@ class TaskEventHandler {
     constructor(messageUtil) {
         this.messageUtil = messageUtil;
         this._embyNotifyAt = new Map();
-        this._openListRootIdCache = new Map();
-    }
-
-    async _resolveOpenListRootId(account, alistStrmPath) {
-        const cacheKey = `${account?.id || 'unknown'}:${String(alistStrmPath || '').trim()}`;
-        if (this._openListRootIdCache.has(cacheKey)) {
-            return this._openListRootIdCache.get(cacheKey);
-        }
-
-        const autoResolved = await alistService.resolveRootFolderIdByPath(alistStrmPath);
-        if (autoResolved) {
-            logTaskEvent(`自动识别 OpenList 挂载根目录 ID 成功: ${autoResolved}`);
-        }
-        this._openListRootIdCache.set(cacheKey, autoResolved || '');
-        return autoResolved || '';
+        this._alistFirstLevelCache = new Map();
     }
 
     async _buildNormalizedTaskSubfolder(task, account, normalizedBasePath) {
-        const cloudParentId = String(task.parentFileId || '').trim();
         let taskSubfolder = String(task.realFolderName || '')
             .replace(/\\/g, '/')
             .replace(/\/+/g, '/')
             .replace(/^\/+|\/+$/g, '');
 
-        let openListRootId = '';
-        if (normalizedBasePath) {
-            openListRootId = await this._resolveOpenListRootId(account, normalizedBasePath);
-            if (!openListRootId) {
-                logTaskEvent('自动识别 rootFolderId 失败，将按默认挂载策略保留完整路径');
+        const rawSegments = taskSubfolder.split('/').filter(Boolean);
+        if (rawSegments.length === 0) {
+            return {
+                taskSubfolder,
+                matchedAnchor: '',
+                rootFolders: [],
+            };
+        }
+
+        const rootFolders = await this._getAListRootFolders(normalizedBasePath);
+        if (rootFolders.length === 0) {
+            logTaskEvent('未获取到 OpenList 挂载根首层目录，保持原始相对路径');
+            return {
+                taskSubfolder,
+                matchedAnchor: '',
+                rootFolders,
+            };
+        }
+
+        const exactSet = new Set(rootFolders);
+        const lowerMap = new Map(rootFolders.map(name => [name.toLowerCase(), name]));
+        let matchedIndex = -1;
+        let matchedAnchor = '';
+        for (let i = 0; i < rawSegments.length; i++) {
+            const seg = rawSegments[i];
+            if (exactSet.has(seg)) {
+                matchedIndex = i;
+                matchedAnchor = seg;
+                break;
+            }
+            const ciMatch = lowerMap.get(seg.toLowerCase());
+            if (ciMatch) {
+                matchedIndex = i;
+                matchedAnchor = ciMatch;
+                break;
             }
         }
 
-        if (openListRootId && !cloudParentId) {
-            logTaskEvent(`自动识别到 rootFolderId 但任务缺少 parentFileId，跳过偏移裁剪: taskId=${task.id}`);
-        }
-
-        if (openListRootId && cloudParentId && openListRootId === cloudParentId) {
-            const pathParts = taskSubfolder.split('/').filter(Boolean);
-            if (pathParts.length > 1) {
-                logTaskEvent(`检测到挂载偏移，剔除首层目录: ${pathParts[0]}`);
-                pathParts.shift();
-                taskSubfolder = pathParts.join('/');
-            }
+        if (matchedIndex > 0) {
+            const dropped = rawSegments.slice(0, matchedIndex).join('/');
+            taskSubfolder = rawSegments.slice(matchedIndex).join('/');
+            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}，剔除前缀: ${dropped}，结果: ${taskSubfolder}`);
+        } else if (matchedIndex === 0) {
+            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}，无需剔除前缀`);
+        } else {
+            logTaskEvent(`OpenList 路径锚点未命中，保持原路径: ${taskSubfolder}`);
+            matchedAnchor = '';
         }
 
         return {
             taskSubfolder,
-            openListRootId,
-            cloudParentId,
+            matchedAnchor,
+            rootFolders,
         };
+    }
+
+    async _getAListRootFolders(normalizedBasePath) {
+        const cacheKey = normalizedBasePath || '/';
+        const now = Date.now();
+        const ttlMs = 60 * 1000;
+        const cached = this._alistFirstLevelCache.get(cacheKey);
+        if (cached && now - cached.timestamp < ttlMs) {
+            return cached.folders;
+        }
+
+        try {
+            const folders = await alistService.getFirstLevelFolders(cacheKey);
+            this._alistFirstLevelCache.set(cacheKey, { folders, timestamp: now });
+            if (folders.length > 0) {
+                logTaskEvent(`OpenList 挂载根首层目录: ${folders.join(', ')}`);
+            }
+            return folders;
+        } catch (error) {
+            logTaskEvent(`读取 OpenList 挂载根首层目录失败: ${error.message}`);
+            this._alistFirstLevelCache.set(cacheKey, { folders: [], timestamp: now });
+            return [];
+        }
     }
 
     async handle(taskCompleteEventDto) {
@@ -70,6 +106,7 @@ class TaskEventHandler {
             return;
         }
         const task = taskCompleteEventDto.task;
+        let refreshContext = null;
         logTaskEvent(` ${task.resourceName} 触发事件:`);
         try {
             await this._handleAutoRename(taskCompleteEventDto);
@@ -79,7 +116,7 @@ class TaskEventHandler {
         }
         try {
             // 先递归触发 OpenList STRM 驱动写文件，完成后再通知 Emby
-            await this._handleOpenListStrmRefresh(taskCompleteEventDto);
+            refreshContext = await this._handleOpenListStrmRefresh(taskCompleteEventDto);
         } catch (error) {
             logger.error('OpenList STRM 刷新失败', { error: error.message, stack: error.stack });
             logTaskEvent(`OpenList STRM 刷新失败: ${error.message}`);
@@ -88,7 +125,7 @@ class TaskEventHandler {
             return;
         }
         try {
-            await this._handleEmbyNotify(taskCompleteEventDto);
+            await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
         } catch (error) {
             logger.error('Emby 通知失败', { error: error.message, stack: error.stack });
             logTaskEvent(`Emby 通知失败: ${error.message}`);
@@ -151,17 +188,20 @@ class TaskEventHandler {
 
         logTaskEvent(`触发 OpenList STRM 刷新 | alistStrmPath=${alistStrmPath} | realFolderName=${task.realFolderName} | refreshPath=${refreshPath}`);
         const refreshResult = await alistService.recursiveRefresh(refreshPath);
-        if (refreshResult.visitedCount === 0) {
-            throw new Error(`OpenList 刷新未触达任何目录: ${refreshPath}`);
+        if (refreshResult.visitedCount > 0 && refreshResult.failedCount === 0) {
+            logTaskEvent(`OpenList STRM 刷新完成: ${refreshPath} | 目录数=${refreshResult.visitedCount} | 失败数=0`);
+            return {
+                taskSubfolder,
+                refreshPath,
+                refreshMode: 'strict-manual-root-id',
+            };
         }
-        if (refreshResult.failedCount > 0) {
-            const preview = refreshResult.failedPaths
-                .slice(0, 3)
-                .map(item => `${item.path}(${item.error})`)
-                .join('; ');
-            throw new Error(`OpenList 刷新存在失败目录: ${refreshResult.failedCount}/${refreshResult.visitedCount}; ${preview}`);
-        }
-        logTaskEvent(`OpenList STRM 刷新完成: ${refreshPath} | 目录数=${refreshResult.visitedCount} | 失败数=0`);
+
+        const preview = refreshResult.failedPaths
+            .slice(0, 3)
+            .map(item => `${item.path}(${item.error})`)
+            .join('; ');
+        throw new Error(`OpenList 刷新失败: ${refreshPath} | visited=${refreshResult.visitedCount}, failed=${refreshResult.failedCount}${preview ? ` | ${preview}` : ''}`);
     }
 
     /**
@@ -169,7 +209,7 @@ class TaskEventHandler {
      * 在 STRM 文件全部生成后调用，确保 Emby 能扫描到新文件。
      * @param {TaskCompleteEventDto} dto
      */
-    async _handleEmbyNotify(dto) {
+    async _handleEmbyNotify(dto, refreshContext = null) {
         // EmbyService 构造时读取 emby.enable，未启用时内部会短路返回
         const embyService = new EmbyService(null);
         if (!embyService.enable) {
@@ -183,7 +223,12 @@ class TaskEventHandler {
             .replace(/\\/g, '/')
             .replace(/\/+/g, '/')
             .replace(/\/+$/g, '');
-        const { taskSubfolder } = await this._buildNormalizedTaskSubfolder(task, account, normalizedBasePath);
+        const normalizedFromRefresh = String(refreshContext?.taskSubfolder || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/^\/+|\/+$/g, '');
+        const { taskSubfolder: autoSubfolder } = await this._buildNormalizedTaskSubfolder(task, account, normalizedBasePath);
+        const taskSubfolder = normalizedFromRefresh || autoSubfolder;
 
         const debounceMs = Number(ConfigService.getConfigValue('emby.notifyDebounceMs')) || 2000;
         const debounceKey = `${task.accountId || 'unknown'}:${taskSubfolder}`;
