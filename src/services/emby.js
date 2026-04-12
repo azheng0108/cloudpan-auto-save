@@ -32,7 +32,7 @@ class EmbyService {
     }
 
 
-    async notify(task) {
+    async notify(task, options = {}) {
         if (!this.enable){
             logTaskEvent(`Emby通知未启用, 请启用后执行`);
             return;
@@ -52,11 +52,23 @@ class EmbyService {
         if (item) {
             await this.refreshItemById(item.Id);
             refreshMode = '路径命中';
-        }else{
-            logTaskEvent(`Emby未搜索到电影/剧集: ${taskName}, 执行全库扫描`);
-            await this.refreshAllLibraries();
-            refreshMode = '全库刷新';
+        } else {
+            const targetDirPath = this._normalizeDirPath(options.directoryPath || convertedPath);
+            if (targetDirPath) {
+                logTaskEvent(`Emby未命中媒体项，尝试目录事件局部刷新: ${targetDirPath}`);
+                const updated = await this.refreshMediaByPaths([targetDirPath]);
+                if (updated) {
+                    refreshMode = '目录路径事件';
+                }
+            }
+
+            if (!refreshMode) {
+                logTaskEvent(`目录事件局部刷新失败，降级执行全库扫描: ${taskName}`);
+                await this.refreshAllLibraries();
+                refreshMode = '全库刷新';
+            }
         }
+        logTaskEvent(`Emby通知完成 | firstExecution=${!!options.firstExecution} | refreshMode=${refreshMode} | convertedPath=${convertedPath}`);
         this.messageUtil.sendMessage(`🎉通知Emby入库成功(${refreshMode}), 资源名:${task.resourceName}`);
         return item ? item.Id : null;
     }
@@ -94,6 +106,74 @@ class EmbyService {
             method: 'POST',
         })
         return true;
+    }
+
+    /**
+     * 使用 Emby 目录路径事件触发局部刷新，避免首次资源直接全库扫描。
+     * 兼容不同实现的 payload 形态，主 payload 失败时尝试 fallback。
+     * @param {string[]} paths
+     * @returns {Promise<boolean>}
+     */
+    async refreshMediaByPaths(paths = []) {
+        const normalizedPaths = [...new Set((paths || [])
+            .map(p => this._normalizeDirPath(p))
+            .filter(Boolean))];
+
+        if (normalizedPaths.length === 0) {
+            return false;
+        }
+
+        const url = `${this.embyUrl}/emby/Library/Media/Updated`;
+        const primaryPayload = {
+            Updates: normalizedPaths.map(path => ({
+                Path: path,
+                UpdateType: 'Created',
+            })),
+        };
+
+        const primaryOk = await this._postNoBody(url, primaryPayload);
+        if (primaryOk) {
+            return true;
+        }
+
+        const fallbackPayload = {
+            Paths: normalizedPaths,
+        };
+        return await this._postNoBody(url, fallbackPayload);
+    }
+
+    _normalizeDirPath(pathValue) {
+        const normalized = String(pathValue || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/\/+$/g, '')
+            .trim();
+        if (!normalized) return '';
+        return normalized.startsWith('/') ? normalized : `/${normalized}`;
+    }
+
+    async _postNoBody(url, json) {
+        try {
+            const headers = {
+                'Authorization': 'MediaBrowser Token="' + this.embyApiKey + '"',
+            };
+            const response = await got(url, {
+                method: 'POST',
+                headers,
+                json,
+                responseType: 'text',
+                throwHttpErrors: false,
+            });
+
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+                logTaskEvent(`Emby目录事件刷新失败: status=${response.statusCode}, url=${url}`);
+                return false;
+            }
+            return true;
+        } catch (error) {
+            logTaskEvent(`Emby目录事件刷新异常: ${error.message}`);
+            return false;
+        }
     }
     // 4. 根据路径搜索 /emby/Items（使用与其他方法统一的 /emby/ 前缀）
     async searchItemsByPath(path) {

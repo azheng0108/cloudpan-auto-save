@@ -1,5 +1,6 @@
 const got = require('got');
 const ConfigService = require('./ConfigService');
+const { logTaskEvent } = require('../utils/logUtils');
 
 const alistService = {
     Enable() {
@@ -35,6 +36,23 @@ const alistService = {
                 }
             }).json();
 
+            if (!response || typeof response !== 'object') {
+                throw new Error('AList API 返回空响应');
+            }
+
+            const code = response.code;
+            const message = String(response.message || '').toLowerCase();
+            const successByCode = code === 200 || code === 0 || code === '200' || code === '0';
+            const successByMessage = message === 'success' || message === 'ok';
+
+            if (code !== undefined && !successByCode && !successByMessage) {
+                throw new Error(`AList API 业务错误: code=${code}, message=${response.message || 'unknown'}`);
+            }
+
+            if (response.data === undefined || response.data === null) {
+                throw new Error('AList API 响应缺少 data 字段');
+            }
+
             return response;
         } catch (error) {
             if (error.response) {
@@ -45,25 +63,208 @@ const alistService = {
     },
 
     /**
+     * 读取 OpenList 存储配置（需要具有管理权限的 token）。
+     * @returns {Promise<Array<Object>>}
+     */
+    async listStorages() {
+        const baseUrl = await this.getConfig('alist.baseUrl');
+        const apiKey = await this.getConfig('alist.apiKey');
+
+        if (!baseUrl) {
+            throw new Error('AList baseUrl 未配置');
+        }
+        if (!apiKey) {
+            throw new Error('AList apiKey 未配置');
+        }
+
+        const response = await got.post(`${baseUrl}/api/admin/storage/list`, {
+            json: {
+                page: 1,
+                per_page: 0,
+            },
+            headers: {
+                'Authorization': apiKey,
+            }
+        }).json();
+
+        if (!response || typeof response !== 'object') {
+            throw new Error('OpenList 存储接口返回空响应');
+        }
+
+        const code = response.code;
+        const message = String(response.message || '').toLowerCase();
+        const successByCode = code === 200 || code === 0 || code === '200' || code === '0';
+        const successByMessage = message === 'success' || message === 'ok';
+        if (code !== undefined && !successByCode && !successByMessage) {
+            throw new Error(`OpenList 存储接口业务错误: code=${code}, message=${response.message || 'unknown'}`);
+        }
+
+        const data = response.data;
+        if (Array.isArray(data)) {
+            return data;
+        }
+        if (Array.isArray(data?.content)) {
+            return data.content;
+        }
+
+        throw new Error('OpenList 存储接口响应缺少 content');
+    },
+
+    /**
+     * 基于 alistStrmPath 自动推断挂载根目录 ID。
+     * 若 token 非管理员或驱动不暴露该字段，返回空字符串。
+     * @param {string} alistPath
+     * @returns {Promise<string>}
+     */
+    async resolveRootFolderIdByPath(alistPath) {
+        const normalizedPath = this._normalizePath(alistPath);
+        if (!normalizedPath) return '';
+
+        let storages;
+        try {
+            storages = await this.listStorages();
+        } catch (error) {
+            logTaskEvent(`OpenList 自动识别 rootFolderId 失败（读取存储配置）: ${error.message}`);
+            return '';
+        }
+
+        let bestMatch = null;
+        for (const storage of storages) {
+            const mountPath = this._normalizePath(storage?.mount_path || storage?.mountPath || storage?.mount || '');
+            if (!mountPath) continue;
+            if (normalizedPath !== mountPath && !normalizedPath.startsWith(`${mountPath}/`)) {
+                continue;
+            }
+            if (!bestMatch || mountPath.length > bestMatch.mountPath.length) {
+                bestMatch = { storage, mountPath };
+            }
+        }
+
+        if (!bestMatch) {
+            return '';
+        }
+
+        const resolved = this._extractRootFolderId(bestMatch.storage);
+        return resolved ? String(resolved).trim() : '';
+    },
+
+    _normalizePath(value) {
+        const normalized = String(value || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/\/+$/g, '')
+            .trim();
+        if (!normalized) return '';
+        return normalized.startsWith('/') ? normalized : `/${normalized}`;
+    },
+
+    _extractRootFolderId(storage) {
+        if (!storage || typeof storage !== 'object') {
+            return '';
+        }
+
+        const directCandidates = [
+            storage.rootFolderId,
+            storage.root_folder_id,
+            storage.rootFolder,
+            storage.root_folder,
+        ].filter(Boolean);
+        if (directCandidates.length > 0) {
+            return directCandidates[0];
+        }
+
+        const additionRaw = storage.addition || storage.additional || storage.config || null;
+        let addition = additionRaw;
+        if (typeof additionRaw === 'string') {
+            try {
+                addition = JSON.parse(additionRaw);
+            } catch (_) {
+                addition = null;
+            }
+        }
+
+        if (!addition || typeof addition !== 'object') {
+            return '';
+        }
+
+        const knownKeys = [
+            'root_folder_id',
+            'rootFolderId',
+            'root_folder',
+            'rootFolder',
+            'catalog_id',
+            'catalogId',
+            'folder_id',
+            'folderId',
+        ];
+        for (const key of knownKeys) {
+            const value = addition[key];
+            if (typeof value === 'string' || typeof value === 'number') {
+                const normalized = String(value).trim();
+                if (normalized) return normalized;
+            }
+        }
+
+        const queue = [addition];
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (!current || typeof current !== 'object') continue;
+            for (const [key, value] of Object.entries(current)) {
+                if (value && typeof value === 'object') {
+                    queue.push(value);
+                    continue;
+                }
+                const keyName = String(key).toLowerCase();
+                if ((typeof value === 'string' || typeof value === 'number') && keyName.includes('root') && keyName.includes('id')) {
+                    const normalized = String(value).trim();
+                    if (normalized) return normalized;
+                }
+            }
+        }
+
+        return '';
+    },
+
+    /**
      * 递归访问目录，触发 OpenList STRM 驱动为每个子目录同步生成 .strm 文件。
      * OpenList STRM 驱动在 /api/fs/list 被调用时同步写入当前目录的 .strm 文件，
-     * 因此递归完成即代表所有文件已落盘，后续可安全通知 Emby。
+     * 返回统计信息，供上层判断是否真的成功完成。
      * @param {string} dirPath - OpenList 内的目录路径（STRM 驱动挂载路径下）
-     * @returns {Promise<void>}
+     * @returns {Promise<{requestedPath:string, visitedCount:number, failedCount:number, failedPaths:Array<{path:string,error:string}>}>}
      */
     async recursiveRefresh(dirPath) {
+        const normalizedRoot = String(dirPath || '').replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+        const state = {
+            visitedCount: 0,
+            failedPaths: [],
+        };
+
+        await this._recursiveRefreshInternal(normalizedRoot, state);
+
+        return {
+            requestedPath: normalizedRoot,
+            visitedCount: state.visitedCount,
+            failedCount: state.failedPaths.length,
+            failedPaths: state.failedPaths,
+        };
+    },
+
+    async _recursiveRefreshInternal(dirPath, state) {
+        let response;
         try {
-            const response = await this.listFiles(dirPath);
-            if (!response?.data?.content) return;
-            // 仅递归处理子目录，文件已在 listFiles 调用时由 STRM 驱动处理
-            const subDirs = response.data.content.filter(f => f.is_dir);
-            for (const dir of subDirs) {
-                await this.recursiveRefresh(`${dirPath}/${dir.name}`);
-            }
+            response = await this.listFiles(dirPath);
+            state.visitedCount += 1;
         } catch (error) {
-            // 单个目录失败不阻断整体流程，记录后继续
-            const { logTaskEvent } = require('../utils/logUtils');
+            state.failedPaths.push({ path: dirPath, error: error.message });
             logTaskEvent(`OpenList 目录刷新失败: ${dirPath}, 错误: ${error.message}`);
+            return;
+        }
+
+        const content = Array.isArray(response?.data?.content) ? response.data.content : [];
+        const subDirs = content.filter(item => item?.is_dir && item?.name);
+        for (const dir of subDirs) {
+            const nextPath = `${dirPath.replace(/\/+$/, '')}/${String(dir.name).replace(/^\/+/, '')}`;
+            await this._recursiveRefreshInternal(nextPath, state);
         }
     },
 

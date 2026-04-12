@@ -1079,6 +1079,11 @@
                                     <input type="text" id="alistStrmPath" class="input-base font-mono text-xs" placeholder="如: /qq_strm/夸克网盘 或 /strm_139">
                                     <small class="form-text">OpenList 中该账号 STRM 所在根路径（不含主机地址），追更后用于触发 OpenList 缓存刷新</small>
                                 </div>
+                                <div class="form-group mb-0 mt-2">
+                                    <label for="rootFolderId">OpenList 挂载根目录 ID</label>
+                                    <input type="text" id="rootFolderId" class="input-base font-mono text-xs" placeholder="如: 00019700101000000001">
+                                    <small class="form-text">默认全自动识别（需 OpenList Token 有存储管理权限），通常无需填写。该值仅作兼容保留；用于路径偏移裁剪：当任务 parentFileId 与挂载根 ID 相同，会自动剔除 realFolderName 的首层目录</small>
+                                </div>
                                 <!-- 本地 STRM 生成（折叠，极少数场景） -->
                                 <details class="mt-3">
                                     <summary class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">本地 STRM 生成（高级，通常无需配置）</summary>

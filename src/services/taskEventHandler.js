@@ -12,6 +12,57 @@ const ConfigService = require('./ConfigService');
 class TaskEventHandler {
     constructor(messageUtil) {
         this.messageUtil = messageUtil;
+        this._embyNotifyAt = new Map();
+        this._openListRootIdCache = new Map();
+    }
+
+    async _resolveOpenListRootId(account, alistStrmPath) {
+        const cacheKey = `${account?.id || 'unknown'}:${String(alistStrmPath || '').trim()}`;
+        if (this._openListRootIdCache.has(cacheKey)) {
+            return this._openListRootIdCache.get(cacheKey);
+        }
+
+        const autoResolved = await alistService.resolveRootFolderIdByPath(alistStrmPath);
+        if (autoResolved) {
+            logTaskEvent(`自动识别 OpenList 挂载根目录 ID 成功: ${autoResolved}`);
+        }
+        this._openListRootIdCache.set(cacheKey, autoResolved || '');
+        return autoResolved || '';
+    }
+
+    async _buildNormalizedTaskSubfolder(task, account, normalizedBasePath) {
+        const cloudParentId = String(task.parentFileId || '').trim();
+        let taskSubfolder = String(task.realFolderName || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/^\/+|\/+$/g, '');
+
+        let openListRootId = '';
+        if (normalizedBasePath) {
+            openListRootId = await this._resolveOpenListRootId(account, normalizedBasePath);
+            if (!openListRootId) {
+                logTaskEvent('自动识别 rootFolderId 失败，将按默认挂载策略保留完整路径');
+            }
+        }
+
+        if (openListRootId && !cloudParentId) {
+            logTaskEvent(`自动识别到 rootFolderId 但任务缺少 parentFileId，跳过偏移裁剪: taskId=${task.id}`);
+        }
+
+        if (openListRootId && cloudParentId && openListRootId === cloudParentId) {
+            const pathParts = taskSubfolder.split('/').filter(Boolean);
+            if (pathParts.length > 1) {
+                logTaskEvent(`检测到挂载偏移，剔除首层目录: ${pathParts[0]}`);
+                pathParts.shift();
+                taskSubfolder = pathParts.join('/');
+            }
+        }
+
+        return {
+            taskSubfolder,
+            openListRootId,
+            cloudParentId,
+        };
     }
 
     async handle(taskCompleteEventDto) {
@@ -32,6 +83,9 @@ class TaskEventHandler {
         } catch (error) {
             logger.error('OpenList STRM 刷新失败', { error: error.message, stack: error.stack });
             logTaskEvent(`OpenList STRM 刷新失败: ${error.message}`);
+            logTaskEvent('OpenList 刷新失败，阻断 Emby 通知');
+            logTaskEvent(`================事件处理完成================`);
+            return;
         }
         try {
             await this._handleEmbyNotify(taskCompleteEventDto);
@@ -71,27 +125,43 @@ class TaskEventHandler {
         }
 
         const task = dto.task;
+        const account = task.account || {};
         // 使用账号专用的 alistStrmPath 字段，与 cloudStrmPrefix 解耦
-        const alistStrmPath = task.account?.alistStrmPath?.trim();
+        const alistStrmPath = account.alistStrmPath?.trim();
 
         if (!alistStrmPath) {
             logTaskEvent(`alistStrmPath 未配置，跳过 STRM 刷新 | realFolderName=${task.realFolderName} | cloudStrmPrefix=${task.account?.cloudStrmPrefix}`);
             return;
         }
 
-        // 使用完整 realFolderName（不裁剪任何段），normalize Windows 反斜杠
-        // 修复：原逻辑裁掉第一段导致多目标目录时路径错误，且 Windows 下 path.join 产生 \ 会使 indexOf('/') 返回 -1
-        const taskSubfolder = (task.realFolderName || '')
+        const normalizedBasePath = String(alistStrmPath)
             .replace(/\\/g, '/')
-            .replace(/^\/|\/$/g, '');
+            .replace(/\/+/g, '/')
+            .replace(/\/+$/g, '');
+
+        const { taskSubfolder } = await this._buildNormalizedTaskSubfolder(task, account, normalizedBasePath);
+
+        if (!taskSubfolder) {
+            logTaskEvent(`task.realFolderName 为空，刷新将仅作用于根路径: ${normalizedBasePath}`);
+        }
 
         const refreshPath = taskSubfolder
-            ? `${alistStrmPath.replace(/\/$/, '')}/${taskSubfolder}`
-            : alistStrmPath;
+            ? `${normalizedBasePath}/${taskSubfolder}`
+            : normalizedBasePath;
 
         logTaskEvent(`触发 OpenList STRM 刷新 | alistStrmPath=${alistStrmPath} | realFolderName=${task.realFolderName} | refreshPath=${refreshPath}`);
-        await alistService.recursiveRefresh(refreshPath);
-        logTaskEvent(`OpenList STRM 刷新完成: ${refreshPath}`);
+        const refreshResult = await alistService.recursiveRefresh(refreshPath);
+        if (refreshResult.visitedCount === 0) {
+            throw new Error(`OpenList 刷新未触达任何目录: ${refreshPath}`);
+        }
+        if (refreshResult.failedCount > 0) {
+            const preview = refreshResult.failedPaths
+                .slice(0, 3)
+                .map(item => `${item.path}(${item.error})`)
+                .join('; ');
+            throw new Error(`OpenList 刷新存在失败目录: ${refreshResult.failedCount}/${refreshResult.visitedCount}; ${preview}`);
+        }
+        logTaskEvent(`OpenList STRM 刷新完成: ${refreshPath} | 目录数=${refreshResult.visitedCount} | 失败数=0`);
     }
 
     /**
@@ -106,7 +176,34 @@ class TaskEventHandler {
             logTaskEvent('Emby 通知未启用，跳过');
             return;
         }
-        await embyService.notify(dto.task);
+        const task = dto.task;
+        const account = task.account || {};
+
+        const normalizedBasePath = String(account.alistStrmPath || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/\/+$/g, '');
+        const { taskSubfolder } = await this._buildNormalizedTaskSubfolder(task, account, normalizedBasePath);
+
+        const debounceMs = Number(ConfigService.getConfigValue('emby.notifyDebounceMs')) || 2000;
+        const debounceKey = `${task.accountId || 'unknown'}:${taskSubfolder}`;
+        const now = Date.now();
+        const lastAt = this._embyNotifyAt.get(debounceKey) || 0;
+        if (lastAt > 0 && now - lastAt < debounceMs) {
+            logTaskEvent(`Emby 通知防抖命中，跳过重复通知: key=${debounceKey}, interval=${now - lastAt}ms`);
+            return;
+        }
+        this._embyNotifyAt.set(debounceKey, now);
+
+        const taskForEmby = {
+            ...task,
+            realFolderName: taskSubfolder,
+        };
+
+        await embyService.notify(taskForEmby, {
+            firstExecution: !!dto.firstExecution,
+            directoryPath: taskSubfolder,
+        });
     }
 
 }
