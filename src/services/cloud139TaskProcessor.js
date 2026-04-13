@@ -5,27 +5,53 @@ const { TaskCompleteEventDto } = require('../dto/TaskCompleteEventDto');
 const CheckpointManager = require('./checkpointManager');
 const { ErrorClassifier } = require('./errorClassifier');
 
-async function saveShareBatchWithRetryAndVerify(cloud139, linkID, coPathLst, targetCatalogID, needPassword, expectedNames = []) {
-    const saveRes = await cloud139.saveShareFilesWithRetry(
-        linkID,
-        coPathLst,
-        [],
-        targetCatalogID,
-        needPassword,
-        { maxAttempts: 3, baseDelayMs: 700 }
-    );
-    if (!saveRes) {
-        throw new Error('转存失败');
+async function saveShareBatchWithRetryAndVerify({
+    cloud139,
+    linkID,
+    coPathLst,
+    targetCatalogID,
+    needPassword,
+    expectedNames = [],
+    checkpoint = null,
+    batchKey = '',
+    taskService = null,
+    task = null,
+}) {
+    const hasCheckpointCtx = checkpoint && batchKey && taskService && task;
+    const alreadySubmitted = hasCheckpointCtx && CheckpointManager.isFolderSubmitted(checkpoint, batchKey);
+
+    if (alreadySubmitted) {
+        logTaskEvent(`[139] 检测到批次已提交转存(${batchKey})，跳过重复转存，仅做可见性确认`);
+    } else {
+        const saveRes = await cloud139.saveShareFilesWithRetry(
+            linkID,
+            coPathLst,
+            [],
+            targetCatalogID,
+            needPassword,
+            { maxAttempts: 3, baseDelayMs: 700 }
+        );
+        if (!saveRes) {
+            throw new Error('转存失败');
+        }
+
+        // 先落检查点，再做可见性确认；即使确认超时，重试也不会重复提交转存。
+        if (hasCheckpointCtx) {
+            checkpoint = CheckpointManager.updateProgress(checkpoint, { submittedFolder: batchKey });
+            await CheckpointManager.saveCheckpoint(taskService.taskRepo, task, checkpoint);
+        }
     }
 
     // 异步转存任务存在延迟可见，轮询目标目录确认文件已落盘。
     const visibility = await cloud139.waitForFilesVisible(targetCatalogID, expectedNames, {
-        timeoutMs: 35000,
-        intervalMs: 1500,
+        timeoutMs: 90000,
+        intervalMs: 2000,
     });
     if (!visibility.allVisible) {
         throw new Error(`转存可见性校验失败，仍缺少 ${visibility.missing.length} 个文件`);
     }
+
+    return checkpoint;
 }
 
 function toPlainObject(value) {
@@ -116,16 +142,39 @@ async function processCloud139Task(taskService, task, account) {
                 return '';
             }
 
+            // root-files 仅一个物理目录批次，也需要检查点保护避免可见性超时后的重复转存。
+            let checkpoint = CheckpointManager.loadCheckpoint(task);
+            const isResuming = CheckpointManager.shouldResume(task, checkpoint);
+            const rootBatchKey = `root:${task.realFolderId}`;
+            if (!checkpoint || !isResuming) {
+                checkpoint = CheckpointManager.createCheckpoint({
+                    metadata: {
+                        totalBatches: 1,
+                        startTime: new Date().toISOString(),
+                        mode: 'root-files',
+                    },
+                });
+            }
+
             const coPathLst = newFiles.filter((f) => f.path).map((f) => f.path);
             if (coPathLst.length > 0) {
-                await saveShareBatchWithRetryAndVerify(
+                checkpoint = await saveShareBatchWithRetryAndVerify({
                     cloud139,
                     linkID,
                     coPathLst,
-                    task.realFolderId,
-                    !!passwd,
-                    newFiles.map((f) => f.coName || '').filter(Boolean)
-                );
+                    targetCatalogID: task.realFolderId,
+                    needPassword: !!passwd,
+                    expectedNames: newFiles.map((f) => f.coName || '').filter(Boolean),
+                    checkpoint,
+                    batchKey: rootBatchKey,
+                    taskService,
+                    task,
+                });
+                checkpoint = CheckpointManager.updateProgress(checkpoint, {
+                    processedFolder: rootBatchKey,
+                    currentBatchIndex: 1,
+                });
+                await CheckpointManager.saveCheckpoint(taskService.taskRepo, task, checkpoint);
             }
 
             await taskService._recordTransferredFiles(task.id, newFiles.map((f) => ({
@@ -267,6 +316,7 @@ async function processCloud139Task(taskService, task, account) {
             }
             task.lastCheckTime = new Date();
             await taskService.taskRepo.save(task);
+            await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
             return '';
         }
 
@@ -309,14 +359,18 @@ async function processCloud139Task(taskService, task, account) {
                 continue;
             }
 
-            await saveShareBatchWithRetryAndVerify(
+            checkpoint = await saveShareBatchWithRetryAndVerify({
                 cloud139,
                 linkID,
                 coPathLst,
-                physicalId,
-                !!passwd,
-                files.map((f) => f.coName || '').filter(Boolean)
-            );
+                targetCatalogID: physicalId,
+                needPassword: !!passwd,
+                expectedNames: files.map((f) => f.coName || '').filter(Boolean),
+                checkpoint,
+                batchKey: physicalId,
+                taskService,
+                task,
+            });
 
             // P1-01: 保存批次检查点
             processedBatchCount += 1;

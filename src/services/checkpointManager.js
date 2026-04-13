@@ -17,6 +17,8 @@ class CheckpointManager {
             version: '1.0',
             createdAt: new Date().toISOString(),
             processedFolders: options.processedFolders || [],
+            // 已提交过转存但尚未完成可见性确认的批次（用于重试时防重复转存）
+            submittedFolders: options.submittedFolders || [],
             catalogMap: options.catalogMap || {},
             physicalFolderMap: options.physicalFolderMap || {},
             currentBatchIndex: options.currentBatchIndex || 0,
@@ -107,6 +109,19 @@ class CheckpointManager {
     }
 
     /**
+     * 判断文件夹是否处于“已提交转存待确认”状态
+     * @param {Object} checkpoint - 检查点数据
+     * @param {string} folderId - 文件夹 ID
+     * @returns {boolean}
+     */
+    static isFolderSubmitted(checkpoint, folderId) {
+        if (!checkpoint || !checkpoint.submittedFolders) {
+            return false;
+        }
+        return checkpoint.submittedFolders.includes(folderId);
+    }
+
+    /**
      * 更新检查点进度
      * @param {Object} checkpoint - 检查点数据
      * @param {Object} progress - 进度更新
@@ -114,9 +129,17 @@ class CheckpointManager {
      */
     static updateProgress(checkpoint, progress) {
         const updated = { ...checkpoint };
+        updated.processedFolders = Array.isArray(updated.processedFolders) ? updated.processedFolders : [];
+        updated.submittedFolders = Array.isArray(updated.submittedFolders) ? updated.submittedFolders : [];
 
         if (progress.processedFolder) {
             updated.processedFolders = [...new Set([...updated.processedFolders, progress.processedFolder])];
+            // 批次确认完成后，从 submitted 列表中移除
+            updated.submittedFolders = updated.submittedFolders.filter((id) => id !== progress.processedFolder);
+        }
+
+        if (progress.submittedFolder) {
+            updated.submittedFolders = [...new Set([...updated.submittedFolders, progress.submittedFolder])];
         }
 
         if (progress.currentBatchIndex !== undefined) {
