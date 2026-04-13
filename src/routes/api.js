@@ -95,7 +95,7 @@ const registerApiRoutes = (app, deps) => {
     app.post('/api/accounts', async (req, res) => {
         try {
             const payload = { ...req.body };
-            ['alistStrmPath', 'rootFolderId', 'localStrmPrefix', 'cloudStrmPrefix', 'embyLibraryPath', 'embyPathReplace']
+            ['alistStrmPath', 'alistNativePath', 'rootFolderId', 'localStrmPrefix', 'cloudStrmPrefix', 'embyLibraryPath', 'embyPathReplace']
                 .forEach((field) => {
                     if (typeof payload[field] === 'string') {
                         payload[field] = payload[field].trim();

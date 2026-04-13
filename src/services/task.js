@@ -575,6 +575,7 @@ class TaskService {
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     alistStrmPath: true,
+                    alistNativePath: true,
                     rootFolderId: true,
                     embyLibraryPath: true,
                     embyPathReplace: true
@@ -601,6 +602,7 @@ class TaskService {
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     alistStrmPath: true,
+                    alistNativePath: true,
                     rootFolderId: true,
                     embyLibraryPath: true,
                     embyPathReplace: true
@@ -1352,6 +1354,7 @@ class TaskService {
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     alistStrmPath: true,
+                    alistNativePath: true,
                     embyLibraryPath: true,
                     embyPathReplace: true
                 }

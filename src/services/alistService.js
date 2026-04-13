@@ -77,6 +77,23 @@ const alistService = {
     },
 
     /**
+     * 对单个目录执行一次强制回源刷新。
+     * 只发送一次 fs/list(refresh=true) 请求，不做递归，避免性能放大与网盘风控。
+     * @param {string} path
+     * @returns {Promise<{requestedPath:string, success:boolean, contentCount:number}>}
+     */
+    async refreshSingleDirectory(path) {
+        const normalizedPath = this._normalizePath(path || '/');
+        const response = await this.listFiles(normalizedPath);
+        const content = Array.isArray(response?.data?.content) ? response.data.content : [];
+        return {
+            requestedPath: normalizedPath,
+            success: true,
+            contentCount: content.length,
+        };
+    },
+
+    /**
      * 读取 OpenList 存储配置（需要具有管理权限的 token）。
      * @returns {Promise<Array<Object>>}
      */

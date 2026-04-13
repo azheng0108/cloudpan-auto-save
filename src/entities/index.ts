@@ -46,6 +46,11 @@ export class Account {
      */
     @Column('text', { nullable: true, default: '' })
     alistStrmPath!: string;
+    /** OpenList 原生网盘挂载路径（仅用于刷新云盘目录缓存，不触发 STRM 驱动）
+     *  例：/CloudDrive139
+     */
+    @Column('text', { nullable: true, default: '' })
+    alistNativePath!: string;
     /** OpenList 实际挂载根目录 ID（用于路径偏移裁剪） */
     @Column('text', { nullable: true, default: '' })
     rootFolderId!: string;

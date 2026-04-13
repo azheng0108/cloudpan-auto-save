@@ -129,7 +129,7 @@ async function editAccount(id) {
     document.getElementById('username').value = chooseAccount.original_username || chooseAccount.username;
     document.getElementById('password').value = '';
     document.getElementById('cookie').value = chooseAccount.cookies || '';
-    document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
+    document.getElementById('alistNativePath').value = chooseAccount.alistNativePath || '';
     document.getElementById('rootFolderId').value = chooseAccount.rootFolderId || '';
     document.getElementById('localStrmPrefix').value = chooseAccount.localStrmPrefix || '';
     document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
@@ -159,7 +159,7 @@ async function createAccount() {
     const accountType = document.getElementById('accountType').value;
     const password = document.getElementById('password').value;
     const cookies  = document.getElementById('cookie').value;
-    const alistStrmPath = document.getElementById('alistStrmPath').value;
+    const alistNativePath = document.getElementById('alistNativePath').value;
     const rootFolderId = document.getElementById('rootFolderId').value;
     const localStrmPrefix = document.getElementById('localStrmPrefix').value;
     const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
@@ -197,7 +197,7 @@ async function createAccount() {
             password,
             cookies,
             validateCode,
-            alistStrmPath,
+            alistNativePath,
             rootFolderId,
             localStrmPrefix,
             cloudStrmPrefix,
@@ -249,7 +249,7 @@ function onTaskAccountChange(selectEl) {
     if (!hint || !el) return;
     const selectedId = parseInt(el.value, 10);
     const account = accountsList.find(a => a.id === selectedId);
-    const missing = !account || !account.alistStrmPath?.trim();
+    const missing = !account || !account.alistNativePath?.trim();
     hint.style.display = missing ? '' : 'none';
 }
 

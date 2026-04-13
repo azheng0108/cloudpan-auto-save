@@ -6,8 +6,8 @@ const ConfigService = require('./ConfigService');
 
 /**
  * 任务完成事件处理器
- * 按顺序执行：自动重命名 → OpenList STRM 刷新 → Emby 通知
- * STRM 刷新完成后才通知 Emby，确保 Emby 扫库时文件已就绪
+ * 按顺序执行：自动重命名 → OpenList 原生挂载点缓存刷新 → Emby 通知
+ * 缓存刷新完成后才通知 Emby，确保 Emby 扫库时路径对应的目录缓存已更新
  */
 class TaskEventHandler {
     constructor(messageUtil) {
@@ -61,11 +61,10 @@ class TaskEventHandler {
         }
 
         if (matchedIndex > 0) {
-            const dropped = rawSegments.slice(0, matchedIndex).join('/');
             taskSubfolder = rawSegments.slice(matchedIndex).join('/');
-            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}，剔除前缀: ${dropped}，结果: ${taskSubfolder}`);
+            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}`);
         } else if (matchedIndex === 0) {
-            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}，无需剔除前缀`);
+            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}`);
         } else {
             logTaskEvent(`OpenList 路径锚点未命中，保持原路径: ${taskSubfolder}`);
             matchedAnchor = '';
@@ -115,11 +114,11 @@ class TaskEventHandler {
             logTaskEvent(`自动重命名失败: ${error.message}`);
         }
         try {
-            // 先递归触发 OpenList STRM 驱动写文件，完成后再通知 Emby
-            refreshContext = await this._handleOpenListStrmRefresh(taskCompleteEventDto);
+            // 先刷新 OpenList 原生挂载点目录缓存，再通知 Emby
+            refreshContext = await this._handleCloudCacheRefresh(taskCompleteEventDto);
         } catch (error) {
-            logger.error('OpenList STRM 刷新失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`OpenList STRM 刷新失败: ${error.message}`);
+            logger.error('OpenList 原生挂载点缓存刷新失败', { error: error.message, stack: error.stack });
+            logTaskEvent(`OpenList 原生挂载点缓存刷新失败: ${error.message}`);
             logTaskEvent('OpenList 刷新失败，阻断 Emby 通知');
             logTaskEvent(`================事件处理完成================`);
             return;
@@ -146,32 +145,27 @@ class TaskEventHandler {
     }
 
     /**
-     * 递归调用 OpenList STRM 驱动路径，触发 .strm 文件同步生成。
-     * 原理：OpenList STRM 驱动在 /api/fs/list 被调用时同步写入当前目录的 .strm 文件，
-     * 递归完成即代表任务目录下所有 .strm 文件已落盘。
-     *
-     * 刷新路径 = alistStrmPath（账号级 OpenList 根路径） + 完整 realFolderName
-     * alistStrmPath 与 cloudStrmPrefix 解耦：前者用于刷新，后者用于 .strm URL 生成。
-     * 支持任意目标目录（tv / 临时存放 / 电影…）和任意账号挂载结构。
+     * 单层刷新 OpenList 原生网盘挂载点目录缓存。
+     * 只发送一次 fs/list(refresh=true)，不做递归，避免触发 STRM 驱动副作用和性能放大。
      * @param {TaskCompleteEventDto} dto
      */
-    async _handleOpenListStrmRefresh(dto) {
+    async _handleCloudCacheRefresh(dto) {
         if (!alistService.Enable()) {
-            logTaskEvent('Alist 未启用，跳过 OpenList STRM 刷新');
+            logTaskEvent('Alist 未启用，跳过 OpenList 原生挂载点缓存刷新');
             return;
         }
 
         const task = dto.task;
         const account = task.account || {};
-        // 使用账号专用的 alistStrmPath 字段，与 cloudStrmPrefix 解耦
-        const alistStrmPath = account.alistStrmPath?.trim();
+        // 使用账号级原生挂载路径，确保刷新命中真实网盘驱动而非 STRM 驱动
+        const alistNativePath = account.alistNativePath?.trim();
 
-        if (!alistStrmPath) {
-            logTaskEvent(`alistStrmPath 未配置，跳过 STRM 刷新 | realFolderName=${task.realFolderName} | cloudStrmPrefix=${task.account?.cloudStrmPrefix}`);
+        if (!alistNativePath) {
+            logTaskEvent(`alistNativePath 未配置，跳过 OpenList 原生挂载点缓存刷新 | realFolderName=${task.realFolderName}`);
             return;
         }
 
-        const normalizedBasePath = String(alistStrmPath)
+        const normalizedBasePath = String(alistNativePath)
             .replace(/\\/g, '/')
             .replace(/\/+/g, '/')
             .replace(/\/+$/g, '');
@@ -186,22 +180,18 @@ class TaskEventHandler {
             ? `${normalizedBasePath}/${taskSubfolder}`
             : normalizedBasePath;
 
-        logTaskEvent(`触发 OpenList STRM 刷新 | alistStrmPath=${alistStrmPath} | realFolderName=${task.realFolderName} | refreshPath=${refreshPath}`);
-        const refreshResult = await alistService.recursiveRefresh(refreshPath);
-        if (refreshResult.visitedCount > 0 && refreshResult.failedCount === 0) {
-            logTaskEvent(`OpenList STRM 刷新完成: ${refreshPath} | 目录数=${refreshResult.visitedCount} | 失败数=0`);
-            return {
-                taskSubfolder,
-                refreshPath,
-                refreshMode: 'strict-manual-root-id',
-            };
+        logTaskEvent(`触发 OpenList 缓存刷新: ${refreshPath}`);
+        const refreshResult = await alistService.refreshSingleDirectory(refreshPath);
+        if (!refreshResult?.success) {
+            throw new Error(`OpenList 单层刷新失败: ${refreshPath}`);
         }
 
-        const preview = refreshResult.failedPaths
-            .slice(0, 3)
-            .map(item => `${item.path}(${item.error})`)
-            .join('; ');
-        throw new Error(`OpenList 刷新失败: ${refreshPath} | visited=${refreshResult.visitedCount}, failed=${refreshResult.failedCount}${preview ? ` | ${preview}` : ''}`);
+        logTaskEvent(`OpenList 缓存刷新完成: ${refreshPath}`);
+        return {
+            taskSubfolder,
+            refreshPath,
+            refreshMode: 'single-directory-native-cache',
+        };
     }
 
     /**
@@ -219,7 +209,7 @@ class TaskEventHandler {
         const task = dto.task;
         const account = task.account || {};
 
-        const normalizedBasePath = String(account.alistStrmPath || '')
+        const normalizedBasePath = String(account.alistNativePath || '')
             .replace(/\\/g, '/')
             .replace(/\/+/g, '/')
             .replace(/\/+$/g, '');
@@ -231,7 +221,17 @@ class TaskEventHandler {
         const taskSubfolder = normalizedFromRefresh || autoSubfolder;
 
         const debounceMs = Number(ConfigService.getConfigValue('emby.notifyDebounceMs')) || 2000;
-        const debounceKey = `${task.accountId || 'unknown'}:${taskSubfolder}`;
+        // 若未配置原生挂载路径，则回退到原任务路径，避免影响仅 Emby 通知场景。
+        const fallbackRawPath = String(task.realFolderName || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/\/+$/g, '');
+        const fullCloudPath = normalizedBasePath
+            ? (taskSubfolder
+                ? `${normalizedBasePath}/${taskSubfolder}`.replace(/\/+/g, '/').replace(/\/+$/g, '')
+                : normalizedBasePath)
+            : fallbackRawPath;
+        const debounceKey = `${task.accountId || 'unknown'}:${fullCloudPath}`;
         const now = Date.now();
         const lastAt = this._embyNotifyAt.get(debounceKey) || 0;
         if (lastAt > 0 && now - lastAt < debounceMs) {
@@ -242,12 +242,12 @@ class TaskEventHandler {
 
         const taskForEmby = {
             ...task,
-            realFolderName: taskSubfolder,
+            realFolderName: fullCloudPath,
         };
 
         await embyService.notify(taskForEmby, {
             firstExecution: !!dto.firstExecution,
-            directoryPath: taskSubfolder,
+            directoryPath: fullCloudPath,
         });
     }
 

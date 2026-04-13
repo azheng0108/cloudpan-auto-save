@@ -44,8 +44,7 @@ class EmbyService {
         this.embyPathReplace  = task.account.embyPathReplace;
         const rawPath = task.realFolderName;
         const convertedPath = this._replacePath(rawPath);
-        const pathMode = this.embyLibraryPath ? `精准模式(embyLibraryPath=${this.embyLibraryPath})` : `替换模式(embyPathReplace=${this.embyPathReplace || '(未配置)'})`;
-        logTaskEvent(`Emby路径转换 | realFolderName=${rawPath} | ${pathMode} | 转换结果=${convertedPath}`);
+        logTaskEvent('Emby 路径转换完成，开始检索媒体项');
         const item = await this.searchItemsByPathRecursive(convertedPath);
         logTaskEvent(`Emby搜索结果: ${JSON.stringify(item)}`);
         let refreshMode = '';
@@ -53,7 +52,10 @@ class EmbyService {
             await this.refreshItemById(item.Id);
             refreshMode = '路径命中';
         } else {
-            const targetDirPath = this._normalizeDirPath(options.directoryPath || convertedPath);
+            // 目录事件刷新与搜索路径保持同一转换逻辑，避免出现前缀被裁剪的问题。
+            const rawDirPath = options.directoryPath || task.realFolderName || convertedPath;
+            const convertedDirPath = this._replacePath(rawDirPath);
+            const targetDirPath = this._normalizeDirPath(convertedDirPath);
             if (targetDirPath) {
                 logTaskEvent(`Emby未命中媒体项，尝试目录事件局部刷新: ${targetDirPath}`);
                 const updated = await this.refreshMediaByPaths([targetDirPath]);
@@ -68,8 +70,7 @@ class EmbyService {
                 refreshMode = '全库刷新';
             }
         }
-        logTaskEvent(`Emby通知完成 | firstExecution=${!!options.firstExecution} | refreshMode=${refreshMode} | convertedPath=${convertedPath}`);
-        this.messageUtil.sendMessage(`🎉通知Emby入库成功(${refreshMode}), 资源名:${task.resourceName}`);
+        logTaskEvent(`Emby通知完成 | firstExecution=${!!options.firstExecution} | refreshMode=${refreshMode}`);
         return item ? item.Id : null;
     }
 
