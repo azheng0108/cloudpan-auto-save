@@ -989,7 +989,8 @@ class Cloud139Service {
                 size: f.size,
                 updatedAt: f.updatedAt,
             })),
-            nextCursor: data.pageInfo?.nextPageCursor ?? null,
+            // 139 API 的翻页游标在 data 根节点，pageInfo 作为兼容兜底
+            nextCursor: data.nextPageCursor ?? data.pageInfo?.nextPageCursor ?? null,
         };
     }
 
@@ -1001,6 +1002,7 @@ class Cloud139Service {
     async listAllDiskFiles(folderId) {
         const allFiles = [];
         let cursor = null;
+        let lastFirstId = null; // 防死循环锁：接口异常返回同一页时及时跳出
         const catalogID = folderId || '/';
         do {
             const body = {
@@ -1012,6 +1014,16 @@ class Cloud139Service {
             const data = await this._personalKdNjsPost('/hcy/file/list', body, catalogID).catch(() => null);
             if (!data) break;
             const items = data.items ?? data.fileList ?? [];
+            if (!items.length) break;
+
+            // 139 API 偶发传游标仍返回第一页；通过首条 ID 判定并断路防止死循环
+            const currFirstId = items[0].fileId || items[0].id;
+            if (lastFirstId === currFirstId) {
+                logTaskEvent(`[139] listAllDiskFiles 触发防死循环锁，跳出翻页`);
+                break;
+            }
+            lastFirstId = currFirstId;
+
             for (const f of items) {
                 // 只收集文件，不含文件夹
                 // 去除 && f.fileExtension 条件：压缩包等文件在 139 API 中 fileExtension 可能为空，
@@ -1020,7 +1032,9 @@ class Cloud139Service {
                     allFiles.push({ fileId: f.fileId, name: f.name });
                 }
             }
-            cursor = data.pageInfo?.nextPageCursor ?? null;
+
+            // 139 API 实际把 nextPageCursor 放在 data 根节点，pageInfo 仅作兼容兜底
+            cursor = data.nextPageCursor ?? data.pageInfo?.nextPageCursor ?? null;
         } while (cursor);
         return allFiles;
     }
@@ -1036,6 +1050,7 @@ class Cloud139Service {
      */
     async findFolderByName(parentFileId, folderName) {
         let cursor = null;
+        let lastFirstId = null; // 防死循环锁：避免分页游标失效导致无限循环
         const catalogID = parentFileId || '/';
         const targetName = (folderName || '').trim();
         do {
@@ -1048,6 +1063,13 @@ class Cloud139Service {
             const data = await this._personalKdNjsPost('/hcy/file/list', body, catalogID).catch(() => null);
             if (!data) break;
             const items = data.items ?? data.fileList ?? [];
+            if (!items.length) break;
+
+            // 139 API 可能重复返回首页数据，命中后立即跳出避免死循环
+            const currFirstId = items[0].fileId || items[0].id;
+            if (lastFirstId === currFirstId) break;
+            lastFirstId = currFirstId;
+
             for (const f of items) {
                 // 仅匹配文件夹类型
                 if ((f.fileType === 'folder' || f.category === 'folder') &&
@@ -1055,7 +1077,9 @@ class Cloud139Service {
                     return f.fileId;
                 }
             }
-            cursor = data.pageInfo?.nextPageCursor ?? null;
+
+            // 139 API 实际把 nextPageCursor 放在 data 根节点，pageInfo 仅作兼容兜底
+            cursor = data.nextPageCursor ?? data.pageInfo?.nextPageCursor ?? null;
         } while (cursor);
         return null;
     }
