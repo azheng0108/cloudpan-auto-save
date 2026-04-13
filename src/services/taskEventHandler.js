@@ -124,7 +124,14 @@ class TaskEventHandler {
             return;
         }
         try {
-            await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
+            const notifyResult = await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
+            if (notifyResult?.status === 'success') {
+                logTaskEvent(
+                    `Emby通知完成 | firstExecution=${!!notifyResult.firstExecution} | refreshMode=${notifyResult.refreshMode || 'unknown'}`
+                );
+            } else if (notifyResult?.status === 'skipped') {
+                logTaskEvent(`Emby通知跳过: ${notifyResult.reason || 'unknown'}`);
+            }
         } catch (error) {
             logger.error('Emby 通知失败', { error: error.message, stack: error.stack });
             logTaskEvent(`Emby 通知失败: ${error.message}`);
@@ -179,7 +186,7 @@ class TaskEventHandler {
         const refreshPath = taskSubfolder
             ? `${normalizedBasePath}/${taskSubfolder}`
             : normalizedBasePath;
-
+        await new Promise(resolve => setTimeout(resolve, 5000));
         logTaskEvent(`触发 OpenList 缓存刷新: ${refreshPath}`);
         const refreshResult = await alistService.refreshSingleDirectory(refreshPath);
         if (!refreshResult?.success) {
@@ -203,8 +210,7 @@ class TaskEventHandler {
         // EmbyService 构造时读取 emby.enable，未启用时内部会短路返回
         const embyService = new EmbyService(null);
         if (!embyService.enable) {
-            logTaskEvent('Emby 通知未启用，跳过');
-            return;
+            return { status: 'skipped', reason: 'disabled' };
         }
         const task = dto.task;
         const account = task.account || {};
@@ -236,7 +242,7 @@ class TaskEventHandler {
         const lastAt = this._embyNotifyAt.get(debounceKey) || 0;
         if (lastAt > 0 && now - lastAt < debounceMs) {
             logTaskEvent(`Emby 通知防抖命中，跳过重复通知: key=${debounceKey}, interval=${now - lastAt}ms`);
-            return;
+            return { status: 'skipped', reason: 'debounced' };
         }
         this._embyNotifyAt.set(debounceKey, now);
 
@@ -245,10 +251,11 @@ class TaskEventHandler {
             realFolderName: fullCloudPath,
         };
 
-        await embyService.notify(taskForEmby, {
+        const result = await embyService.notify(taskForEmby, {
             firstExecution: !!dto.firstExecution,
             directoryPath: fullCloudPath,
         });
+        return result || { status: 'skipped', reason: 'empty-result' };
     }
 
 }
