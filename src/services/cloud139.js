@@ -587,18 +587,24 @@ class Cloud139Service {
         const intervalMs = Number(options.intervalMs || 1500);
         const startedAt = Date.now();
         let lastNames = new Set();
+        let pollCount = 0;
 
         while (Date.now() - startedAt <= timeoutMs) {
+            pollCount += 1;
             const files = await this.listAllDiskFiles(targetCatalogID).catch(() => []);
             lastNames = new Set(files.map((f) => f.name));
             const missing = normalized.filter((name) => !lastNames.has(name));
             if (missing.length === 0) {
+                logTaskEvent(`[139] 可见性校验通过: catalog=${targetCatalogID}, expected=${normalized.length}, polls=${pollCount}, elapsedMs=${Date.now() - startedAt}`);
                 return { allVisible: true, visibleCount: normalized.length, missing: [] };
             }
             await this._sleep(intervalMs);
         }
 
         const missing = normalized.filter((name) => !lastNames.has(name));
+        logTaskEvent(
+            `[139] 可见性校验超时: catalog=${targetCatalogID}, expected=${normalized.length}, visible=${normalized.length - missing.length}, missing=${missing.length}, polls=${pollCount}, elapsedMs=${Date.now() - startedAt}, missingSample=${missing.slice(0, 5).join('|')}`
+        );
         return {
             allVisible: false,
             visibleCount: normalized.length - missing.length,
