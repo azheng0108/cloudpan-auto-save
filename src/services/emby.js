@@ -35,7 +35,7 @@ class EmbyService {
     async notify(task, options = {}) {
         if (!this.enable){
             logTaskEvent(`Emby通知未启用, 请启用后执行`);
-            return;
+            return { status: 'skipped', reason: 'disabled' };
         }
         const taskName = task.resourceName
         logTaskEvent(`执行Emby通知: ${taskName}`);
@@ -70,8 +70,12 @@ class EmbyService {
                 refreshMode = '全库刷新';
             }
         }
-        logTaskEvent(`Emby通知完成 | firstExecution=${!!options.firstExecution} | refreshMode=${refreshMode}`);
-        return item ? item.Id : null;
+        return {
+            status: 'success',
+            itemId: item ? item.Id : null,
+            refreshMode,
+            firstExecution: !!options.firstExecution,
+        };
     }
 
     // 1. /emby/Items 根据名称搜索

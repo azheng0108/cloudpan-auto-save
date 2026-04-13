@@ -61,6 +61,24 @@ function toPlainObject(value) {
     return {};
 }
 
+/**
+ * 生成推送文案：
+ * - 单次新增 >= threshold 时使用摘要，避免消息过长；
+ * - 小批量保留明细，方便直接查看文件名。
+ */
+function buildPushMessageWithThreshold({
+    title,
+    fileCount,
+    detailLines = [],
+    compactLines = [],
+    threshold = 20,
+}) {
+    if (fileCount >= threshold) {
+        return `${title}\n${compactLines.join('\n')}`;
+    }
+    return `${title}\n${detailLines.join('\n')}`;
+}
+
 async function processCloud139Task(taskService, task, account) {
     const cloud139 = Cloud139Service.getInstance(account);
     try {
@@ -190,7 +208,16 @@ async function processCloud139Task(taskService, task, account) {
             await taskService.taskRepo.save(task);
 
             const fileNameList = newFiles.map((f) => f.coName || f.path);
-            return `${task.resourceName}(根目录文件) 新增${fileCount}个:\n${fileNameList.join('\n')}`;
+            const title = `[追更通知] ${task.resourceName}(根目录文件) | 新增 ${fileCount} 集`;
+            const detailLines = fileNameList.map((name) => `- ${name}`);
+            const compactLines = [`${task.resourceName}(根目录文件) 新增 ${fileCount} 个文件`];
+            return buildPushMessageWithThreshold({
+                title,
+                fileCount,
+                detailLines,
+                compactLines,
+                threshold: 20,
+            });
         }
 
         let rootPCaID = (!task.shareFolderId || task.shareFolderId === 'root' || task.shareFolderId === -1 || task.shareFolderId === '-1')
@@ -415,6 +442,15 @@ async function processCloud139Task(taskService, task, account) {
         const resourceName = task.shareFolderName ? `${task.resourceName}/${task.shareFolderName}` : task.resourceName;
         const summary = `${resourceName} 追更 ${fileCount} 集:\n${lines.join('\n')}`;
         logTaskEvent(summary);
+        const compactLines = groups.map(([label, files]) => `- ${resourceName}${label ? `/${label}` : ''}/: ${files.length} 个`);
+        const title = `[追更通知] ${resourceName} | 新增 ${fileCount} 集`;
+        const pushMessage = buildPushMessageWithThreshold({
+            title,
+            fileCount,
+            detailLines: lines,
+            compactLines,
+            threshold: 20,
+        });
 
         const firstExecution = !task.lastFileUpdateTime;
         task.status = 'processing';
@@ -447,7 +483,7 @@ async function processCloud139Task(taskService, task, account) {
             }));
         });
 
-        return `${resourceName}追更${fileCount}集: \n${lines.join('\n')}`;
+        return pushMessage;
     } catch (err) {
         // P1-02: 增强错误处理
         const classifiedError = ErrorClassifier.enhance(err);
