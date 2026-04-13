@@ -208,7 +208,7 @@ async function processCloud139Task(taskService, task, account) {
             await taskService.taskRepo.save(task);
 
             const fileNameList = newFiles.map((f) => f.coName || f.path);
-            const title = `[追更通知] ${task.resourceName}(根目录文件) | 新增 ${fileCount} 集`;
+            const title = `[追更通知] ${task.resourceName}(根目录文件)追更${fileCount}集`;
             const detailLines = fileNameList.map((name) => `- ${name}`);
             const compactLines = [`${task.resourceName}(根目录文件) 新增 ${fileCount} 个文件`];
             return buildPushMessageWithThreshold({
@@ -443,7 +443,7 @@ async function processCloud139Task(taskService, task, account) {
         const summary = `${resourceName} 追更 ${fileCount} 集:\n${lines.join('\n')}`;
         logTaskEvent(summary);
         const compactLines = groups.map(([label, files]) => `- ${resourceName}${label ? `/${label}` : ''}/: ${files.length} 个`);
-        const title = `[追更通知] ${resourceName} | 新增 ${fileCount} 集`;
+        const title = `[追更通知] ${resourceName}追更${fileCount}集`;
         const pushMessage = buildPushMessageWithThreshold({
             title,
             fileCount,
