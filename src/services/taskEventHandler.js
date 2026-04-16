@@ -101,10 +101,13 @@ class TaskEventHandler {
     }
 
     async handle(taskCompleteEventDto) {
+        const task = taskCompleteEventDto.task;
+        const fileCount = Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0;
+        logTaskEvent(`事件接收: taskComplete | taskId=${task?.id} | resource=${task?.resourceName || '未知'} | fileCount=${fileCount}`);
         if (taskCompleteEventDto.fileList.length === 0) {
+            logTaskEvent(`事件跳过: taskComplete | taskId=${task?.id} | reason=fileList=0`);
             return;
         }
-        const task = taskCompleteEventDto.task;
         let refreshContext = null;
         logTaskEvent(` ${task.resourceName} 触发事件:`);
         try {
@@ -158,7 +161,9 @@ class TaskEventHandler {
      */
     async _handleCloudCacheRefresh(dto) {
         if (!alistService.Enable()) {
-            logTaskEvent('Alist 未启用，跳过 OpenList 原生挂载点缓存刷新');
+            const baseUrlExists = !!ConfigService.getConfigValue('alist.baseUrl');
+            const apiKeyExists = !!ConfigService.getConfigValue('alist.apiKey');
+            logTaskEvent(`Alist 未启用，跳过 OpenList 原生挂载点缓存刷新 | enable=false | baseUrl=${baseUrlExists} | apiKey=${apiKeyExists}`);
             return;
         }
 
@@ -168,7 +173,7 @@ class TaskEventHandler {
         const alistNativePath = account.alistNativePath?.trim();
 
         if (!alistNativePath) {
-            logTaskEvent(`alistNativePath 未配置，跳过 OpenList 原生挂载点缓存刷新 | realFolderName=${task.realFolderName}`);
+            logTaskEvent(`alistNativePath 未配置，跳过 OpenList 原生挂载点缓存刷新 | taskId=${task.id} | realFolderName=${task.realFolderName}`);
             return;
         }
 
@@ -210,6 +215,9 @@ class TaskEventHandler {
         // EmbyService 构造时读取 emby.enable，未启用时内部会短路返回
         const embyService = new EmbyService(null);
         if (!embyService.enable) {
+            const serverExists = !!ConfigService.getConfigValue('emby.serverUrl');
+            const apiKeyExists = !!ConfigService.getConfigValue('emby.apiKey');
+            logTaskEvent(`Emby 未启用，跳过通知 | enable=false | serverUrl=${serverExists} | apiKey=${apiKeyExists}`);
             return { status: 'skipped', reason: 'disabled' };
         }
         const task = dto.task;
@@ -245,6 +253,7 @@ class TaskEventHandler {
             return { status: 'skipped', reason: 'debounced' };
         }
         this._embyNotifyAt.set(debounceKey, now);
+        logTaskEvent(`Emby 通知准备执行: taskId=${task.id} | path=${fullCloudPath} | debounceMs=${debounceMs}`);
 
         const taskForEmby = {
             ...task,
