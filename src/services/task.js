@@ -37,6 +37,8 @@ class TaskService {
         this.taskRecycleService = new TaskRecycleService(this);
         this.taskStorageService = new TaskStorageService(this);
         this.taskErrorService = taskErrorRepo ? new TaskErrorService(taskErrorRepo) : null;
+        /** @type {Set<number|string>} 记录当前进程内正在执行的任务，避免并发回写状态 */
+        this.runningTaskIds = new Set();
         // 如果还没有taskComplete事件的监听器，则添加
         if (!this.eventService.hasListeners('taskComplete')) {
             const taskEventHandler = new TaskEventHandler(this.messageUtil);
@@ -308,14 +310,20 @@ class TaskService {
         // 重建 realFolderId（子目录任务）
         // root-files 任务的 realFolderId 应始终等于 realRootFolderId（不需要子目录）。
         // 旧版任务可能将 realFolderId 错误地指向 'root-files' 子目录，此处统一修正。
-        if (task.shareFolderId === 'root-files') {
+        const normalizedShareFolderName = String(task.shareFolderName || '').trim();
+        const isRootLikeTask = !task.shareFolderId || task.shareFolderId === 'root' || task.shareFolderId === '-1' || task.shareFolderId === -1 || task.shareFolderId === 'root-files';
+        if (task.shareFolderId === 'root-files' || isRootLikeTask || !normalizedShareFolderName) {
+            // 根任务/散文件任务或目录名为空时，不应创建子目录，直接复用根目录避免 139 报“文件名称不符合标准”。
+            if (!normalizedShareFolderName && !isRootLikeTask) {
+                logTaskEvent('[139] 子目录名为空，跳过子目录创建并复用根目录');
+            }
             task.realFolderId = task.realRootFolderId;
         } else if (task.realFolderId !== task.realRootFolderId) {
-            logTaskEvent(`[139] 正在创建子目录: ${task.shareFolderName}`);
-            const created = await cloud139.createFolderHcy(task.realRootFolderId, task.shareFolderName);
+            logTaskEvent(`[139] 正在创建子目录: ${normalizedShareFolderName}`);
+            const created = await cloud139.createFolderHcy(task.realRootFolderId, normalizedShareFolderName);
             if (!created?.fileId) throw new Error('创建子目录失败');
             task.realFolderId = created.fileId;
-            logTaskEvent(`[139] 子目录创建成功: ${task.shareFolderName} (${task.realFolderId})`);
+            logTaskEvent(`[139] 子目录创建成功: ${normalizedShareFolderName} (${task.realFolderId})`);
         } else {
             task.realFolderId = task.realRootFolderId;
         }
@@ -440,6 +448,11 @@ class TaskService {
     async processTask(task) {
         let saveResults = [];
         try {
+            if (this.isTaskRunning(task.id)) {
+                logTaskEvent(`任务[${task.id}]正在执行中，跳过重复触发`);
+                return '';
+            }
+            this.markTaskRunning(task.id);
             const account = await this.accountRepo.findOneBy({ id: task.accountId });
             if (!account) {
                 logTaskEvent(`账号不存在，accountId: ${task.accountId}`);
@@ -508,6 +521,7 @@ class TaskService {
                 task.currentEpisodes = existingMediaCount + fileCount;
                 task.retryCount = 0;
                 process.nextTick(() => {
+                    logTaskEvent(`事件触发: taskComplete | taskId=${task.id} | fileCount=${newFiles.length} | firstExecution=${firstExecution}`);
                     this.eventService.emit('taskComplete', new TaskCompleteEventDto({
                         task,
                         cloud189,
@@ -526,6 +540,7 @@ class TaskService {
                 }
                 task.currentEpisodes = existingMediaCount;
                 logTaskEvent(`${task.resourceName} 没有增量剧集`)
+                logTaskEvent(`事件跳过: taskComplete | taskId=${task.id} | reason=newFiles=0`);
             }
             // 检查是否达到总数
             if (task.totalEpisodes && task.currentEpisodes >= task.totalEpisodes) {
@@ -538,6 +553,8 @@ class TaskService {
             return saveResults.join('\n');
         } catch (error) {
             return await this.taskRetryService.handleTaskFailure(task, error);
+        } finally {
+            this.markTaskFinished(task.id);
         }
     }
 
@@ -551,20 +568,22 @@ class TaskService {
     }
 
     // 获取待处理任务
-    async getPendingTasks(ignore = false, taskIds = []) {
+    async getPendingTasks(ignore = false, taskIds = [], includeProcessing = false) {
         const conditions = [
             {
                 status: 'pending',
                 nextRetryTime: null,
                 enableSystemProxy: IsNull(),
                 ...(ignore ? {} : { enableCron: false })
-            },
-            {
+            }
+        ];
+        if (includeProcessing) {
+            conditions.push({
                 status: 'processing',
                 enableSystemProxy: IsNull(),
                 ...(ignore ? {} : { enableCron: false })
-            }
-        ];
+            });
+        }
         return await this.taskRepo.find({
             relations: {
                 account: true
@@ -840,7 +859,7 @@ class TaskService {
 
     // 执行所有任务
     async processAllTasks(ignore = false, taskIds = []) {
-        const tasks = await this.getPendingTasks(ignore, taskIds);
+        const tasks = await this.getPendingTasks(ignore, taskIds, false);
         if (tasks.length === 0) {
             logTaskEvent('没有待处理的任务');
             return;
@@ -1379,6 +1398,31 @@ class TaskService {
     // 删除移动云盘（cloud139）文件/目录
     async deleteCloudFile139(cloud139, file) {
         return this.taskStorageService.deleteCloudFile139(cloud139, file);
+    }
+
+    /**
+     * 判断任务是否正在执行。
+     * @param {number|string} taskId
+     * @returns {boolean}
+     */
+    isTaskRunning(taskId) {
+        return this.runningTaskIds.has(taskId);
+    }
+
+    /**
+     * 标记任务进入执行态，防止同任务并发写入。
+     * @param {number|string} taskId
+     */
+    markTaskRunning(taskId) {
+        this.runningTaskIds.add(taskId);
+    }
+
+    /**
+     * 清理任务执行态标记。
+     * @param {number|string} taskId
+     */
+    markTaskFinished(taskId) {
+        this.runningTaskIds.delete(taskId);
     }
 }
 
