@@ -162,6 +162,14 @@ class CheckpointManager {
             return false;
         }
 
+        const totalBatches = Number(checkpoint.metadata?.totalBatches || 0);
+        const currentBatchIndex = Number(checkpoint.currentBatchIndex || 0);
+        // 已达到总批次时视为完成态，避免出现“恢复进度100%仍继续执行”。
+        if (totalBatches > 0 && currentBatchIndex >= totalBatches) {
+            logTaskEvent(`[检查点] 任务 ${task.id} 检查点已完成（${currentBatchIndex}/${totalBatches}），跳过恢复`);
+            return false;
+        }
+
         // 如果任务状态是 pending 或 processing，且有检查点，则尝试恢复
         if (task.status === 'pending' || task.status === 'processing') {
             const createdAtMs = checkpoint.createdAt ? Date.parse(checkpoint.createdAt) : NaN;

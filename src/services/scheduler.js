@@ -64,6 +64,11 @@ class SchedulerService {
                     this.removeTaskJob(task.id);
                     return;
                 }
+                if (taskService.isTaskRunning(latestTask.id)) {
+                    logTaskEvent(`任务[${taskName}]已在运行中，跳过本次自定义调度`);
+                    logTaskEvent(`================================`);
+                    return;
+                }
                 const result = await taskService.processTask(latestTask);
                 if (result) {
                     this.messageUtil.sendMessage(result)
@@ -192,7 +197,7 @@ class SchedulerService {
         this._removeJobsByPrefix('任务定时检查-');
         taskCheckCrons.forEach((cronExpression, index) => {
             this.saveDefaultTaskJob(`任务定时检查-${index}`, cronExpression, async () => {
-                taskService.processAllTasks();
+                await taskService.processAllTasks();
             });
         });
 
