@@ -62,6 +62,18 @@ function toPlainObject(value) {
 }
 
 /**
+ * 判断检查点是否已达到完成态（用于清理陈旧检查点，避免重复恢复）。
+ * @param {object|null} checkpoint
+ * @returns {boolean}
+ */
+function isCheckpointCompleted(checkpoint) {
+    if (!checkpoint) return false;
+    const totalBatches = Number(checkpoint.metadata?.totalBatches || 0);
+    const currentBatchIndex = Number(checkpoint.currentBatchIndex || 0);
+    return totalBatches > 0 && currentBatchIndex >= totalBatches;
+}
+
+/**
  * 生成推送文案：
  * - 单次新增 >= threshold 时使用摘要，避免消息过长；
  * - 小批量保留明细，方便直接查看文件名。
@@ -151,9 +163,11 @@ async function processCloud139Task(taskService, task, account) {
                 if (existingNames.size > 0) return !existingNames.has(f.coName || '');
                 return true;
             });
+            logTaskEvent(`[139] 根目录增量扫描 | taskId=${task.id} | candidates=${allFiles.length} | newFiles=${newFiles.length} | transferred=${transferredIds.size}`);
 
             if (newFiles.length === 0) {
                 logTaskEvent(`${task.resourceName}(根目录文件) 没有新文件`);
+                logTaskEvent(`事件跳过: taskComplete | taskId=${task.id} | reason=newFiles=0`);
                 task.currentEpisodes = transferredIds.size;
                 task.lastCheckTime = new Date();
                 await taskService.taskRepo.save(task);
@@ -162,6 +176,11 @@ async function processCloud139Task(taskService, task, account) {
 
             // root-files 仅一个物理目录批次，也需要检查点保护避免可见性超时后的重复转存。
             let checkpoint = CheckpointManager.loadCheckpoint(task);
+            if (isCheckpointCompleted(checkpoint)) {
+                logTaskEvent(`[检查点] 任务 ${task.id} 检查点已完成，清理后重新评估增量`);
+                await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
+                checkpoint = null;
+            }
             const isResuming = CheckpointManager.shouldResume(task, checkpoint);
             const rootBatchKey = `root:${task.realFolderId}`;
             if (!checkpoint || !isResuming) {
@@ -202,10 +221,23 @@ async function processCloud139Task(taskService, task, account) {
             })));
 
             const fileCount = newFiles.length;
+            const firstExecution = !task.lastFileUpdateTime;
+            task.status = 'processing';
             task.currentEpisodes = (task.currentEpisodes || 0) + fileCount;
             task.lastFileUpdateTime = new Date();
             task.lastCheckTime = new Date();
             await taskService.taskRepo.save(task);
+
+            process.nextTick(() => {
+                logTaskEvent(`事件触发: taskComplete | taskId=${task.id} | fileCount=${newFiles.length} | firstExecution=${firstExecution}`);
+                taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
+                    task,
+                    cloud189: null,
+                    fileList: newFiles.map((f) => ({ id: f.coID, name: f.coName || '', md5: null })),
+                    overwriteStrm: false,
+                    firstExecution,
+                }));
+            });
 
             const fileNameList = newFiles.map((f) => f.coName || f.path);
             const title = `[追更通知] ${task.resourceName}(根目录文件)追更${fileCount}集`;
@@ -322,9 +354,11 @@ async function processCloud139Task(taskService, task, account) {
             }
             return true;
         });
+        logTaskEvent(`[139] 增量扫描结果 | taskId=${task.id} | candidates=${allFiles.length} | newFiles=${newFiles.length} | transferred=${transferredIds.size}`);
 
         if (newFiles.length === 0) {
             logTaskEvent(`${task.resourceName} 没有增量剧集`);
+            logTaskEvent(`事件跳过: taskComplete | taskId=${task.id} | reason=newFiles=0`);
             const totalExisting = [...diskFilesMap.values()]
                 .filter((names) => names !== null)
                 .reduce((sum, names) => {
@@ -357,6 +391,11 @@ async function processCloud139Task(taskService, task, account) {
 
         // P1-01: 初始化检查点
         let checkpoint = CheckpointManager.loadCheckpoint(task);
+        if (isCheckpointCompleted(checkpoint)) {
+            logTaskEvent(`[检查点] 任务 ${task.id} 检查点已完成，清理后重新评估增量`);
+            await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
+            checkpoint = null;
+        }
         const isResuming = CheckpointManager.shouldResume(task, checkpoint);
         
         if (!checkpoint || !isResuming) {
@@ -474,6 +513,7 @@ async function processCloud139Task(taskService, task, account) {
         await taskService.taskRepo.save(task);
 
         process.nextTick(() => {
+            logTaskEvent(`事件触发: taskComplete | taskId=${task.id} | fileCount=${newFiles.length} | firstExecution=${firstExecution}`);
             taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                 task,
                 cloud189: null,
