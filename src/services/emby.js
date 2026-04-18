@@ -40,13 +40,16 @@ class EmbyService {
         // 改进3：优先使用缓存的 embyId 直接刷新，跳过搜索
         if (task.embyId) {
             logTaskEvent(`使用缓存 embyId 直接刷新: ${task.embyId}`);
-            await this.refreshItemById(task.embyId);
-            return {
-                status: 'success',
-                itemId: task.embyId,
-                refreshMode: '缓存命中',
-                firstExecution: !!options.firstExecution,
-            };
+            const cacheRefreshOk = await this.refreshItemById(task.embyId);
+            if (cacheRefreshOk) {
+                return {
+                    status: 'success',
+                    itemId: task.embyId,
+                    refreshMode: '缓存命中',
+                    firstExecution: !!options.firstExecution,
+                };
+            }
+            logTaskEvent(`缓存 embyId 刷新失败，回退到路径/名称搜索: ${task.embyId}`);
         }
 
         // 路径搜索
@@ -57,8 +60,10 @@ class EmbyService {
         logTaskEvent(`Emby路径搜索结果: ${item ? item.Id : '未命中'}`);
 
         if (item) {
-            await this.refreshItemById(item.Id);
-            refreshMode = '路径命中';
+            const refreshed = await this.refreshItemById(item.Id);
+            if (refreshed) {
+                refreshMode = '路径命中';
+            }
             // 改进3：缓存 embyId 到任务记录
             if (task.id) {
                 await this._taskRepo.update(task.id, { embyId: String(item.Id) }).catch(e =>
@@ -72,8 +77,10 @@ class EmbyService {
             const nameItem = nameSearchResult?.Items?.find(i => i.IsFolder);
             if (nameItem) {
                 logTaskEvent(`名称搜索命中: ${nameItem.Name} (ID: ${nameItem.Id})`);
-                await this.refreshItemById(nameItem.Id);
-                refreshMode = '名称命中';
+                const refreshed = await this.refreshItemById(nameItem.Id);
+                if (refreshed) {
+                    refreshMode = '名称命中';
+                }
                 item = nameItem;
                 // 改进3：缓存 embyId 到任务记录
                 if (task.id) {
@@ -96,10 +103,20 @@ class EmbyService {
 
                 if (!refreshMode) {
                     logTaskEvent(`目录事件局部刷新失败，降级执行全库扫描: ${taskName}`);
-                    await this.refreshAllLibraries();
-                    refreshMode = '全库刷新';
+                    const fullRefreshOk = await this.refreshAllLibraries();
+                    if (fullRefreshOk) {
+                        refreshMode = '全库刷新';
+                    }
                 }
             }
+        }
+        if (!refreshMode) {
+            return {
+                status: 'skipped',
+                reason: 'refresh-request-failed',
+                itemId: item ? item.Id : null,
+                firstExecution: !!options.firstExecution,
+            };
         }
         return {
             status: 'success',
@@ -129,26 +146,54 @@ class EmbyService {
     // 2. /emby/Items/{ID}/Refresh 刷新指定ID的剧集/电影
     async refreshItemById(id) {
         const url = `${this.embyUrl}/emby/Items/${id}/Refresh`;
-        await this.request(url, {
-            method: 'POST',
-            searchParams: {
-                Recursive: 'true',
-                MetadataRefreshMode: 'FullRefresh',
-                ImageRefreshMode: 'FullRefresh',
-                ReplaceAllMetadata: 'false',
-                ReplaceAllImages: 'false',
-            },
-        })
+        const ok = await this._postWithQuery(url, {
+            Recursive: 'true',
+            MetadataRefreshMode: 'FullRefresh',
+            ImageRefreshMode: 'FullRefresh',
+            ReplaceAllMetadata: 'false',
+            ReplaceAllImages: 'false',
+        }, `Emby单项刷新请求`);
+        if (!ok) {
+            logTaskEvent(`Emby单项刷新失败: itemId=${id}`);
+            return false;
+        }
+        logTaskEvent(`Emby单项刷新已提交: itemId=${id}`);
         return true;
     }
 
     // 3. 刷新所有库
     async refreshAllLibraries() {
         const url = `${this.embyUrl}/emby/Library/Refresh`;
-        await this.request(url, {
-            method: 'POST',
-        })
+        const ok = await this._postWithQuery(url, {}, 'Emby全库刷新请求');
+        if (!ok) {
+            logTaskEvent('Emby全库刷新失败');
+            return false;
+        }
+        logTaskEvent('Emby全库刷新已提交');
         return true;
+    }
+
+    async _postWithQuery(url, searchParams = {}, logPrefix = 'Emby请求') {
+        try {
+            const headers = {
+                'Authorization': 'MediaBrowser Token="' + this.embyApiKey + '"',
+            };
+            const response = await got(url, {
+            method: 'POST',
+                headers,
+                searchParams,
+                responseType: 'text',
+                throwHttpErrors: false,
+            });
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+                logTaskEvent(`${logPrefix}失败: status=${response.statusCode}, url=${url}`);
+                return false;
+            }
+            return true;
+        } catch (error) {
+            logTaskEvent(`${logPrefix}异常: ${error.message}`);
+            return false;
+        }
     }
 
     /**

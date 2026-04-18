@@ -156,6 +156,13 @@ class TaskEventHandler {
 
     async _handleAutoRename(taskCompleteEventDto) {
         try {
+            const task = taskCompleteEventDto.task || {};
+            const hasTaskTemplate = !!(String(task.movieRenameFormat || '').trim() || String(task.tvRenameFormat || '').trim());
+            const hasRegexRule = !!(String(task.sourceRegex || '').trim() && String(task.targetRegex || '').trim());
+            logTaskEvent(
+                `自动重命名开始: taskId=${task?.id} | fileCount=${Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0} | taskTemplate=${hasTaskTemplate} | regexRule=${hasRegexRule}`
+            );
+
             const newFiles = await taskCompleteEventDto.taskService.autoRename(
                 taskCompleteEventDto.task,
                 taskCompleteEventDto.fileList

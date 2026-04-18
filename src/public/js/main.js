@@ -8,6 +8,36 @@ async function loadVersion() {
     }
 }
 
+// 设置页版本显示兜底：即使 settings.js 未执行，也保证不长期停留在 loading...
+async function loadSystemVersionFallback() {
+    const versionElement = document.getElementById('systemVersion');
+    if (!versionElement) return;
+
+    try {
+        const response = await fetch('/api/system/version');
+        const data = await response.json();
+        if (data?.success && data?.version) {
+            versionElement.textContent = `v${data.version}`;
+            return;
+        }
+    } catch (_) {
+        // ignore and fallback to /api/version
+    }
+
+    try {
+        const response = await fetch('/api/version');
+        const data = await response.json();
+        if (data?.version) {
+            versionElement.textContent = `v${data.version}`;
+            return;
+        }
+    } catch (_) {
+        // ignore
+    }
+
+    versionElement.textContent = 'unknown';
+}
+
 function debounce(func, wait) {
     let timeout;
     return function (...args) {
@@ -101,6 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // 加载版本号
     loadVersion();
+    loadSystemVersionFallback();
     // 初始化所有功能
     initTabs();
     initAccountForm();
