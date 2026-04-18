@@ -124,6 +124,10 @@ dist
 # 测试文件
 _test_*.js
 _test_*.mjs
+__tests__/
+test/
+jest.config.js
+test_cron.js
 
 # 数据库文件
 *.db
