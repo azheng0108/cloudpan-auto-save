@@ -14,6 +14,7 @@ class CreateTaskDto {
         this.cronExpression = data.cronExpression;
         this.realRootFolderId = data.realRootFolderId;
         this.targetFolder = data.targetFolder;
+        this.targetDetailPath = data?.targetDetailPath;
         this.selectedFolders = data?.selectedFolders; // 选中的分享目录
         this.tgbot = data?.tgbot;
         this.sourceRegex = data?.sourceRegex; // 源正则 (自动重命名)

@@ -121,6 +121,15 @@ function createProgressRing(current, total) {
 }
 
 var taskList = []
+
+function updateBatchDeleteButtonState() {
+    const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+    if (!batchDeleteBtn) return;
+    const selectedCount = document.querySelectorAll('#taskTable tbody tr.selected').length;
+    batchDeleteBtn.disabled = selectedCount === 0;
+    batchDeleteBtn.title = selectedCount === 0 ? '请选择任务后再批量删除' : '';
+}
+
 // 从taskList中获取任务
 function getTaskById(id) {
     return taskList.find(task => task.id == id);
@@ -152,6 +161,9 @@ async function fetchTasks() {
             const cronIcon = task.enableCron ? '<span class="cron-icon" title="已开启自定义定时任务">⏰</span>' : '';
             tbody.innerHTML += `
                 <tr data-status='${task.status}' data-task-id='${task.id}' data-name='${taskNameText}'>
+                    <td class="task-select-cell" style="text-align:center;width:2rem;">
+                        <input type="checkbox" class="task-row-checkbox" onchange="onTaskRowCheckboxChange(this)">
+                    </td>
                     <td>
                         <div class="table-row-actions task-row-actions">
                             <button class="action-btn action-btn-danger" onclick="deleteTask(${task.id})">删除</button>
@@ -169,6 +181,14 @@ async function fetchTasks() {
                 </tr>
             `;
         });
+        ['selectAllTasks', 'selectAllTasksHeader'].forEach(id => {
+            const cb = document.getElementById(id);
+            if (cb) {
+                cb.checked = false;
+                cb.indeterminate = false;
+            }
+        });
+        updateBatchDeleteButtonState();
     }
 }
 
@@ -250,12 +270,28 @@ const DEFAULT_MOVIE_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/{{tit
 const DEFAULT_TV_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{% if title and title != season_episode %}{{title}} - {% endif %}{{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{{fileExt}}`;
 
 function _getDefaultFormats() {
-    return window._renameFormats || { movie: DEFAULT_MOVIE_FORMAT, tv: DEFAULT_TV_FORMAT };
+    const fallback = window._renameFormats || { movie: DEFAULT_MOVIE_FORMAT, tv: DEFAULT_TV_FORMAT };
+    const movieInput = document.getElementById('tmdbMovieFormat');
+    const tvInput = document.getElementById('tmdbTvFormat');
+    const movie = movieInput?.value?.trim() || fallback.movie || DEFAULT_MOVIE_FORMAT;
+    const tv = tvInput?.value?.trim() || fallback.tv || DEFAULT_TV_FORMAT;
+    return { movie, tv };
 }
 
 function openCreateTaskModal() {
-    document.getElementById('targetFolderId').value = '';
-    document.getElementById('targetFolder').value = '';
+    const lastTargetFolder = getFromCache('lastTargetFolder');
+    if (lastTargetFolder) {
+        const { lastTargetFolderId, lastTargetFolderName } = JSON.parse(lastTargetFolder);
+        document.getElementById('targetFolderId').value = lastTargetFolderId;
+        document.getElementById('targetFolder').value = lastTargetFolderName;
+    } else {
+        document.getElementById('targetFolderId').value = '';
+        document.getElementById('targetFolder').value = '';
+    }
+    const enableTemplateRename = document.getElementById('enableTemplateRename');
+    if (enableTemplateRename) {
+        enableTemplateRename.checked = false;
+    }
     document.getElementById('cronPresetType').value = 'custom';
     document.getElementById('cronPresetTime').value = '02:00';
     const monthDayChecks = document.querySelectorAll('input[name="cronMonthDay"]');
@@ -297,7 +333,7 @@ function initTaskForm() {
         const shareLink = document.getElementById('shareLink').value;
         const totalEpisodes = document.getElementById('totalEpisodes').value;
         const targetFolderId = document.getElementById('targetFolderId').value;
-        const targetFolder = document.getElementById('targetFolder').value
+        const targetFolder = document.getElementById('targetFolder').value;
         const accessCode = document.getElementById('accessCode').value;
         const matchPattern = document.getElementById('matchPattern').value;
         const matchOperator = document.getElementById('matchOperator').value;
@@ -305,10 +341,10 @@ function initTaskForm() {
         const remark = document.getElementById('remark').value;
         const enableCron = document.getElementById('enableCron').checked;
         const cronExpression = enableCron ? buildCreateCronExpression() : document.getElementById('cronExpression').value;
-        const sourceRegex = document.getElementById('ctSourceRegex').value;
-        const targetRegex = document.getElementById('ctTargetRegex').value;
-        const movieRenameFormat = document.getElementById('movieRenameFormat').value;
-        const tvRenameFormat = document.getElementById('tvRenameFormat').value;
+        const enableTemplateRename = document.getElementById('enableTemplateRename').checked;
+        const defaultFormats = _getDefaultFormats();
+        const movieRenameFormat = enableTemplateRename ? defaultFormats.movie : '';
+        const tvRenameFormat = enableTemplateRename ? defaultFormats.tv : '';
         const taskName = document.getElementById('taskName').value.trim();
         if (!taskName) {
             message.warning('任务名称不能为空');
@@ -321,11 +357,6 @@ function initTaskForm() {
         }
         if (enableCron && !cronExpression) {
             message.warning('开启了自定义定时任务, 那么定时表达式就必须填');
-            return;
-        }
-        // 如果填了targetRegex 那么sourceRegex也必须填
-        if (targetRegex &&!sourceRegex) {
-            message.warning('填了目标正则, 那么源正则就必须填');
             return;
         }
         // 读取所有选中的分享目录 checkbox（含根目录 -1、根目录文件 root-files、子目录 caID）
@@ -350,8 +381,6 @@ function initTaskForm() {
             cronExpression,
             targetFolder,
             selectedFolders,
-            sourceRegex,
-            targetRegex,
             taskName,
             movieRenameFormat,
             tvRenameFormat
@@ -362,16 +391,16 @@ function initTaskForm() {
 
     // 监听accountId的变化
     document.getElementById('accountId').addEventListener('change', async () => {
-        const lastTargetFolder = getFromCache('lastTargetFolder')
+        const lastTargetFolder = getFromCache('lastTargetFolder');
         if (lastTargetFolder) {
             const { lastTargetFolderId, lastTargetFolderName } = JSON.parse(lastTargetFolder);
             document.getElementById('targetFolderId').value = lastTargetFolderId;
-            document.getElementById('targetFolder').value = lastTargetFolderName; 
+            document.getElementById('targetFolder').value = lastTargetFolderName;
         }else{
             document.getElementById('targetFolderId').value = '';
             document.getElementById('targetFolder').value = '';
         }
-    })
+    });
     async function createTask(e, body) {
         const submitBtn = e.target.querySelector('button[type="submit"]');
         submitBtn.classList.add('loading');
@@ -386,7 +415,7 @@ function initTaskForm() {
     
             const data = await response.json();
             if (data.success) {
-                const targetFolderName = document.getElementById('targetFolder').value
+                const targetFolderName = document.getElementById('targetFolder').value;
                 // 存储本次选择的目录
                 saveToCache('lastTargetFolder', JSON.stringify({ lastTargetFolderId: body.targetFolderId, lastTargetFolderName:  targetFolderName}));
                 document.getElementById('taskForm').reset();
@@ -833,21 +862,6 @@ function filterTasks() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const dropdownToggle = document.querySelector('.dropdown-toggle');
-    const dropdownGroup = document.querySelector('.dropdown-button-group');
-
-    dropdownToggle.addEventListener('click', function(e) {
-        e.stopPropagation();
-        dropdownGroup.classList.toggle('active');
-    });
-
-    // 点击其他地方关闭下拉菜单
-    document.addEventListener('click', function(e) {
-        if (!dropdownGroup.contains(e.target)) {
-            dropdownGroup.classList.remove('active');
-        }
-    });
-
     const debouncedFilterTasks = debounce(filterTasks, 500);
     // 任务筛选功能
     const taskFilter = document.getElementById('taskFilter');
@@ -859,50 +873,99 @@ document.addEventListener('DOMContentLoaded', function() {
     taskSearch.addEventListener('input', function() {
         debouncedFilterTasks();
     });
+    // 同步两个全选框（表头 + 底部）
+    function syncSelectAllCheckboxes(checked, indeterminate) {
+        ['selectAllTasks', 'selectAllTasksHeader'].forEach(id => {
+            const cb = document.getElementById(id);
+            if (cb) {
+                cb.checked = checked;
+                cb.indeterminate = indeterminate;
+            }
+        });
+    }
+
     // 添加全选功能
     const selectAllCheckbox = document.getElementById('selectAllTasks');
+    const selectAllHeaderCheckbox = document.getElementById('selectAllTasksHeader');
+
+    function handleSelectAll(checked) {
+        const rows = document.querySelectorAll('#taskTable tbody tr');
+        rows.forEach(row => {
+            row.classList.toggle('selected', checked);
+            const cb = row.querySelector('.task-row-checkbox');
+            if (cb) cb.checked = checked;
+        });
+        syncSelectAllCheckboxes(checked, false);
+        updateBatchDeleteButtonState();
+    }
+
+    const deleteCloudOption = document.getElementById('deleteCloudOption');
+    if (deleteCloudOption) {
+        const cached = localStorage.getItem('taskDeleteCloudOption');
+        deleteCloudOption.checked = cached === null ? true : cached === '1';
+        deleteCloudOption.addEventListener('change', () => {
+            localStorage.setItem('taskDeleteCloudOption', deleteCloudOption.checked ? '1' : '0');
+        });
+    }
+
     if (selectAllCheckbox) {
         selectAllCheckbox.addEventListener('change', function() {
-            const rows = document.querySelectorAll('#taskTable tbody tr');
-            rows.forEach(row => {
-                row.classList.toggle('selected', this.checked);
-            });
-            
-            // 更新批量删除按钮显示状态
-            const batchDeleteBtn = document.getElementById('batchDeleteBtn');
-            if (batchDeleteBtn) {
-                batchDeleteBtn.style.display = this.checked ? '' : 'none';
-            }
+            handleSelectAll(this.checked);
+        });
+    }
+    if (selectAllHeaderCheckbox) {
+        selectAllHeaderCheckbox.addEventListener('change', function() {
+            handleSelectAll(this.checked);
         });
     }
 
     // 修改任务行选择逻辑
     const taskTable = document.getElementById('taskTable');
     taskTable.addEventListener('click', function(e) {
-        if (e.target.closest('button, a, input, .dropdown-content')) {
+        if (e.target.closest('button, a, input')) {
             return;
         }
         const row = e.target.closest('tr');
         if (!row) return;
         
         row.classList.toggle('selected');
+        // 同步行 checkbox
+        const rowCb = row.querySelector('.task-row-checkbox');
+        if (rowCb) rowCb.checked = row.classList.contains('selected');
         
         // 更新全选框状态
         const allRows = document.querySelectorAll('#taskTable tbody tr');
         const selectedRows = document.querySelectorAll('#taskTable tbody tr.selected');
-        if (selectAllCheckbox) {
-            selectAllCheckbox.checked = allRows.length === selectedRows.length;
-            selectAllCheckbox.indeterminate = selectedRows.length > 0 && selectedRows.length < allRows.length;
-        }
+        const allSelected = allRows.length > 0 && allRows.length === selectedRows.length;
+        const someSelected = selectedRows.length > 0 && selectedRows.length < allRows.length;
+        syncSelectAllCheckboxes(allSelected, someSelected);
 
-        // 更新批量删除按钮显示状态
-        if (batchDeleteBtn) {
-            batchDeleteBtn.style.display = selectedRows.length > 0 ? '' : 'none';
-        }
+        updateBatchDeleteButtonState();
     });
+
+    updateBatchDeleteButtonState();
 });
 
 
+
+// 任务行勾选框变化 —— 同步 selected 状态和全选框
+function onTaskRowCheckboxChange(cb) {
+    const row = cb.closest('tr');
+    if (!row) return;
+    row.classList.toggle('selected', cb.checked);
+
+    const allRows = document.querySelectorAll('#taskTable tbody tr');
+    const selectedRows = document.querySelectorAll('#taskTable tbody tr.selected');
+    const allSelected = allRows.length > 0 && allRows.length === selectedRows.length;
+    const someSelected = selectedRows.length > 0 && selectedRows.length < allRows.length;
+
+    ['selectAllTasks', 'selectAllTasksHeader'].forEach(id => {
+        const scb = document.getElementById(id);
+        if (scb) { scb.checked = allSelected; scb.indeterminate = someSelected; }
+    });
+
+    updateBatchDeleteButtonState();
+}
 
 // 批量删除功能
 async function deleteSelectedTasks() {

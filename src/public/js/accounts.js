@@ -131,11 +131,7 @@ async function editAccount(id) {
     document.getElementById('cookie').value = chooseAccount.cookies || '';
     document.getElementById('alistNativePath').value = chooseAccount.alistNativePath || '';
     document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
-    document.getElementById('rootFolderId').value = chooseAccount.rootFolderId || '';
-    document.getElementById('localStrmPrefix').value = chooseAccount.localStrmPrefix || '';
-    document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
     document.getElementById('embyLibraryPath').value = chooseAccount.embyLibraryPath || '';
-    document.getElementById('embyPathReplace').value = chooseAccount.embyPathReplace || '';
     // 账号不允许修改
     document.getElementById('username').setAttribute('readonly', true )
     // 修改提交按钮文本
@@ -162,11 +158,7 @@ async function createAccount() {
     const cookies  = document.getElementById('cookie').value;
     const alistNativePath = document.getElementById('alistNativePath').value;
     const alistStrmPath = document.getElementById('alistStrmPath').value;
-    const rootFolderId = document.getElementById('rootFolderId').value;
-    const localStrmPrefix = document.getElementById('localStrmPrefix').value;
-    const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
     const embyLibraryPath = document.getElementById('embyLibraryPath').value;
-    const embyPathReplace = document.getElementById('embyPathReplace').value;
     const validateCodeDom = document.getElementById('validateCode')
     let validateCode = "";
     if (validateCodeDom) {
@@ -201,11 +193,7 @@ async function createAccount() {
             validateCode,
             alistNativePath,
             alistStrmPath,
-            rootFolderId,
-            localStrmPrefix,
-            cloudStrmPrefix,
             embyLibraryPath,
-            embyPathReplace,
         })
     });
     const data = await response.json();

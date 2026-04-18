@@ -1,6 +1,4 @@
-const { Cloud189Service } = require('../legacy189/services/cloud189');
 const { Cloud139Service } = require('./cloud139');
-const { BatchTaskDto } = require('../dto/BatchTaskDto');
 const { SchedulerService } = require('./scheduler');
 const { logTaskEvent } = require('../utils/logUtils');
 
@@ -18,9 +16,6 @@ class TaskStorageService {
             if (account.accountType === 'cloud139') {
                 const cloud139 = Cloud139Service.getInstance(account);
                 await this.deleteCloudFile139(cloud139, await this.getRootFolder(task), 1);
-            } else {
-                const cloud189 = Cloud189Service.getInstance(account);
-                await this.deleteCloudFile(cloud189, await this.getRootFolder(task), 1);
             }
         }
         if (task.enableCron) {
@@ -58,46 +53,14 @@ class TaskStorageService {
         return null;
     }
 
-    async deleteCloudFile(cloud189, file, isFolder) {
-        if (!file) return;
-        const taskInfos = [];
-        if (Array.isArray(file)) {
-            for (const f of file) {
-                taskInfos.push({
-                    fileId: f.id,
-                    fileName: f.name,
-                    isFolder: isFolder
-                });
-            }
-        } else {
-            taskInfos.push({
-                fileId: file.id,
-                fileName: file.name,
-                isFolder: isFolder
-            });
-        }
-        logTaskEvent(`准备删除云盘内容: ${JSON.stringify(taskInfos)}`);
-        const batchTaskDto = new BatchTaskDto({
-            taskInfos: JSON.stringify(taskInfos),
-            type: 'DELETE',
-            targetFolderId: ''
-        });
-        await this.taskService.createBatchTask(cloud189, batchTaskDto);
-    }
-
     async deleteFiles(taskId, files) {
         const task = await this.taskService.getTaskById(taskId);
         if (!task) {
             throw new Error('任务不存在');
         }
         if (!task.enableSystemProxy) {
-            if (task.account?.accountType === 'cloud139') {
-                const cloud139 = Cloud139Service.getInstance(task.account);
-                await this.deleteCloudFile139(cloud139, files);
-            } else {
-                const cloud189 = Cloud189Service.getInstance(task.account);
-                await this.deleteCloudFile(cloud189, files, 0);
-            }
+            const cloud139 = Cloud139Service.getInstance(task.account);
+            await this.deleteCloudFile139(cloud139, files);
         }
     }
 

@@ -69,8 +69,8 @@ export class Account {
     @Column('text', { nullable: true, default: '' })
     alias!: string;
 
-    // 账号类型: cloud189 | cloud139
-    @Column('text', { nullable: true, default: 'cloud189' })
+    // 账号类型: cloud139
+    @Column('text', { nullable: true, default: 'cloud139' })
     accountType!: string;
 
     // 默认账号

@@ -15,8 +15,6 @@ class ConfigService {
           retryTaskCron: '*/10 * * * *',
           cleanRecycleCron: '0 */8 * * *',
         cloud139Concurrency: 3,
-        // cloud189Concurrency: 保留用于 legacy189 兼容层
-        cloud189Concurrency: 5,
         maxRetries: 3,        // 最大重试次数
         retryInterval: 300,   // 重试间隔（秒）
         enableAutoClearRecycle: false,
@@ -76,10 +74,6 @@ class ConfigService {
         apiKey: '',
         sessionSecret: ''
       },
-      // legacy: 保留用于 189 运行时特性开关（telegramBot/emby 使用）
-      legacy: {
-        enableCloud189Runtime: false
-      },
       cloudSaver: {
         baseUrl: '',
         username: '',
@@ -90,13 +84,25 @@ class ConfigService {
         enable: false,
         baseUrl: '',
         apiKey: '',
-        strmMountPath: '/strm'  // OpenList STRM 驱动的虚拟目录挂载前缀，默认 /strm
+        strmMountPath: ''  // OpenList STRM 驱动的虚拟目录挂载前缀（留空表示不启用 STRM 虚拟路径）
       },
       // Emby 媒体库通知配置
       emby: {
         enable: false,
         serverUrl: '',
         apiKey: ''
+      },
+      // 本地 STRM 文件生成配置
+      strm: {
+        enable: false,
+        localStrmPrefix: '',
+        cloudStrmPrefix: ''
+      },
+      // TMDB 刮削 / NFO 生成配置
+      tmdb: {
+        tmdbApiKey: '',
+        movieRenameFormat: '',
+        tvRenameFormat: ''
       },
       customPush: [] // 自定义推送
     };

@@ -26,7 +26,6 @@ async function searchResources() {
 }
 
 function getCloudSource(link) {
-    if (link.includes('cloud.189.cn')) return { label: '天翼云盘', type: 'cloud189' };
     if (link.includes('yun.139.com') || link.includes('caiyun.139.com')) return { label: '移动云盘', type: 'cloud139' };
     return { label: '其他', type: 'other' };
 }
@@ -36,19 +35,29 @@ function renderResults() {
     if (searchResults.length === 0) {
         resultsDiv.innerHTML = `<div class="cloudsaver-empty">未搜索到任何资源</div>`;
     } else {
+        // 仅展示移动云盘(139)结果
+        const filteredResults = searchResults.filter(item => {
+            const link = item.cloudLinks[0]?.link || '';
+            return link.includes('yun.139.com') || link.includes('caiyun.139.com');
+        });
+        if (filteredResults.length === 0) {
+            resultsDiv.innerHTML = `<div class="cloudsaver-empty">未搜索到移动云盘(139)相关资源</div>`;
+            document.getElementById('searchResults').style.display = 'block';
+            return;
+        }
         // 按来源分组
         const groups = {};
-        searchResults.forEach((item, index) => {
+        filteredResults.forEach((item, index) => {
             const link = item.cloudLinks[0].link;
             const source = getCloudSource(link);
             if (!groups[source.type]) {
                 groups[source.type] = { label: source.label, type: source.type, items: [] };
             }
-            groups[source.type].items.push({ item, index });
+            groups[source.type].items.push({ item, index: searchResults.indexOf(item) });
         });
 
         // 固定分组顺序
-        const ORDER = ['cloud139', 'cloud189', 'other'];
+        const ORDER = ['cloud139', 'other'];
         let html = `<div class="cloudsaver-credit">以下资源来自 <a href="https://github.com/jiangrui1994/cloudsaver" target="_blank">CloudSaver</a></div>`;
 
         ORDER.forEach(type => {

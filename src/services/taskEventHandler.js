@@ -1,7 +1,9 @@
 const { logTaskEvent } = require('../utils/logUtils');
 const logger = require('../utils/logger');
+const path = require('path');
 const { EmbyService } = require('./emby');
 const { StrmService } = require('./strm');
+const { ScrapeService } = require('./ScrapeService');
 const alistService = require('./alistService');
 const ConfigService = require('./ConfigService');
 
@@ -124,6 +126,12 @@ class TaskEventHandler {
             logTaskEvent(`本地 STRM 生成失败: ${error.message}`);
         }
         try {
+            await this._handleNfoGenerate(taskCompleteEventDto);
+        } catch (error) {
+            logger.error('NFO 刮削失败', { error: error.message, stack: error.stack });
+            logTaskEvent(`NFO 刮削失败（不阻断后续流程）: ${error.message}`);
+        }
+        try {
             // 优先使用原生驱动路径刷新 OpenList 缓存，降级使用 STRM 路径；失败不阻断 Emby 通知
             refreshContext = await this._handleCloudCacheRefresh(taskCompleteEventDto);
         } catch (error) {
@@ -148,7 +156,7 @@ class TaskEventHandler {
 
     async _handleAutoRename(taskCompleteEventDto) {
         try {
-            const newFiles = await taskCompleteEventDto.taskService.autoRename(taskCompleteEventDto.cloud189, taskCompleteEventDto.task);
+            const newFiles = await taskCompleteEventDto.taskService.autoRename(taskCompleteEventDto.task);
             if (newFiles.length > 0) {
                 taskCompleteEventDto.fileList = newFiles;
             }
@@ -172,9 +180,9 @@ class TaskEventHandler {
             return;
         }
         const task = dto.task;
-        const account = task.account || {};
-        if (!account.localStrmPrefix) {
-            logTaskEvent(`localStrmPrefix 未配置，跳过本地 STRM 生成 | taskId=${task.id}`);
+        const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || task.account?.localStrmPrefix || '';
+        if (!localStrmPrefix) {
+            logTaskEvent(`strm.localStrmPrefix 未配置，跳过本地 STRM 生成 | taskId=${task.id}`);
             return;
         }
         const files = Array.isArray(dto.fileList) ? dto.fileList : [];
@@ -185,6 +193,37 @@ class TaskEventHandler {
         const strmService = new StrmService();
         logTaskEvent(`开始本地 STRM 生成 | taskId=${task.id} | fileCount=${files.length}`);
         await strmService.generate(task, files, dto.overwriteStrm ?? false);
+    }
+
+    /**
+     * 追更后 NFO 刮削：本地 STRM 生成成功后自动从 TMDB 获取元数据并写入 NFO 文件。
+     * 需要同时满足：tmdb.tmdbApiKey 已填写 + strm.enable=true + strm.localStrmPrefix 已配置。
+     * @param {TaskCompleteEventDto} dto
+     */
+    async _handleNfoGenerate(dto) {
+        const tmdbApiKey = ConfigService.getConfigValue('tmdb.tmdbApiKey');
+        if (!tmdbApiKey) {
+            logTaskEvent('TMDB API Key 未配置，跳过 NFO 刮削');
+            return;
+        }
+        const strmEnabled = ConfigService.getConfigValue('strm.enable');
+        if (!strmEnabled) {
+            logTaskEvent('本地 STRM 未启用，跳过 NFO 刮削');
+            return;
+        }
+        const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || '';
+        if (!localStrmPrefix) {
+            logTaskEvent('strm.localStrmPrefix 未配置，跳过 NFO 刮削');
+            return;
+        }
+        const task = dto.task;
+        const taskName = (task.realFolderName || '').replace(/\\/g, '/').replace(/^\/|\/$/g, '');
+        const baseDir = path.join(__dirname, '../../../strm');
+        const targetDir = path.join(baseDir, localStrmPrefix, taskName);
+        const scrapeService = new ScrapeService();
+        logTaskEvent(`开始 NFO 刮削 | taskId=${task.id} | dir=${targetDir}`);
+        await scrapeService.scrapeFromDirectory(targetDir);
+        logTaskEvent('NFO 刮削完成');
     }
 
     /**
@@ -215,11 +254,16 @@ class TaskEventHandler {
         // 推算 STRM 虚拟路径：账号手动配置 > 全局 strmMountPath + alistNativePath > 无
         let strmBasePath = alistStrmPathRaw;
         if (!strmBasePath && alistNativePath) {
-            const strmMountPath = (ConfigService.getConfigValue('alist.strmMountPath') || '/strm')
+            const strmMountPath = String(ConfigService.getConfigValue('alist.strmMountPath') || '')
+                .trim()
                 .replace(/\/+$/, '');
-            const nativeSuffix = alistNativePath.replace(/^\/+/, '');
-            strmBasePath = `${strmMountPath}/${nativeSuffix}`;
-            logTaskEvent(`STRM 虚拟路径自动推算: ${strmMountPath} + ${alistNativePath} → ${strmBasePath}`);
+            if (strmMountPath) {
+                const nativeSuffix = alistNativePath.replace(/^\/+/, '');
+                strmBasePath = `${strmMountPath}/${nativeSuffix}`;
+                logTaskEvent(`STRM 虚拟路径自动推算: ${strmMountPath} + ${alistNativePath} → ${strmBasePath}`);
+            } else {
+                logTaskEvent(`STRM 挂载路径未配置，跳过 STRM 虚拟路径自动推算`);
+            }
         }
 
         // 原生路径刷新（优先，若 alistNativePath 存在）

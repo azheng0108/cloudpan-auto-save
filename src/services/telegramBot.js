@@ -2,13 +2,11 @@ const TelegramBot = require('node-telegram-bot-api');
 const { AppDataSource } = require('../database');
 const { Task, Account, CommonFolder, TransferredFile } = require('../entities');
 const { TaskService } = require('./task');
-const { Cloud189Service } = require('../legacy189/services/cloud189');
 const { Cloud139Service } = require('./cloud139');
 const { TMDBService } = require('./tmdb');
 const path = require('path');
 const { default: cloudSaverSDK } = require('../sdk/cloudsaver/sdk');
 const ProxyUtil = require('../utils/ProxyUtil');
-const cloud189Utils = require('../legacy189/utils/Cloud189Utils');
 const Cloud139Utils = require('../utils/Cloud139Utils');
 const logger = require('../utils/logger');
 
@@ -28,7 +26,7 @@ class TelegramBotService {
         this.currentAccessCode = null;
         this.lastButtonMessageId = null;  // 上次按钮消息
         this.currentFolderPath = '';  // 当前路径
-        this.currentFolderId = '-11';  // 当前文件夹ID
+        this.currentFolderId = '/';  // 当前文件夹ID
         this.folders = new Map();
         this.parentFolderIds = new Set();
 
@@ -44,10 +42,6 @@ class TelegramBotService {
         this.cloudSaverSearchMap = new Map();
 
         this.tmdbService = new TMDBService();
-    }
-
-    _isLegacy189RuntimeEnabled() {
-        return ConfigService.getConfigValue('legacy.enableCloud189Runtime') === true;
     }
 
     async start() {
@@ -141,7 +135,7 @@ class TelegramBotService {
                 '/search_cs - 搜索CloudSaver资源\n' +
                 '/cancel - 取消当前操作\n\n' +
                 '📥 创建任务：\n' +
-                '直接发送天翼云盘(189)或移动云盘(139)分享链接即可创建任务\n' +
+                '直接发送移动云盘(139)分享链接即可创建任务\n' +
                 '格式：链接（支持访问码的链接）\n\n' +
                 '📝 任务操作：\n' +
                 '/execute_[ID] - 执行指定任务\n' +
@@ -182,17 +176,9 @@ class TelegramBotService {
                             const extracted = Cloud139Utils.extractFromShareText(cacheShareLink);
                             shareLink = extracted ? extracted.url : cacheShareLink;
                             accessCode = extracted?.passwd || '';
-                        } else if (/cloud\.189\.cn/i.test(cacheShareLink)) {
-                            if (!this._isLegacy189RuntimeEnabled()) {
-                                await this.bot.sendMessage(chatId, '当前默认运行链路已禁用 189，请使用 139 分享链接');
-                                return;
-                            }
-                            const parsed = cloud189Utils.parseCloudShare(cacheShareLink);
-                            shareLink = parsed?.url;
-                            accessCode = parsed?.accessCode || '';
                         } else {
                             // 其他来源链接，直接发送给用户
-                            await this.bot.sendMessage(chatId, `🔗 资源链接（非189/139云盘，请手动处理）:\n${cacheShareLink}`);
+                            await this.bot.sendMessage(chatId, `🔗 资源链接（非139云盘，请手动处理）:\n${cacheShareLink}`);
                             return;
                         }
                         // 处理分享链接
@@ -204,30 +190,6 @@ class TelegramBotService {
                     }
                 }
                 this.cloudSaverSearch(chatId, msg)
-            }
-        });
-
-        this.bot.onText(/cloud\.189\.cn/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)){
-                return;
-            }
-            if (!this._isLegacy189RuntimeEnabled()) {
-                await this.bot.sendMessage(chatId, '当前默认运行链路已禁用 189，请使用 139 分享链接');
-                return;
-            }
-            // 如果处于搜索模式，则不处理
-            if (this.isSearchMode) {
-                return;
-            }
-            try {
-                if (!this._checkUserId(chatId)) return;
-                if (!await this._ensureAccountType(chatId, 'cloud189')) return;
-                const { url: shareLink, accessCode } = cloud189Utils.parseCloudShare(msg.text);
-                await this.handleFolderSelection(chatId, shareLink, null, accessCode);
-            } catch (error) {
-                logger.error('处理189分享链接失败', { error: error.message, stack: error.stack })
-                this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
             }
         });
 
@@ -615,14 +577,10 @@ class TelegramBotService {
      * @returns {boolean} true=账号就绪，false=无可用账号（已发送错误提示）
      */
     async _ensureAccountType(chatId, requiredType) {
-        if (requiredType === 'cloud189' && !this._isLegacy189RuntimeEnabled()) {
-            await this.bot.sendMessage(chatId, '当前默认运行链路已禁用 189，请切换到 139 账号');
-            return false;
-        }
         if (this.currentAccount?.accountType === requiredType) return true;
         const accounts = await this.accountRepo.find({ where: { accountType: requiredType } });
         if (accounts.length === 0) {
-            const label = requiredType === 'cloud139' ? '移动云盘(139)' : '天翼云盘(189)';
+            const label = '移动云盘(139)';
             await this.bot.sendMessage(chatId, `当前没有可用的 ${label} 账号，请先在账号页面添加对应账号`);
             return false;
         }
@@ -916,14 +874,7 @@ class TelegramBotService {
                     .filter(f => f.type === 'folder')
                     .map(f => ({ id: f.fileId, name: f.name, pId: folderId }));
             } else {
-                if (!this._isLegacy189RuntimeEnabled()) {
-                    throw new Error('当前默认运行链路已禁用 189 目录浏览');
-                }
-                const cloud189 = Cloud189Service.getInstance(this.currentAccount);
-                folders = await cloud189.getFolderNodes(folderId);
-                if (!folders) {
-                    throw new Error('getFolderNodes 返回空');
-                }
+                throw new Error('仅支持移动云盘(139)目录浏览');
             }
 
             // 获取当前账号的所有常用目录
@@ -1057,23 +1008,13 @@ class TelegramBotService {
                 });
                 return
             }
-            // 分组：天翼189 和 移动139
-            const cloud189Results = result.filter(item => item.cloudLinks[0].link.includes('cloud.189.cn'));
+            // 仅展示移动云盘(139)结果
             const cloud139Results = result.filter(item => /(?:yun|caiyun)\.139\.com/.test(item.cloudLinks[0].link));
 
-            // 保存结果到 cloudSaverSearchMap（按分组顺序编号）
+            // 保存结果到 cloudSaverSearchMap
             let globalIndex = 0;
             let groupText = '';
-            if (cloud189Results.length > 0) {
-                groupText += '☁️ <b>天翼云盘 (189)</b>\n';
-                cloud189Results.forEach(item => {
-                    globalIndex++;
-                    this.cloudSaverSearchMap.set(globalIndex, item.cloudLinks[0].link);
-                    groupText += `${globalIndex}. 🎬 <a href="${item.cloudLinks[0].link}">${item.title}</a>\n`;
-                });
-            }
             if (cloud139Results.length > 0) {
-                if (groupText) groupText += '\n';
                 groupText += '📱 <b>移动云盘 (139)</b>\n';
                 cloud139Results.forEach(item => {
                     globalIndex++;
