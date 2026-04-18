@@ -1,13 +1,14 @@
 const { logTaskEvent } = require('../utils/logUtils');
 const logger = require('../utils/logger');
 const { EmbyService } = require('./emby');
+const { StrmService } = require('./strm');
 const alistService = require('./alistService');
 const ConfigService = require('./ConfigService');
 
 /**
  * 任务完成事件处理器
- * 按顺序执行：自动重命名 → OpenList 原生挂载点缓存刷新 → Emby 通知
- * 缓存刷新完成后才通知 Emby，确保 Emby 扫库时路径对应的目录缓存已更新
+ * 按顺序执行：自动重命名 → 本地 STRM 生成 → OpenList 缓存刷新 → Emby 通知
+ * STRM 文件始终存储在本地供 Emby 读取；OpenList 刷新仅用于解决转存后缓存不及时的问题
  */
 class TaskEventHandler {
     constructor(messageUtil) {
@@ -117,14 +118,17 @@ class TaskEventHandler {
             logTaskEvent(`自动重命名失败: ${error.message}`);
         }
         try {
-            // 先刷新 OpenList 原生挂载点目录缓存，再通知 Emby
+            await this._handleLocalStrmGenerate(taskCompleteEventDto);
+        } catch (error) {
+            logger.error('本地 STRM 生成失败', { error: error.message, stack: error.stack });
+            logTaskEvent(`本地 STRM 生成失败: ${error.message}`);
+        }
+        try {
+            // 优先使用原生驱动路径刷新 OpenList 缓存，降级使用 STRM 路径；失败不阻断 Emby 通知
             refreshContext = await this._handleCloudCacheRefresh(taskCompleteEventDto);
         } catch (error) {
-            logger.error('OpenList 原生挂载点缓存刷新失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`OpenList 原生挂载点缓存刷新失败: ${error.message}`);
-            logTaskEvent('OpenList 刷新失败，阻断 Emby 通知');
-            logTaskEvent(`================事件处理完成================`);
-            return;
+            logger.error('OpenList 缓存刷新失败', { error: error.message, stack: error.stack });
+            logTaskEvent(`OpenList 缓存刷新失败（不阻断 Emby 通知）: ${error.message}`);
         }
         try {
             const notifyResult = await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
@@ -155,54 +159,199 @@ class TaskEventHandler {
     }
 
     /**
-     * 单层刷新 OpenList 原生网盘挂载点目录缓存。
-     * 只发送一次 fs/list(refresh=true)，不做递归，避免触发 STRM 驱动副作用和性能放大。
+     * 追更后本地生成 .strm 文件（仅 strm.enable=true 且 localStrmPrefix 已配置时触发）。
+     * 两种使用方式：
+     *   1. 用户外部工具自行生成：strm.enable=false，本方法直接跳过
+     *   2. App 自动生成：strm.enable=true + account.localStrmPrefix 非空
+     * @param {TaskCompleteEventDto} dto
+     */
+    async _handleLocalStrmGenerate(dto) {
+        const strmEnabled = ConfigService.getConfigValue('strm.enable');
+        if (!strmEnabled) {
+            logTaskEvent('STRM 本地生成未启用，跳过（使用外部工具生成或不使用本地 STRM）');
+            return;
+        }
+        const task = dto.task;
+        const account = task.account || {};
+        if (!account.localStrmPrefix) {
+            logTaskEvent(`localStrmPrefix 未配置，跳过本地 STRM 生成 | taskId=${task.id}`);
+            return;
+        }
+        const files = Array.isArray(dto.fileList) ? dto.fileList : [];
+        if (files.length === 0) {
+            logTaskEvent(`fileList 为空，跳过本地 STRM 生成 | taskId=${task.id}`);
+            return;
+        }
+        const strmService = new StrmService();
+        logTaskEvent(`开始本地 STRM 生成 | taskId=${task.id} | fileCount=${files.length}`);
+        await strmService.generate(task, files, dto.overwriteStrm ?? false);
+    }
+
+    /**
+     * 单层刷新 OpenList 挂载点目录缓存。
+     * 同时刷新原生路径（alistNativePath）和 STRM 虚拟路径（alistStrmPath 或自动推算），
+     * 确保 OpenList STRM 驱动能为 Emby 暴露最新 .strm 文件。
+     * 只发送 fs/list(refresh=true)，不做递归。
      * @param {TaskCompleteEventDto} dto
      */
     async _handleCloudCacheRefresh(dto) {
         if (!alistService.Enable()) {
             const baseUrlExists = !!ConfigService.getConfigValue('alist.baseUrl');
             const apiKeyExists = !!ConfigService.getConfigValue('alist.apiKey');
-            logTaskEvent(`Alist 未启用，跳过 OpenList 原生挂载点缓存刷新 | enable=false | baseUrl=${baseUrlExists} | apiKey=${apiKeyExists}`);
+            logTaskEvent(`Alist 未启用，跳过 OpenList 缓存刷新 | enable=false | baseUrl=${baseUrlExists} | apiKey=${apiKeyExists}`);
             return;
         }
 
         const task = dto.task;
         const account = task.account || {};
-        // 使用账号级原生挂载路径，确保刷新命中真实网盘驱动而非 STRM 驱动
         const alistNativePath = account.alistNativePath?.trim();
+        const alistStrmPathRaw = account.alistStrmPath?.trim();
 
-        if (!alistNativePath) {
-            logTaskEvent(`alistNativePath 未配置，跳过 OpenList 原生挂载点缓存刷新 | taskId=${task.id} | realFolderName=${task.realFolderName}`);
+        if (!alistNativePath && !alistStrmPathRaw) {
+            logTaskEvent(`alistNativePath 与 alistStrmPath 均未配置，跳过 OpenList 缓存刷新 | taskId=${task.id} | realFolderName=${task.realFolderName}`);
             return;
         }
 
-        const normalizedBasePath = String(alistNativePath)
-            .replace(/\\/g, '/')
-            .replace(/\/+/g, '/')
-            .replace(/\/+$/g, '');
-
-        const { taskSubfolder } = await this._buildNormalizedTaskSubfolder(task, account, normalizedBasePath);
-
-        if (!taskSubfolder) {
-            logTaskEvent(`task.realFolderName 为空，刷新将仅作用于根路径: ${normalizedBasePath}`);
+        // 推算 STRM 虚拟路径：账号手动配置 > 全局 strmMountPath + alistNativePath > 无
+        let strmBasePath = alistStrmPathRaw;
+        if (!strmBasePath && alistNativePath) {
+            const strmMountPath = (ConfigService.getConfigValue('alist.strmMountPath') || '/strm')
+                .replace(/\/+$/, '');
+            const nativeSuffix = alistNativePath.replace(/^\/+/, '');
+            strmBasePath = `${strmMountPath}/${nativeSuffix}`;
+            logTaskEvent(`STRM 虚拟路径自动推算: ${strmMountPath} + ${alistNativePath} → ${strmBasePath}`);
         }
 
-        const refreshPath = taskSubfolder
-            ? `${normalizedBasePath}/${taskSubfolder}`
-            : normalizedBasePath;
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        logTaskEvent(`触发 OpenList 缓存刷新: ${refreshPath}`);
-        const refreshResult = await alistService.refreshSingleDirectory(refreshPath);
-        if (!refreshResult?.success) {
-            throw new Error(`OpenList 单层刷新失败: ${refreshPath}`);
+        // 原生路径刷新（优先，若 alistNativePath 存在）
+        let nativeRefreshResult = null;
+        let taskSubfolder = null;
+        let nativeRefreshPath = null;
+
+        if (alistNativePath) {
+            const normalizedNative = String(alistNativePath)
+                .replace(/\\/g, '/')
+                .replace(/\/+/g, '/')
+                .replace(/\/+$/g, '');
+
+            const subfolder = await this._buildNormalizedTaskSubfolder(task, account, normalizedNative);
+            taskSubfolder = subfolder.taskSubfolder;
+
+            nativeRefreshPath = taskSubfolder
+                ? `${normalizedNative}/${taskSubfolder}`
+                : normalizedNative;
+
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            if (dto.firstExecution) {
+                const parentPath = nativeRefreshPath.includes('/')
+                    ? nativeRefreshPath.substring(0, nativeRefreshPath.lastIndexOf('/'))
+                    : null;
+                if (parentPath) {
+                    logTaskEvent(`首次执行，预热原生父目录缓存: ${parentPath}`);
+                    await alistService.refreshSingleDirectory(parentPath).catch(e =>
+                        logTaskEvent(`原生父目录预热失败(忽略): ${e.message}`)
+                    );
+                }
+            }
+
+            logTaskEvent(`触发 OpenList 原生路径缓存刷新: ${nativeRefreshPath}`);
+            try {
+                nativeRefreshResult = await alistService.refreshSingleDirectory(nativeRefreshPath);
+                logTaskEvent(`OpenList 原生路径刷新完成: ${nativeRefreshPath} | count=${nativeRefreshResult.contentCount}`);
+            } catch (e) {
+                if (dto.firstExecution && /object not found/i.test(e.message)) {
+                    logTaskEvent(`OpenList 原生路径新目录刷新失败(首次执行容错，不阻断): ${e.message}`);
+                    nativeRefreshResult = { success: false, firstExecutionPartial: true };
+                } else {
+                    throw e;
+                }
+            }
+        } else {
+            // 无原生路径，延迟移到 STRM 刷新前
+            await new Promise(resolve => setTimeout(resolve, 5000));
         }
 
-        logTaskEvent(`OpenList 缓存刷新完成: ${refreshPath}`);
+        // STRM 虚拟路径刷新（在原生路径刷新后执行，确保原生缓存先就绪）
+        let strmRefreshResult = null;
+        let strmRefreshPath = null;
+
+        if (strmBasePath) {
+            const normalizedStrm = String(strmBasePath)
+                .replace(/\\/g, '/')
+                .replace(/\/+/g, '/')
+                .replace(/\/+$/g, '');
+
+            // 若原生路径未提供 taskSubfolder，则基于 STRM 路径重新计算
+            if (!taskSubfolder && alistNativePath == null) {
+                const subfolder = await this._buildNormalizedTaskSubfolder(task, account, normalizedStrm);
+                taskSubfolder = subfolder.taskSubfolder;
+            }
+
+            strmRefreshPath = taskSubfolder
+                ? `${normalizedStrm}/${taskSubfolder}`
+                : normalizedStrm;
+
+            if (dto.firstExecution) {
+                const parentPath = strmRefreshPath.includes('/')
+                    ? strmRefreshPath.substring(0, strmRefreshPath.lastIndexOf('/'))
+                    : null;
+                if (parentPath) {
+                    logTaskEvent(`首次执行，预热 STRM 父目录缓存: ${parentPath}`);
+                    await alistService.refreshSingleDirectory(parentPath).catch(e =>
+                        logTaskEvent(`STRM 父目录预热失败(忽略): ${e.message}`)
+                    );
+                }
+            }
+
+            logTaskEvent(`触发 OpenList STRM 路径缓存刷新: ${strmRefreshPath}`);
+            try {
+                strmRefreshResult = await alistService.refreshSingleDirectory(strmRefreshPath);
+                logTaskEvent(`OpenList STRM 路径刷新完成: ${strmRefreshPath} | count=${strmRefreshResult.contentCount}`);
+            } catch (e) {
+                if (dto.firstExecution && /object not found/i.test(e.message)) {
+                    logTaskEvent(`OpenList STRM 路径新目录刷新失败(首次执行容错，不阻断): ${e.message}`);
+                    strmRefreshResult = { success: false, firstExecutionPartial: true };
+                } else {
+                    logTaskEvent(`OpenList STRM 路径刷新失败(不阻断 Emby): ${e.message}`);
+                    strmRefreshResult = { success: false, error: e.message };
+                }
+            }
+
+            // 刷新后验证 STRM 内容是否已更新
+            if (strmRefreshResult?.success !== false && Array.isArray(dto.fileList) && dto.fileList.length > 0) {
+                const expectedFileNames = dto.fileList.map(f => {
+                    const name = typeof f === 'string' ? f : (f?.fileName || f?.name || '');
+                    return name.replace(/\.[^.]+$/, '') + '.strm';
+                }).filter(Boolean);
+
+                if (expectedFileNames.length > 0) {
+                    let verifyResult = await alistService.verifyStrmContent(strmRefreshPath, expectedFileNames);
+                    if (!verifyResult.verified) {
+                        logTaskEvent(`STRM 内容验证未通过，等待 3s 后重试: found=${verifyResult.foundCount}, missing=${verifyResult.missingCount}`);
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        verifyResult = await alistService.verifyStrmContent(strmRefreshPath, expectedFileNames);
+                    }
+                    logTaskEvent(`STRM 内容验证: verified=${verifyResult.verified}, found=${verifyResult.foundCount}, missing=${verifyResult.missingCount}`);
+                }
+            }
+        }
+
+        const bothFailed = (alistNativePath && !nativeRefreshResult?.success && !nativeRefreshResult?.firstExecutionPartial)
+            && (strmBasePath && !strmRefreshResult?.success && !strmRefreshResult?.firstExecutionPartial);
+        if (bothFailed) {
+            throw new Error(`OpenList 原生路径与 STRM 路径均刷新失败`);
+        }
+
+        const refreshPath = nativeRefreshPath || strmRefreshPath;
+        const refreshMode = alistNativePath
+            ? (strmBasePath ? 'dual-path' : 'native-only')
+            : 'strm-only';
+
+        logTaskEvent(`OpenList 缓存刷新完成 | mode=${refreshMode} | native=${nativeRefreshPath || '无'} | strm=${strmRefreshPath || '无'}`);
         return {
             taskSubfolder,
             refreshPath,
-            refreshMode: 'single-directory-native-cache',
+            refreshMode,
         };
     }
 

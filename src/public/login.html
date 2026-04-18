@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>登录 - 云盘自动转存系统</title>
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#0f172a">
     <meta name="color-scheme" content="light dark">
     <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=__ASSET_VERSION__" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=__ASSET_VERSION__" />
@@ -12,97 +12,91 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png?v=__ASSET_VERSION__" />
     <meta name="apple-mobile-web-app-title" content="自动转存" />
     <link rel="manifest" href="/favicon/site.webmanifest?v=__ASSET_VERSION__" />
-    <link rel="stylesheet" href="/css/base.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/theme.css?v=__ASSET_VERSION__">
-    <link rel="stylesheet" href="/css/message.css?v=__ASSET_VERSION__">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: { 750: '#293548', 850: '#172033' }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="/vendor/lucide/lucide.js"></script>
+
     <style>
-        .login-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: var(--bg-color);
+        body { font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.3s, color 0.3s; }
+
+        .input-base {
+            width: 100%; padding: 8px 12px; border-radius: 4px; font-size: 14px;
+            transition: all 0.2s; outline: none; box-sizing: border-box; height: 38px;
+            background-color: #fff; border: 1px solid #d1d5db; color: #374151;
         }
-        .login-box {
-            background: var(--card-bg);
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 400px;
-            margin: 1rem;
+        .input-base:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1); }
+        .dark .input-base {
+            background-color: #0f172a; border: 1px solid #293548; box-shadow: none; color: #e2e8f0;
         }
-        .login-title {
-            text-align: center;
-            margin-bottom: 2rem;
-            color: var(--text-color);
+        .dark .input-base:focus { border-color: #3b82f6; box-shadow: inset 0 0 0 1px #3b82f6; }
+        .dark .input-base::placeholder { color: #475569; }
+
+        .btn-primary {
+            background-color: #1677ff; color: white; padding: 6px 16px; border-radius: 4px;
+            font-size: 14px; font-weight: 500; transition: all 0.2s; border: 1px solid transparent;
+            cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center;
         }
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: var(--text-color);
-        }
-        .form-group input {
-            width: 100%;
-            padding: 0.8rem;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            background: var(--input-bg);
-            color: var(--text-color);
-        }
-        .login-btn {
-            width: 100%;
-            padding: 0.8rem;
-            background: var(--btn-bg);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1rem;
-        }
-        .login-btn:hover {
-            opacity: 0.9;
-        }
+        .btn-primary:hover { background-color: #4096ff; }
+        .dark .btn-primary { background-color: #2563eb; }
+        .dark .btn-primary:hover { background-color: #3b82f6; }
     </style>
 </head>
-<body>
-    <div class="login-container">
-        <div class="login-box">
-            <h2 class="login-title">登录</h2>
-            <form id="loginForm">
-                <div class="form-group">
-                    <label for="username">用户名</label>
-                    <input type="text" id="username" name="username" required autocomplete="username">
+<body class="bg-[#f0f2f5] dark:bg-[#0f172a] transition-colors duration-300 min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-sm">
+        <!-- 应用标题 -->
+        <div class="flex items-center justify-center gap-2 mb-8">
+            <i data-lucide="cloud-cog" class="w-8 h-8 text-[#1677ff] dark:text-[#3b82f6]"></i>
+            <span class="text-[22px] font-bold text-gray-900 dark:text-white tracking-tight">云盘自动转存</span>
+        </div>
+
+        <!-- 登录卡片 -->
+        <div class="bg-white dark:bg-[#1e293b] rounded-[8px] border border-gray-200 dark:border-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] shadow-sm px-8 py-8">
+            <h2 class="text-[16px] font-semibold text-gray-800 dark:text-slate-100 mb-6">登录</h2>
+
+            <form id="loginForm" class="space-y-4">
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700 dark:text-slate-400 mb-1.5">用户名</label>
+                    <input type="text" id="username" name="username" class="input-base" placeholder="请输入用户名" required autocomplete="username">
                 </div>
-                <div class="form-group">
-                    <label for="password">密码</label>
-                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 dark:text-slate-400 mb-1.5">密码</label>
+                    <input type="password" id="password" name="password" class="input-base" placeholder="请输入密码" required autocomplete="current-password">
                 </div>
-                <button type="submit" class="login-btn">登录</button>
+                <button type="submit" class="btn-primary w-full mt-2" style="height:38px;">登录</button>
             </form>
         </div>
     </div>
+
     <script>window.__ASSET_VERSION__ = '__ASSET_VERSION__';</script>
     <script src="/js/theme.js?v=__ASSET_VERSION__"></script>
     <script src="/js/message.js?v=__ASSET_VERSION__"></script>
     <script>
-        setTheme('auto')
-        // 替换登录表单提交处理代码
+        lucide.createIcons();
+        setTheme('auto');
+
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            
             try {
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
-                
                 const data = await response.json();
                 if (data.success) {
                     window.location.href = '/';

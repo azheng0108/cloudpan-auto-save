@@ -89,7 +89,8 @@ class ConfigService {
       alist: {
         enable: false,
         baseUrl: '',
-        apiKey: ''
+        apiKey: '',
+        strmMountPath: '/strm'  // OpenList STRM 驱动的虚拟目录挂载前缀，默认 /strm
       },
       // Emby 媒体库通知配置
       emby: {

@@ -94,6 +94,40 @@ const alistService = {
     },
 
     /**
+     * 读取 STRM 目录内容（不触发刷新），验证期望文件名是否已存在。
+     * 用于缓存刷新后确认 OpenList STRM 驱动已生成对应 .strm 文件。
+     * @param {string} strmPath STRM 虚拟目录路径
+     * @param {string[]} expectedFileNames 期望存在的文件名数组（形如 "episode.strm"）
+     * @returns {Promise<{verified: boolean, foundCount: number, missingCount: number}>}
+     */
+    async verifyStrmContent(strmPath, expectedFileNames) {
+        try {
+            const normalizedPath = this._normalizePath(strmPath || '/');
+            // 读取缓存，不触发二次刷新（refresh=true 已在 refreshSingleDirectory 中完成）
+            const baseUrl = await this.getConfig('alist.baseUrl');
+            const apiKey = await this.getConfig('alist.apiKey');
+            const response = await got.post(`${baseUrl}/api/fs/list`, {
+                json: { path: normalizedPath, page: 1, per_page: 0, refresh: false },
+                headers: { 'Authorization': apiKey }
+            }).json();
+            const content = Array.isArray(response?.data?.content) ? response.data.content : [];
+            const existingNames = new Set(content.map(item => String(item?.name || '').toLowerCase()));
+            const expected = Array.isArray(expectedFileNames) ? expectedFileNames : [];
+            let foundCount = 0;
+            for (const name of expected) {
+                if (existingNames.has(String(name).toLowerCase())) {
+                    foundCount++;
+                }
+            }
+            const missingCount = expected.length - foundCount;
+            return { verified: foundCount > 0, foundCount, missingCount };
+        } catch (e) {
+            logTaskEvent(`verifyStrmContent 读取失败(忽略): ${e.message}`);
+            return { verified: false, foundCount: 0, missingCount: (expectedFileNames || []).length };
+        }
+    },
+
+    /**
      * 读取 OpenList 存储配置（需要具有管理权限的 token）。
      * @returns {Promise<Array<Object>>}
      */
