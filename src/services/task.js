@@ -335,9 +335,111 @@ class TaskService {
         return this.taskNamingService.sanitizeFileName(fileName);
     }
 
-    // 自动重命名 (cloud139 不支持重命名，返回空数组)
-    async autoRename(task) {
-        return [];
+    // 自动重命名（cloud139）
+    // 优先级：Jinja2 模板 > 正则替换。仅处理本次增量 fileList。
+    async autoRename(task, fileList = []) {
+        const files = Array.isArray(fileList) ? fileList : [];
+        if (files.length === 0) {
+            logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=fileList=0`);
+            return [];
+        }
+
+        const taskMovieTemplate = String(task?.movieRenameFormat || '').trim();
+        const taskTvTemplate = String(task?.tvRenameFormat || '').trim();
+        const globalMovieTemplate = String(ConfigService.getConfigValue('tmdb.movieRenameFormat') || '').trim();
+        const globalTvTemplate = String(ConfigService.getConfigValue('tmdb.tvRenameFormat') || '').trim();
+        const movieTemplate = taskMovieTemplate || globalMovieTemplate;
+        const tvTemplate = taskTvTemplate || globalTvTemplate;
+
+        const sourceRegex = String(task?.sourceRegex || '').trim();
+        const targetRegex = String(task?.targetRegex || '');
+        const useTemplate = !!(movieTemplate || tvTemplate);
+        const useRegex = !!(sourceRegex && targetRegex !== undefined);
+
+        if (!useTemplate && !useRegex) {
+            logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=no-rules`);
+            return files;
+        }
+
+        const account = task.account || await this._getAccountById(task.accountId);
+        if (!account) {
+            logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=account-not-found`);
+            return files;
+        }
+
+        const cloud139 = Cloud139Service.getInstance(account);
+        const updatedFiles = [];
+        let renamedCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
+        let regex = null;
+
+        if (!useTemplate && useRegex) {
+            try {
+                regex = new RegExp(sourceRegex);
+            } catch (error) {
+                logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=invalid-regex | error=${error.message}`);
+                return files;
+            }
+        }
+
+        for (const file of files) {
+            const oldName = String(file?.name || '').trim();
+            const fileId = file?.id;
+            if (!oldName || !fileId) {
+                skippedCount += 1;
+                updatedFiles.push(file);
+                continue;
+            }
+
+            let newName = oldName;
+
+            if (useTemplate) {
+                const vars = this._parseMediaFileName(oldName);
+                const pickedTemplate = vars.season_episode ? tvTemplate : movieTemplate;
+                if (!pickedTemplate) {
+                    skippedCount += 1;
+                    updatedFiles.push(file);
+                    continue;
+                }
+                const rendered = this._renderJinjaTemplate(pickedTemplate, vars);
+                if (!rendered) {
+                    failedCount += 1;
+                    updatedFiles.push(file);
+                    continue;
+                }
+                newName = String(rendered).split('/').pop();
+            } else if (regex) {
+                newName = oldName.replace(regex, targetRegex);
+            }
+
+            newName = this._sanitizeFileName(newName || '');
+            if (!newName || newName === oldName) {
+                skippedCount += 1;
+                updatedFiles.push(file);
+                continue;
+            }
+
+            try {
+                const renameResult = await cloud139.renameFile(fileId, newName);
+                if (renameResult && renameResult.res_code === 0) {
+                    renamedCount += 1;
+                    updatedFiles.push({ ...file, name: newName });
+                } else {
+                    failedCount += 1;
+                    updatedFiles.push(file);
+                }
+            } catch (error) {
+                failedCount += 1;
+                logTaskEvent(`自动重命名单文件失败: taskId=${task?.id} | fileId=${fileId} | error=${error.message}`);
+                updatedFiles.push(file);
+            }
+        }
+
+        logTaskEvent(
+            `自动重命名完成: taskId=${task?.id} | mode=${useTemplate ? 'template' : 'regex'} | renamed=${renamedCount} | skipped=${skippedCount} | failed=${failedCount}`
+        );
+        return updatedFiles;
     }
 
     // 执行所有任务
