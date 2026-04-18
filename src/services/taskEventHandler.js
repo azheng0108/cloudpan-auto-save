@@ -156,7 +156,10 @@ class TaskEventHandler {
 
     async _handleAutoRename(taskCompleteEventDto) {
         try {
-            const newFiles = await taskCompleteEventDto.taskService.autoRename(taskCompleteEventDto.task);
+            const newFiles = await taskCompleteEventDto.taskService.autoRename(
+                taskCompleteEventDto.task,
+                taskCompleteEventDto.fileList
+            );
             if (newFiles.length > 0) {
                 taskCompleteEventDto.fileList = newFiles;
             }
