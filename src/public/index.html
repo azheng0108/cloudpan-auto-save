@@ -714,6 +714,11 @@
                                 <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">API Key（令牌）</label>
                                 <input type="text" id="alistApiKey" placeholder="后台 → 个人资料 → 令牌" class="input-base">
                             </div>
+                            <div class="sm:col-span-3">
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">STRM 挂载路径</label>
+                                <input type="text" id="alistStrmMountPath" placeholder="/strm" class="input-base font-mono text-xs">
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">OpenList STRM 驱动的虚拟目录挂载前缀，默认 /strm。追更后系统会同时刷新原生路径和此虚拟路径的缓存，确保 Emby 能扫描到新 .strm 文件。</p>
+                            </div>
                         </div>
                     </div>
 
@@ -1078,6 +1083,11 @@
                                     <label for="alistNativePath">OpenList 原生挂载路径</label>
                                     <input type="text" id="alistNativePath" class="input-base font-mono text-xs" placeholder="如: /CloudDrive139">
                                     <small class="form-text">OpenList 中该账号对应网盘的原生挂载根路径（不含主机地址），追更后只会触发单层 refresh=true 回源刷新，不会生成 .strm 文件</small>
+                                </div>
+                                <div class="form-group mb-0 mt-2">
+                                    <label for="alistStrmPath">OpenList STRM 虚拟路径（可选）</label>
+                                    <input type="text" id="alistStrmPath" class="input-base font-mono text-xs" placeholder="留空则自动从全局 STRM 挂载路径推算">
+                                    <small class="form-text">手动指定该账号在 OpenList STRM 驱动下的虚拟根路径（如 /strm/CloudDrive139）；留空时系统自动拼接：全局 STRM 挂载路径 + 原生挂载路径</small>
                                 </div>
                                 <div class="form-group mb-0 mt-2">
                                     <label for="rootFolderId">OpenList 挂载根目录 ID</label>

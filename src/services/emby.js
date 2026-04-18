@@ -6,7 +6,6 @@ const { AppDataSource } = require('../database');
 const { Task, Account } = require('../entities'); 
 const { Cloud189Service } = require('../legacy189/services/cloud189');
 const path = require('path');
-const { StrmService } = require('./strm');
 const logger = require('../utils/logger');
 
 const { Not, IsNull, Like } = require('typeorm'); 
@@ -24,7 +23,6 @@ class EmbyService {
         this._taskRepo = AppDataSource.getRepository(Task);
         this._accountRepo = AppDataSource.getRepository(Account);
         this._taskService = taskService;
-        this._strmService = new StrmService();
     }
 
     _isLegacy189RuntimeEnabled() {

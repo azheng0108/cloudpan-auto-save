@@ -18,11 +18,12 @@ class PushPlusService extends MessageService {
      */
     async _send(message) {
         try {
+            const title = String(message || '').split('\n')[0].trim() || '追更通知';
             const msg = await this.convertToMarkdown(message);
             await got.post('http://www.pushplus.plus/send', {
                 json: {
                     token: this.config.token,
-                    // title: '天翼云盘更新',
+                    title: title,
                     content: msg,
                     template: 'markdown',
                     topic: this.config.topic || '',        // 群组编码，不填仅发送给自己

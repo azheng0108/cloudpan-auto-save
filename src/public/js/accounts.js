@@ -130,6 +130,7 @@ async function editAccount(id) {
     document.getElementById('password').value = '';
     document.getElementById('cookie').value = chooseAccount.cookies || '';
     document.getElementById('alistNativePath').value = chooseAccount.alistNativePath || '';
+    document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
     document.getElementById('rootFolderId').value = chooseAccount.rootFolderId || '';
     document.getElementById('localStrmPrefix').value = chooseAccount.localStrmPrefix || '';
     document.getElementById('cloudStrmPrefix').value = chooseAccount.cloudStrmPrefix || '';
@@ -160,6 +161,7 @@ async function createAccount() {
     const password = document.getElementById('password').value;
     const cookies  = document.getElementById('cookie').value;
     const alistNativePath = document.getElementById('alistNativePath').value;
+    const alistStrmPath = document.getElementById('alistStrmPath').value;
     const rootFolderId = document.getElementById('rootFolderId').value;
     const localStrmPrefix = document.getElementById('localStrmPrefix').value;
     const cloudStrmPrefix = document.getElementById('cloudStrmPrefix').value;
@@ -198,6 +200,7 @@ async function createAccount() {
             cookies,
             validateCode,
             alistNativePath,
+            alistStrmPath,
             rootFolderId,
             localStrmPrefix,
             cloudStrmPrefix,

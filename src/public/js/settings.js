@@ -134,6 +134,7 @@ async function loadSettings() {
             document.getElementById('alistEnable').checked = settings.alist?.enable || false;
             document.getElementById('alistBaseUrl').value = settings.alist?.baseUrl || '';
             document.getElementById('alistApiKey').value = settings.alist?.apiKey || '';
+            document.getElementById('alistStrmMountPath').value = settings.alist?.strmMountPath ?? '/strm';
 
             // Emby 通知设置
             document.getElementById('embyEnable').checked = settings.emby?.enable || false;
@@ -225,7 +226,8 @@ async function saveSettings() {
         alist: {
             enable: document.getElementById('alistEnable').checked,
             baseUrl: document.getElementById('alistBaseUrl').value,
-            apiKey: document.getElementById('alistApiKey').value
+            apiKey: document.getElementById('alistApiKey').value,
+            strmMountPath: document.getElementById('alistStrmMountPath').value || '/strm'
         },
         emby: {
             enable: document.getElementById('embyEnable').checked,
@@ -295,7 +297,8 @@ async function saveMediaSettings() {
         alist: {
             enable: document.getElementById('alistEnable').checked,
             baseUrl: document.getElementById('alistBaseUrl').value,
-            apiKey: document.getElementById('alistApiKey').value
+            apiKey: document.getElementById('alistApiKey').value,
+            strmMountPath: document.getElementById('alistStrmMountPath').value || '/strm'
         },
         emby: {
             enable: document.getElementById('embyEnable').checked,
