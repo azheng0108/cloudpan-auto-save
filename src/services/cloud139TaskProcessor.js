@@ -232,7 +232,6 @@ async function processCloud139Task(taskService, task, account) {
                 logTaskEvent(`事件触发: taskComplete | taskId=${task.id} | fileCount=${newFiles.length} | firstExecution=${firstExecution}`);
                 taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                     task,
-                    cloud189: null,
                     fileList: newFiles.map((f) => ({ id: f.coID, name: f.coName || '', md5: null })),
                     overwriteStrm: false,
                     firstExecution,
@@ -516,7 +515,6 @@ async function processCloud139Task(taskService, task, account) {
             logTaskEvent(`事件触发: taskComplete | taskId=${task.id} | fileCount=${newFiles.length} | firstExecution=${firstExecution}`);
             taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                 task,
-                cloud189: null,
                 fileList: newFiles.map((f) => ({ id: f.coID, name: f.coName || '', md5: null })),
                 overwriteStrm: false,
                 firstExecution,

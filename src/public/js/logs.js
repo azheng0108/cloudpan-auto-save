@@ -81,7 +81,17 @@ function initLogs() {
             eventSource.close();
         }
     });
-    
+
+    // 当日志容器从不可见变为可见时（切换 Tab 或打开弹窗），自动滚到底部显示最新内容
+    if (typeof IntersectionObserver !== 'undefined') {
+        const visibilityObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) scrollToBottom();
+            });
+        }, { threshold: 0 });
+        logsContainers.forEach(c => visibilityObserver.observe(c));
+    }
+
     // 页面加载时自动连接
     connectSSE();
 }

@@ -226,44 +226,6 @@ const alistService = {
         }
     },
 
-    /**
-     * 基于 alistStrmPath 自动推断挂载根目录 ID。
-     * 若 token 非管理员或驱动不暴露该字段，返回空字符串。
-     * @param {string} alistPath
-     * @returns {Promise<string>}
-     */
-    async resolveRootFolderIdByPath(alistPath) {
-        const normalizedPath = this._normalizePath(alistPath);
-        if (!normalizedPath) return '';
-
-        let storages;
-        try {
-            storages = await this.listStorages();
-        } catch (error) {
-            logTaskEvent(`OpenList 自动识别 rootFolderId 失败（读取存储配置）: ${error.message}`);
-            return '';
-        }
-
-        let bestMatch = null;
-        for (const storage of storages) {
-            const mountPath = this._normalizePath(storage?.mount_path || storage?.mountPath || storage?.mount || '');
-            if (!mountPath) continue;
-            if (normalizedPath !== mountPath && !normalizedPath.startsWith(`${mountPath}/`)) {
-                continue;
-            }
-            if (!bestMatch || mountPath.length > bestMatch.mountPath.length) {
-                bestMatch = { storage, mountPath };
-            }
-        }
-
-        if (!bestMatch) {
-            return '';
-        }
-
-        const resolved = this._extractRootFolderId(bestMatch.storage);
-        return resolved ? String(resolved).trim() : '';
-    },
-
     _normalizePath(value) {
         const normalized = String(value || '')
             .replace(/\\/g, '/')
@@ -272,73 +234,6 @@ const alistService = {
             .trim();
         if (!normalized) return '';
         return normalized.startsWith('/') ? normalized : `/${normalized}`;
-    },
-
-    _extractRootFolderId(storage) {
-        if (!storage || typeof storage !== 'object') {
-            return '';
-        }
-
-        const directCandidates = [
-            storage.rootFolderId,
-            storage.root_folder_id,
-            storage.rootFolder,
-            storage.root_folder,
-        ].filter(Boolean);
-        if (directCandidates.length > 0) {
-            return directCandidates[0];
-        }
-
-        const additionRaw = storage.addition || storage.additional || storage.config || null;
-        let addition = additionRaw;
-        if (typeof additionRaw === 'string') {
-            try {
-                addition = JSON.parse(additionRaw);
-            } catch (_) {
-                addition = null;
-            }
-        }
-
-        if (!addition || typeof addition !== 'object') {
-            return '';
-        }
-
-        const knownKeys = [
-            'root_folder_id',
-            'rootFolderId',
-            'root_folder',
-            'rootFolder',
-            'catalog_id',
-            'catalogId',
-            'folder_id',
-            'folderId',
-        ];
-        for (const key of knownKeys) {
-            const value = addition[key];
-            if (typeof value === 'string' || typeof value === 'number') {
-                const normalized = String(value).trim();
-                if (normalized) return normalized;
-            }
-        }
-
-        const queue = [addition];
-        while (queue.length > 0) {
-            const current = queue.shift();
-            if (!current || typeof current !== 'object') continue;
-            for (const [key, value] of Object.entries(current)) {
-                if (value && typeof value === 'object') {
-                    queue.push(value);
-                    continue;
-                }
-                const keyName = String(key).toLowerCase();
-                if ((typeof value === 'string' || typeof value === 'number') && keyName.includes('root') && keyName.includes('id')) {
-                    const normalized = String(value).trim();
-                    if (normalized) return normalized;
-                }
-            }
-        }
-
-        return '';
     },
 
     /**

@@ -1290,6 +1290,14 @@ bcrypt-pbkdf@^1.0.0:
   dependencies:
     tweetnacl "^0.14.3"
 
+"better-sqlite3@^8.0.0 || ^9.0.0 || ^10.0.0 || ^11.0.0", better-sqlite3@^9.6.0:
+  version "9.6.0"
+  resolved "https://registry.npmjs.org/better-sqlite3/-/better-sqlite3-9.6.0.tgz"
+  integrity sha512-yR5HATnqeYNVnkaUTf4bOP2dJSnyhP4puJN/QPRyx4YkBEEUxib422n2XzPqDEHjQQqazoYoADdAm5vE15+dAQ==
+  dependencies:
+    bindings "^1.5.0"
+    prebuild-install "^7.1.1"
+
 bindings@^1.5.0:
   version "1.5.0"
   resolved "https://registry.npmmirror.com/bindings/-/bindings-1.5.0.tgz"
@@ -1561,14 +1569,6 @@ clone-response@^1.0.2:
   integrity sha512-ROoL94jJH2dUVML2Y/5PEDNaSHgeOdSDicUyS7izcF63G6sTc/FTjLub4b8Il9S8S0beOfYt0TaA5qvFK+w0wA==
   dependencies:
     mimic-response "^1.0.0"
-
-cloud189-sdk@^1.0.8:
-  version "1.0.8"
-  resolved "https://registry.npmjs.org/cloud189-sdk/-/cloud189-sdk-1.0.8.tgz"
-  integrity sha512-nGcH6I7I+JYn2zuA+SwaA0MX9Q7AYdiHwTIu37HNaA7AGm1AMsu1/69E9awDLfYrCnIQ93wlIgZcb4sHUBvUSQ==
-  dependencies:
-    "@netdrive-sdk/log" "1.0.0"
-    got "11.8.2"
 
 co@^4.6.0:
   version "4.6.0"
@@ -4701,7 +4701,7 @@ sql-highlight@^6.0.0:
   resolved "https://registry.npmmirror.com/sql-highlight/-/sql-highlight-6.0.0.tgz"
   integrity sha512-+fLpbAbWkQ+d0JEchJT/NrRRXbYRNbG15gFpANx73EwxQB1PRjj+k/OI0GTU0J63g8ikGkJECQp9z8XEJZvPRw==
 
-sqlite3@^5.0.3, sqlite3@^5.1.7:
+sqlite3@^5.0.3:
   version "5.1.7"
   resolved "https://registry.npmjs.org/sqlite3/-/sqlite3-5.1.7.tgz"
   integrity sha512-GGIyOiFaG+TUra3JIfkI/zGP8yZYLPQ0pl1bH+ODjiX57sPhrLU5sQJn1y9bDKZUFYkX1crlrPfSYt0BKKdkog==

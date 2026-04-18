@@ -1,5 +1,4 @@
 const path = require('path');
-const cloud189Utils = require('../legacy189/utils/Cloud189Utils');
 const Cloud139Utils = require('../utils/Cloud139Utils');
 
 class TaskParserService {
@@ -9,18 +8,6 @@ class TaskParserService {
 
     parseCloud139ShareLink(shareLink) {
         return Cloud139Utils.parseShareLink(shareLink);
-    }
-
-    parseCloud189ShareInput(shareLink) {
-        const parsed = cloud189Utils.parseCloudShare(shareLink);
-        const normalizedUrl = parsed?.url || shareLink;
-        const parsedAccessCode = parsed?.accessCode || '';
-        const shareCode = cloud189Utils.parseShareCode(normalizedUrl);
-        return {
-            normalizedUrl,
-            parsedAccessCode,
-            shareCode,
-        };
     }
 
     async buildCloud139ShareFolders(cloud139, shareLink, accessCode) {
@@ -56,34 +43,6 @@ class TaskParserService {
         return folders;
     }
 
-    async buildCloud189ShareFolders(cloud189, shareLink, accessCode, getShareInfo) {
-        const { shareCode } = this.parseCloud189ShareInput(shareLink);
-        const shareInfo = await getShareInfo(cloud189, shareCode);
-        if (shareInfo.shareMode == 1) {
-            if (!accessCode) {
-                throw new Error('分享链接为私密链接, 请输入提取码');
-            }
-            const accessCodeResponse = await cloud189.checkAccessCode(shareCode, accessCode);
-            if (!accessCodeResponse) {
-                throw new Error('校验访问码失败');
-            }
-            if (!accessCodeResponse.shareId) {
-                throw new Error('访问码无效');
-            }
-            shareInfo.shareId = accessCodeResponse.shareId;
-        }
-        const folders = [{ id: -1, name: shareInfo.fileName }];
-        if (!shareInfo.isFolder) {
-            return folders;
-        }
-        const result = await cloud189.listShareDir(shareInfo.shareId, shareInfo.fileId, shareInfo.shareMode, accessCode);
-        if (!result?.fileListAO) return folders;
-        const { folderList: subFolders = [] } = result.fileListAO;
-        subFolders.forEach((folder) => {
-            folders.push({ id: folder.id, name: path.join(shareInfo.fileName, folder.name) });
-        });
-        return folders;
-    }
 }
 
 module.exports = { TaskParserService };

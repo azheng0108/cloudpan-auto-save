@@ -68,11 +68,14 @@ class StrmService {
             // 使用完整 realFolderName（不裁剪目标目录前缀），normalize Windows 反斜杠
             // 修复：原来会裁掉第一段（目标目录），导致多目标目录时路径错误
             let taskName = (task.realFolderName || '').replace(/\\/g, '/').replace(/^\/|\/$/g, '');
+            // 全局 STRM 配置（账号级别已废弃，统一从 ConfigService 读取）
+            const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || task.account?.localStrmPrefix || '';
+            const cloudStrmPrefix = ConfigService.getConfigValue('strm.cloudStrmPrefix') || task.account?.cloudStrmPrefix || '';
             // 构建完整的目标目录路径
-            const targetDir = path.join(this.baseDir, task.account.localStrmPrefix, taskName);
+            const targetDir = path.join(this.baseDir, localStrmPrefix, taskName);
             if (compare) {
                 // 查询出所有目录下的.strm文件
-                const strmFiles = await this.listStrmFiles(path.join(task.account.localStrmPrefix, taskName));
+                const strmFiles = await this.listStrmFiles(path.join(localStrmPrefix, taskName));
                 // 将不在strmFiles中的文件删除
                 for (const file of strmFiles) {
                     if (!files.some(f => path.parse(f.name).name === path.parse(file.name).name)) {
@@ -110,7 +113,7 @@ class StrmService {
 
                     // 生成STRM文件内容
                     let content;
-                    content = this._joinUrl(this._joinUrl(task.account.cloudStrmPrefix, taskName), fileName);
+                    content = this._joinUrl(this._joinUrl(cloudStrmPrefix, taskName), fileName);
                     await fs.writeFile(strmPath, content, 'utf8');
                     // 设置文件权限
                     if (process.getuid && process.getuid() === 0) {
@@ -426,13 +429,15 @@ class StrmService {
     getStrmPath(task) {
         // 使用完整 realFolderName（不裁剪目标目录前缀），normalize Windows 反斜杠
         let taskName = (task.realFolderName || '').replace(/\\/g, '/').replace(/^\/|\/$/g, '');
+        const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || task.account?.localStrmPrefix || '';
+        const cloudStrmPrefix = ConfigService.getConfigValue('strm.cloudStrmPrefix') || task.account?.cloudStrmPrefix || '';
         if (!this.enable){
             // 如果cloudStrmPrefix存在 且不是url地址
-            if (task.account.cloudStrmPrefix && !task.account.cloudStrmPrefix.startsWith('http')) {
-                return path.join(task.account.cloudStrmPrefix, taskName);
+            if (cloudStrmPrefix && !cloudStrmPrefix.startsWith('http')) {
+                return path.join(cloudStrmPrefix, taskName);
             }
-        }else{
-            return path.join(this.baseDir, task.account.localStrmPrefix, taskName);
+        } else {
+            return path.join(this.baseDir, localStrmPrefix, taskName);
         }
         return '';
     }

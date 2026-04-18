@@ -58,16 +58,34 @@
         .dark .input-base::placeholder { color: #475569; }
         
         /* ================= 统一按钮 ================= */
-        .btn-primary { background-color: #1677ff; color: white; padding: 6px 16px; border-radius: 4px; font-size: 14px; font-weight: 500; transition: all 0.2s; border: 1px solid transparent; cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-primary { background-color: #1677ff; color: white; padding: 6px 16px; border-radius: 4px; font-size: 14px; font-weight: 500; transition: all 0.2s; border: 1px solid transparent; cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
         .btn-primary:hover { background-color: #4096ff; }
         .dark .btn-primary { background-color: #2563eb; }
         .dark .btn-primary:hover { background-color: #3b82f6; }
 
-        .btn-default { background-color: #fff; color: #374151; border: 1px solid #d1d5db; padding: 6px 16px; border-radius: 4px; font-size: 14px; transition: all 0.2s; cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-default { background-color: #fff; color: #374151; border: 1px solid #d1d5db; padding: 6px 16px; border-radius: 4px; font-size: 14px; transition: all 0.2s; cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
         .btn-default:hover { color: #1677ff; border-color: #1677ff; background-color: #f0f7ff; }
+
+        .btn-danger { background-color: #fff1f0; color: #dc2626; border: 1px solid #fecaca; padding: 6px 16px; border-radius: 4px; font-size: 14px; transition: all 0.2s; cursor: pointer; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+        .btn-danger:hover { background-color: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+        .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-danger:disabled:hover { background-color: #fff1f0; border-color: #fecaca; color: #dc2626; }
+
+        .task-toolbar-actions { display: flex; flex-wrap: wrap; gap: 12px; width: 100%; align-items: center; }
+        .task-toolbar-btn { flex: 1 1 calc(50% - 6px); min-width: 132px; }
+        @media (max-width: 479px) {
+            .task-toolbar-btn { flex-basis: 100%; }
+        }
+        @media (min-width: 640px) {
+            .task-toolbar-actions { width: auto; }
+            .task-toolbar-btn { flex: 0 0 136px; }
+        }
         
         .dark .btn-default { background-color: transparent; color: #cbd5e1; border-color: rgba(255,255,255,0.15); }
         .dark .btn-default:hover { background-color: rgba(255,255,255,0.05); color: #fff; }
+        .dark .btn-danger { background-color: rgba(239,68,68,0.12); color: #fca5a5; border-color: rgba(239,68,68,0.35); }
+        .dark .btn-danger:hover { background-color: rgba(239,68,68,0.2); color: #fecaca; border-color: rgba(248,113,113,0.55); }
+        .dark .btn-danger:disabled:hover { background-color: rgba(239,68,68,0.12); color: #fca5a5; border-color: rgba(239,68,68,0.35); }
 
         .btn-icon { background: transparent; border: none; cursor: pointer; padding: 4px; border-radius: 4px; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; color: #6b7280; }
         .btn-icon:hover { background: #f3f4f6; color: #1677ff; }
@@ -596,21 +614,17 @@
             <div id="taskTab" class="tab-content active flex-1">
                 <!-- 移动端响应式工具栏 -->
                 <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
-                    <div class="flex flex-wrap gap-3 items-center w-full xl:w-auto">
-                        <button type="button" onclick="openCreateTaskModal()" class="btn-primary flex-1 sm:flex-none">
-                            <i data-lucide="plus" class="w-4 h-4 mr-1.5"></i> 创建任务
+                    <div class="task-toolbar-actions xl:w-auto">
+                        <button type="button" onclick="openCreateTaskModal()" class="btn-primary task-toolbar-btn">
+                            <i data-lucide="plus" class="w-4 h-4"></i> 创建任务
                         </button>
                         
-                        <div class="dropdown-button-group flex-1 sm:flex-none relative">
-                            <button type="button" class="btn-default dropdown-toggle w-full justify-center">
-                                更多操作 <i data-lucide="chevron-down" class="w-3.5 h-3.5 ml-1"></i>
-                            </button>
-                            <div class="dropdown-content w-full sm:w-auto">
-                                <a onclick="executeAllTask()"><i data-lucide="play-circle" class="w-4 h-4 inline mr-1 text-green-500 dark:text-green-400"></i>执行所有</a>
-                                <div class="h-px bg-gray-100 dark:bg-slate-700 my-1"></div>
-                                <a onclick="deleteSelectedTasks()" class="text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-300"><i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>批量删除</a>
-                            </div>
-                        </div>
+                        <button id="executeAllBtn" type="button" onclick="executeAllTask()" class="btn-default task-toolbar-btn">
+                            <i data-lucide="play-circle" class="w-4 h-4 text-green-500 dark:text-green-400"></i>执行所有
+                        </button>
+                        <button id="batchDeleteBtn" type="button" onclick="deleteSelectedTasks()" class="btn-danger task-toolbar-btn" disabled>
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>批量删除
+                        </button>
                     </div>
                     
                     <div class="flex flex-col sm:flex-row gap-3 items-center w-full xl:w-auto">
@@ -634,6 +648,7 @@
                     <table id="taskTable">
                         <thead>
                             <tr>
+                                <th class="w-8 text-center"><input type="checkbox" id="selectAllTasksHeader" title="全选/取消全选"></th>
                                 <th>操作</th>
                                 <th>资源名称</th>
                                 <th>账号</th>
@@ -652,6 +667,7 @@
                     <label class="text-sm dark:text-gray-300">
                         <input type="checkbox" id="selectAllTasks"> 全选当前页
                     </label>
+                    <!-- selectAllTasksHeader 在表头，与此处 selectAllTasks 双向同步 -->
                     <label class="text-sm text-red-600 dark:text-red-400">
                         <input type="checkbox" id="deleteCloudOption"> 删除任务时同步删除网盘文件
                     </label>
@@ -703,11 +719,11 @@
                             <div class="sm:col-span-3">
                                 <label class="text-sm dark:text-gray-300">
                                     <input type="checkbox" id="alistEnable">
-                                    <span class="ml-2">启用 Alist / OpenList（追更后触发 STRM 文件生成）</span>
+                                    <span class="ml-2">启用 Alist / OpenList（转存后自动刷新openlist目录）</span>
                                 </label>
                             </div>
                             <div class="sm:col-span-2">
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">服务地址</label>
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">STRM 挂载路径（全局默认）</label>
                                 <input type="text" id="alistBaseUrl" placeholder="http://localhost:5244" class="input-base">
                             </div>
                             <div>
@@ -715,9 +731,9 @@
                                 <input type="text" id="alistApiKey" placeholder="后台 → 个人资料 → 令牌" class="input-base">
                             </div>
                             <div class="sm:col-span-3">
-                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">STRM 挂载路径</label>
-                                <input type="text" id="alistStrmMountPath" placeholder="/strm" class="input-base font-mono text-xs">
-                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">OpenList STRM 驱动的虚拟目录挂载前缀，默认 /strm。追更后系统会同时刷新原生路径和此虚拟路径的缓存，确保 Emby 能扫描到新 .strm 文件。</p>
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">STRM 挂载路径（全局默认）</label>
+                                <input type="text" id="alistStrmMountPath" placeholder="例如: /strm" class="input-base font-mono text-xs" autocomplete="off" spellcheck="false">
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">用于账号未单独配置 STRM 虚拟路径时的默认前缀。留空则仅刷新原生路径缓存，不自动拼接 STRM 虚拟路径。</p>
                             </div>
                         </div>
                     </div>
@@ -739,6 +755,51 @@
                             <div>
                                 <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">API Key</label>
                                 <input type="text" id="embyApiKey" placeholder="Emby 控制台生成" class="input-base">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 本地 STRM 生成 -->
+                    <div class="settings-card mb-0">
+                        <h4><i data-lucide="file-video" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 本地 STRM 生成</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div class="sm:col-span-3">
+                                <label class="text-sm dark:text-gray-300">
+                                    <input type="checkbox" id="strmEnable">
+                                    <span class="ml-2">启用本地 STRM 文件生成（追更后自动写入 .strm 文件到宿主机）</span>
+                                </label>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">本地 STRM 根目录</label>
+                                <input type="text" id="strmLocalPrefix" placeholder="如: /网盘名称 或 /云盘目录" class="input-base font-mono text-xs">
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">STRM 文件在宿主机 <code>/home/strm</code> 卷内的子目录，不含主机地址。</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">STRM URL 前缀</label>
+                                <input type="text" id="strmCloudPrefix" placeholder="如: http://openlist:5244/d/网盘名称" class="input-base font-mono text-xs">
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">写入 .strm 文件内的播放地址前缀。</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TMDB / NFO 刮削 -->
+                    <div class="settings-card mb-0">
+                        <h4><i data-lucide="film" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> TMDB / NFO 刮削</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div class="sm:col-span-3">
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">TMDB API Key</label>
+                                <input type="text" id="tmdbApiKey" placeholder="填写后追更时自动生成 NFO 元数据文件" class="input-base font-mono text-xs">
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">填写即启用。追更生成本地 STRM 后自动刮削 NFO；留空则跳过。</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">电影全局 Jinja2 模板（任务默认）</label>
+                                <input type="text" id="tmdbMovieFormat" placeholder="{{title}}{% if year %} ({{year}}){% endif %}{{fileExt}}" class="input-base font-mono text-xs">
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">作为创建任务时的默认模板，可按任务勾选启用。</p>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">剧集全局 Jinja2 模板（任务默认）</label>
+                                <input type="text" id="tmdbTvFormat" placeholder="{{title}} - {{season_episode}}{{fileExt}}" class="input-base font-mono text-xs">
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">作为创建任务时的默认模板，可按任务勾选启用。</p>
                             </div>
                         </div>
                     </div>
@@ -803,7 +864,7 @@
                                 <div id="recycleSettingsGroup">
                                     <label for="cleanRecycleCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">
                                         回收站清理
-                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">(仅天翼云盘189账号可用)</span>
+                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">(移动云盘139不支持，设置无效)</span>
                                     </label>
                                     <input type="text" id="cleanRecycleCron" placeholder="Cron表达式（5位或6位）" class="input-base">
                                     <small class="form-text">默认：0 */8 * * * (每8小时执行一次) | 支持5位或6位格式</small>
@@ -981,8 +1042,15 @@
 
                 <!-- ================= Tab: 系统 ================= -->
                 <div id="systemTab" class="tab-content flex-1">
-                    <div class="max-w-3xl mx-auto mt-4 space-y-6">
-                        <div class="settings-card border-l-4 border-l-[#1677ff] dark:border-l-[#3b82f6]">
+                    <div class="max-w-3xl mx-auto mt-6 space-y-4">
+                        <!-- 系统日志 -->
+                        <div class="settings-card mb-0 border-l-4 border-l-[#1677ff] dark:border-l-[#3b82f6]">
+                            <h4><i data-lucide="terminal" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 系统日志</h4>
+                            <div id="logsContainer" class="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 h-[500px] overflow-y-auto font-mono text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap" style="-webkit-overflow-scrolling: touch;"></div>
+                            <small class="form-text mt-2 block">实时显示系统运行日志，自动滚动到最新记录</small>
+                        </div>
+
+                        <div class="settings-card mb-0">
                             <h4>系统访问安全认证</h4>
                             <div class="space-y-6">
                                 <div>
@@ -1017,14 +1085,7 @@
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- 系统日志 -->
-                        <div class="settings-card">
-                            <h4 class="mb-3"><i data-lucide="terminal" class="w-4 h-4 text-gray-500 dark:text-gray-400"></i> 系统日志</h4>
-                            <div id="logsContainer" class="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 h-[500px] overflow-y-auto font-mono text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap" style="-webkit-overflow-scrolling: touch;"></div>
-                            <small class="form-text mt-2 block">实时显示系统运行日志，自动滚动到最新记录</small>
-                        </div>
-                        
+
                         <div class="flex justify-end">
                             <button type="button" onclick="saveSettings()" class="btn-primary">保存设置</button>
                         </div>
@@ -1085,29 +1146,10 @@
                                     <small class="form-text">OpenList 中该账号对应网盘的原生挂载根路径（不含主机地址），追更后只会触发单层 refresh=true 回源刷新，不会生成 .strm 文件</small>
                                 </div>
                                 <div class="form-group mb-0 mt-2">
-                                    <label for="alistStrmPath">OpenList STRM 虚拟路径（可选）</label>
-                                    <input type="text" id="alistStrmPath" class="input-base font-mono text-xs" placeholder="留空则自动从全局 STRM 挂载路径推算">
-                                    <small class="form-text">手动指定该账号在 OpenList STRM 驱动下的虚拟根路径（如 /strm/CloudDrive139）；留空时系统自动拼接：全局 STRM 挂载路径 + 原生挂载路径</small>
+                                    <label for="alistStrmPath">OpenList STRM 虚拟路径（账号覆盖，可选）</label>
+                                    <input type="text" id="alistStrmPath" class="input-base font-mono text-xs" placeholder="留空则使用媒体页的全局 STRM 挂载路径">
+                                    <small class="form-text">仅对当前账号生效。填写时优先使用该路径；留空时按“全局 STRM 挂载路径 + 原生挂载路径”自动拼接。</small>
                                 </div>
-                                <div class="form-group mb-0 mt-2">
-                                    <label for="rootFolderId">OpenList 挂载根目录 ID</label>
-                                    <input type="text" id="rootFolderId" class="input-base font-mono text-xs" placeholder="如: 00019700101000000001">
-                                    <small class="form-text">建议手动填写并与 OpenList 存储中的“根文件夹 ID”保持一致。系统会通过 OpenList 配置接口做一致性校验；仅在校验通过且任务 parentFileId 命中时才执行首层目录裁剪（例如去掉 media/）</small>
-                                </div>
-                                <!-- 本地 STRM 生成（折叠，极少数场景） -->
-                                <details class="mt-3">
-                                    <summary class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">本地 STRM 生成（高级，通常无需配置）</summary>
-                                    <div class="form-group mb-0 mt-2">
-                                        <label for="localStrmPrefix">本地 STRM 根目录</label>
-                                        <input type="text" id="localStrmPrefix" class="input-base font-mono text-xs" placeholder="如: /host/strm/网盘名称">
-                                        <small class="form-text">宿主机上存放 .strm 文件的根目录（139-auto-save 自行生成 STRM 时才需要）</small>
-                                    </div>
-                                    <div class="form-group mb-0 mt-2">
-                                        <label for="cloudStrmPrefix">STRM URL 前缀</label>
-                                        <input type="text" id="cloudStrmPrefix" class="input-base font-mono text-xs" placeholder="如: http://openlist:5244/d/网盘名称">
-                                        <small class="form-text">写入 .strm 文件内的播放地址前缀（OpenList 自动生成 STRM 时无需填写）</small>
-                                    </div>
-                                </details>
                             </div>
 
                             <!-- Emby 通知子区块 -->
@@ -1122,15 +1164,6 @@
                                         · 本地 STRM 用户：填 Emby 内 .strm 文件挂载点，如 /tv_strm
                                     </small>
                                 </div>
-                                <!-- 路径替换规则（折叠，边缘场景保留） -->
-                                <details class="mt-3">
-                                    <summary class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">路径替换规则（高级，配置了上方库根路径后一般无需填写）</summary>
-                                    <div class="form-group mb-0 mt-2">
-                                        <label for="embyPathReplace">Emby 路径替换</label>
-                                        <input type="text" id="embyPathReplace" class="input-base font-mono text-xs" placeholder="如: 临时存放:/media/临时存放">
-                                        <small class="form-text">格式：云盘路径:Emby本地路径，多条用分号分隔</small>
-                                    </div>
-                                </details>
                             </div>
 
                         </div>
@@ -1214,35 +1247,12 @@
                             </div>
                         </div>
 
-                        <!-- 文件名重命名 -->
                         <div class="form-group mb-0">
-                            <label>文件名重命名（可选）</label>
-                            <div class="flex flex-col sm:flex-row gap-3">
-                                <input type="text" id="ctSourceRegex" class="input-base flex-[2] font-mono text-xs" placeholder="正则表达式 例如: .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$">
-                                <input type="text" id="ctTargetRegex" class="input-base flex-1 font-mono text-xs" placeholder="例如: 沙尘暴.$1$2">
-                            </div>
-                            <div class="mt-2">
-                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="toggleHelpText(this)">显示帮助</button>
-                                <small class="form-text is-hidden">例如：沙尘暴 - S01E06 - 第6集.mkv 正则就填写 .*(S\d{1,3}E\d{1,3}).*?(\.\w+)$ 值填写沙尘暴.$1$2, 结果为沙尘暴.S01E06.mkv</small>
-                            </div>
-                        </div>
-
-                        <!-- Jinja2模板重命名 -->
-                        <div class="form-group mb-0">
-                            <label>Jinja2 模板重命名（可选）</label>
-                            <div class="rename-template-panel">
-                                <div class="rename-template-tip">建议优先使用模板变量，避免手写复杂正则；该设置仅影响新入库文件重命名。</div>
-                                <div class="rename-template-grid">
-                                    <div class="rename-template-item">
-                                        <label for="movieRenameFormat">电影模板</label>
-                                        <textarea id="movieRenameFormat" rows="3" spellcheck="false" placeholder="例如：{{title}}{% if year %} ({{year}}){% endif %}{{fileExt}}" class="rename-template-textarea"></textarea>
-                                    </div>
-                                    <div class="rename-template-item">
-                                        <label for="tvRenameFormat">电视剧模板</label>
-                                        <textarea id="tvRenameFormat" rows="3" spellcheck="false" placeholder="例如：{{title}} - {{season_episode}}{{fileExt}}" class="rename-template-textarea"></textarea>
-                                    </div>
-                                </div>
-                            </div>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="enableTemplateRename" class="w-4 h-4">
+                                <span>启用 Jinja2 模板重命名（使用媒体Tab中的通用模板）</span>
+                            </label>
+                            <small class="form-text">模板在媒体 Tab 中配置；当前任务只需勾选即可启用。</small>
                         </div>
 
                         <!-- 文件名匹配规则 -->

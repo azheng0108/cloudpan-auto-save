@@ -1,4 +1,3 @@
-const { TelegramBotService } = require('../services/telegramBot');
 const { logTaskEvent } = require('./logUtils');
 
 class TelegramBotManager {
@@ -14,6 +13,8 @@ class TelegramBotManager {
     }
 
     async handleBotStatus(botToken, chatId, enable) {
+        // 懒加载：仅在首次需要 Telegram 功能时才 require，避免冷启动时加载 node-telegram-bot-api
+        const { TelegramBotService } = require('../services/telegramBot');
         const shouldEnableBot = !!(enable && botToken && chatId);
         const botTokenChanged = TelegramBotManager.bot?.token !== botToken;
         const chatIdChanged = TelegramBotManager.bot?.chatId!== chatId;

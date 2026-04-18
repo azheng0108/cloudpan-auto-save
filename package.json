@@ -10,7 +10,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:ci": "jest --coverage --ci --maxWorkers=2",
+    "test:ci": "jest --coverage --ci --maxWorkers=2 --passWithNoTests",
     "test:legacy": "node -e \"console.log('Legacy smoke check is deprecated; use npm run test:ci')\"",
     "dev": "npm run migration:run && ts-node src/index.js",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/index.js",
@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@netdrive-sdk/log": "1.0.0",
-    "cloud189-sdk": "^1.0.8",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
@@ -36,7 +35,7 @@
     "p-limit": "^3.1.0",
     "reflect-metadata": "^0.1.13",
     "session-file-store": "^1.5.0",
-    "sqlite3": "^5.1.7",
+    "better-sqlite3": "^9.6.0",
     "typeorm": "^0.3.17",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"

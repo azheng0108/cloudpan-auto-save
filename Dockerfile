@@ -1,12 +1,8 @@
 # ── 构建阶段 ──────────────────────────────────────────────────────────────────
-# 与生产阶段同用 Alpine，保证 sqlite3 等原生模块二进制兼容
-# 从而可直接复制 node_modules，省去生产阶段重复下载
+# better-sqlite3 提供 Alpine musl 预编译二进制，无需原生编译工具
 FROM node:18-alpine AS builder
 
 WORKDIR /home
-
-# sqlite3 在 Alpine 上需从源码编译（musl libc 无预编译包）
-RUN apk add --no-cache python3 make g++
 
 # 先复制依赖清单，充分利用 Docker 层缓存
 COPY package.json yarn.lock ./
@@ -16,19 +12,27 @@ RUN yarn install --ignore-engines
 
 # 复制源码并编译
 COPY . .
+# 清理 vender 内非运行时目录（docs/example/test 等），避免带入最终镜像
+RUN rm -rf vender/cloud189-sdk/docs vender/cloud189-sdk/example \
+           vender/cloud189-sdk/test vender/cloud189-sdk/.git \
+           vender/cloud189-sdk/.vscode vender/cloud189-sdk/.github
 # 复制第三方前端组件到 public/vendor（本地托管，避免 CDN 依赖）
 RUN node scripts/copy-vendor.js && npx tsc && cp -r src/public dist/public
+# 删除 vendor 内的 source map（生产不需要调试符号）
+RUN find dist/public/vendor -name "*.js.map" -delete 2>/dev/null; true
 
 # 原地裁剪 node_modules 为纯生产依赖（不重新下载，只删除 devDependencies）
 # 同时清理运行时完全不需要的文件，进一步瘦身：
-#   - node-gyp：sqlite3 编译工具，编译完成后无用
 #   - *.d.ts / *.d.ts.map：TypeScript 声明文件，JS 运行时不读取
+#   - *.js.map：source map，生产运行时不需要
+#   - typeorm/browser：浏览器构建，Node.js 运行时不需要
 #   - 各包内的 README / CHANGELOG / LICENSE 文本
 RUN yarn install --production --ignore-engines && \
     yarn cache clean && \
-    rm -rf node_modules/node-gyp && \
     find node_modules -name "*.d.ts" -delete && \
     find node_modules -name "*.d.ts.map" -delete && \
+    find node_modules -name "*.js.map" -delete && \
+    rm -rf node_modules/typeorm/browser && \
     find node_modules \( -name "README*" -o -name "CHANGELOG*" \) -not -path "*/bin/*" -delete 2>/dev/null; true
 
 # ── 生产阶段 ──────────────────────────────────────────────────────────────────

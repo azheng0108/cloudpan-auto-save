@@ -179,7 +179,6 @@ class CloudSaverSDK {
                 .filter(item =>
                     item.cloudLinks?.length > 0 &&
                     item.cloudLinks.some(link =>
-                        link.link.includes('cloud.189.cn') ||
                         link.link.includes('yun.139.com') ||
                         link.link.includes('caiyun.139.com')
                     )
@@ -193,11 +192,10 @@ class CloudSaverSDK {
                     }
                 });
 
-                // 将每个资源的多个链接拆分为独立资源（只保留189/139链接）
+                // 将每个资源的多个链接拆分为独立资源（只保留139链接）
                 const result: CloudResource[] = [];
                 uniqueResources.forEach(resource => {
                     const cloudLinks = resource.cloudLinks.filter(link =>
-                        link.link.includes('cloud.189.cn') ||
                         link.link.includes('yun.139.com') ||
                         link.link.includes('caiyun.139.com')
                     );

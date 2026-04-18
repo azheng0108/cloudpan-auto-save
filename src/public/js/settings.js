@@ -1,5 +1,14 @@
 let customPushConfigs = []
 let systemCapabilities = null; // 存储系统能力信息
+const DEFAULT_MOVIE_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}`;
+const DEFAULT_TV_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{% if title and title != season_episode %}{{title}} - {% endif %}{{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{{fileExt}}`;
+
+function syncRenameTemplateDefaults(movieValue, tvValue) {
+    window._renameFormats = {
+        movie: (movieValue || '').trim() || DEFAULT_MOVIE_FORMAT,
+        tv: (tvValue || '').trim() || DEFAULT_TV_FORMAT,
+    };
+}
 
 // 加载系统能力信息
 async function loadSystemCapabilities() {
@@ -56,6 +65,12 @@ function applyCapabilityGating(capabilities) {
 }
 
 async function loadSettings() {
+    const alistStrmMountPathInput = document.getElementById('alistStrmMountPath');
+    if (alistStrmMountPathInput) {
+        // 先清空，避免浏览器自动填充旧值（如 /strm）在接口异常时残留
+        alistStrmMountPathInput.value = '';
+    }
+
     // 加载系统能力信息
     const capabilities = await loadSystemCapabilities();
     
@@ -134,12 +149,26 @@ async function loadSettings() {
             document.getElementById('alistEnable').checked = settings.alist?.enable || false;
             document.getElementById('alistBaseUrl').value = settings.alist?.baseUrl || '';
             document.getElementById('alistApiKey').value = settings.alist?.apiKey || '';
-            document.getElementById('alistStrmMountPath').value = settings.alist?.strmMountPath ?? '/strm';
+            document.getElementById('alistStrmMountPath').value = (settings.alist?.strmMountPath || '').trim();
 
             // Emby 通知设置
             document.getElementById('embyEnable').checked = settings.emby?.enable || false;
             document.getElementById('embyServerUrl').value = settings.emby?.serverUrl || '';
             document.getElementById('embyApiKey').value = settings.emby?.apiKey || '';
+
+            // 本地 STRM 生成
+            document.getElementById('strmEnable').checked = settings.strm?.enable || false;
+            document.getElementById('strmLocalPrefix').value = settings.strm?.localStrmPrefix || '';
+            document.getElementById('strmCloudPrefix').value = settings.strm?.cloudStrmPrefix || '';
+
+            // TMDB / NFO 刮削
+            document.getElementById('tmdbApiKey').value = settings.tmdb?.tmdbApiKey || '';
+            document.getElementById('tmdbMovieFormat').value = (settings.tmdb?.movieRenameFormat || '').trim() || DEFAULT_MOVIE_FORMAT;
+            document.getElementById('tmdbTvFormat').value = (settings.tmdb?.tvRenameFormat || '').trim() || DEFAULT_TV_FORMAT;
+            syncRenameTemplateDefaults(
+                document.getElementById('tmdbMovieFormat').value,
+                document.getElementById('tmdbTvFormat').value
+            );
 
             // pushplus
             document.getElementById('enablePushPlus').checked = settings.pushplus?.enable || false;
@@ -162,6 +191,10 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 });
 
 async function saveSettings() {
+    const alistStrmMountPathInput = document.getElementById('alistStrmMountPath');
+    const alistStrmMountPath = (alistStrmMountPathInput.value || '').trim();
+    alistStrmMountPathInput.value = alistStrmMountPath;
+
     const settings = {
         task: {
             taskExpireDays: parseInt(document.getElementById('taskExpireDays').value) || 3,
@@ -227,12 +260,22 @@ async function saveSettings() {
             enable: document.getElementById('alistEnable').checked,
             baseUrl: document.getElementById('alistBaseUrl').value,
             apiKey: document.getElementById('alistApiKey').value,
-            strmMountPath: document.getElementById('alistStrmMountPath').value || '/strm'
+            strmMountPath: alistStrmMountPath
         },
         emby: {
             enable: document.getElementById('embyEnable').checked,
             serverUrl: document.getElementById('embyServerUrl').value,
             apiKey: document.getElementById('embyApiKey').value
+        },
+        strm: {
+            enable: document.getElementById('strmEnable').checked,
+            localStrmPrefix: document.getElementById('strmLocalPrefix').value,
+            cloudStrmPrefix: document.getElementById('strmCloudPrefix').value
+        },
+        tmdb: {
+            tmdbApiKey: document.getElementById('tmdbApiKey').value,
+            movieRenameFormat: document.getElementById('tmdbMovieFormat').value,
+            tvRenameFormat: document.getElementById('tmdbTvFormat').value
         },
         pushplus: {
             enable: document.getElementById('enablePushPlus').checked,
@@ -262,6 +305,10 @@ async function saveSettings() {
         });
         const data = await response.json();
         if (data.success) {
+            syncRenameTemplateDefaults(
+                document.getElementById('tmdbMovieFormat').value,
+                document.getElementById('tmdbTvFormat').value
+            );
             message.success('保存成功');
         } else {
             message.warning('保存失败: ' + data.error);
@@ -288,6 +335,10 @@ function generateApiKey() {
  * 复用 POST /api/settings/media 端点，仅提交媒体服务相关字段
  */
 async function saveMediaSettings() {
+    const alistStrmMountPathInput = document.getElementById('alistStrmMountPath');
+    const alistStrmMountPath = (alistStrmMountPathInput.value || '').trim();
+    alistStrmMountPathInput.value = alistStrmMountPath;
+
     const settings = {
         cloudSaver: {
             baseUrl: document.getElementById('cloudSaverUrl').value,
@@ -298,12 +349,22 @@ async function saveMediaSettings() {
             enable: document.getElementById('alistEnable').checked,
             baseUrl: document.getElementById('alistBaseUrl').value,
             apiKey: document.getElementById('alistApiKey').value,
-            strmMountPath: document.getElementById('alistStrmMountPath').value || '/strm'
+            strmMountPath: alistStrmMountPath
         },
         emby: {
             enable: document.getElementById('embyEnable').checked,
             serverUrl: document.getElementById('embyServerUrl').value,
             apiKey: document.getElementById('embyApiKey').value
+        },
+        strm: {
+            enable: document.getElementById('strmEnable').checked,
+            localStrmPrefix: document.getElementById('strmLocalPrefix').value,
+            cloudStrmPrefix: document.getElementById('strmCloudPrefix').value
+        },
+        tmdb: {
+            tmdbApiKey: document.getElementById('tmdbApiKey').value,
+            movieRenameFormat: document.getElementById('tmdbMovieFormat').value,
+            tvRenameFormat: document.getElementById('tmdbTvFormat').value
         }
     };
     try {
