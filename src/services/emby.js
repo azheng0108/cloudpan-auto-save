@@ -4,11 +4,10 @@ const ConfigService = require('./ConfigService');
 const { MessageUtil } = require('./message');
 const { AppDataSource } = require('../database'); 
 const { Task, Account } = require('../entities'); 
-const { Cloud189Service } = require('../legacy189/services/cloud189');
 const path = require('path');
 const logger = require('../utils/logger');
 
-const { Not, IsNull, Like } = require('typeorm'); 
+const { Like } = require('typeorm'); 
 
 // emby接口
 class EmbyService {
@@ -17,7 +16,7 @@ class EmbyService {
         this.enable = ConfigService.getConfigValue('emby.enable');
         this.embyUrl = ConfigService.getConfigValue('emby.serverUrl');
         this.embyApiKey = ConfigService.getConfigValue('emby.apiKey');
-        this.embyPathReplace = ''
+        this.embyLibraryPath = '';
         this.messageUtil = new MessageUtil();
 
         this._taskRepo = AppDataSource.getRepository(Task);
@@ -25,47 +24,81 @@ class EmbyService {
         this._taskService = taskService;
     }
 
-    _isLegacy189RuntimeEnabled() {
-        return ConfigService.getConfigValue('legacy.enableCloud189Runtime') === true;
-    }
-
-
     async notify(task, options = {}) {
         if (!this.enable){
             logTaskEvent(`Emby通知未启用, 请启用后执行`);
             return { status: 'skipped', reason: 'disabled' };
         }
-        const taskName = task.resourceName
+        const taskName = task.resourceName;
         logTaskEvent(`执行Emby通知: ${taskName}`);
-        // 读取路径相关字段：优先使用 embyLibraryPath 精准拼接，fallback 到旧 embyPathReplace 替换模式
+        // 单方案：统一使用 embyLibraryPath 精准拼接
         this.embyLibraryPath = task.account.embyLibraryPath?.trim() || '';
-        this.embyPathReplace  = task.account.embyPathReplace;
+
+        let item = null;
+        let refreshMode = '';
+
+        // 改进3：优先使用缓存的 embyId 直接刷新，跳过搜索
+        if (task.embyId) {
+            logTaskEvent(`使用缓存 embyId 直接刷新: ${task.embyId}`);
+            await this.refreshItemById(task.embyId);
+            return {
+                status: 'success',
+                itemId: task.embyId,
+                refreshMode: '缓存命中',
+                firstExecution: !!options.firstExecution,
+            };
+        }
+
+        // 路径搜索
         const rawPath = task.realFolderName;
         const convertedPath = this._replacePath(rawPath);
-        logTaskEvent('Emby 路径转换完成，开始检索媒体项');
-        const item = await this.searchItemsByPathRecursive(convertedPath);
-        logTaskEvent(`Emby搜索结果: ${JSON.stringify(item)}`);
-        let refreshMode = '';
+        logTaskEvent('Emby 路径转换完成，开始路径检索媒体项');
+        item = await this.searchItemsByPathRecursive(convertedPath);
+        logTaskEvent(`Emby路径搜索结果: ${item ? item.Id : '未命中'}`);
+
         if (item) {
             await this.refreshItemById(item.Id);
             refreshMode = '路径命中';
-        } else {
-            // 目录事件刷新与搜索路径保持同一转换逻辑，避免出现前缀被裁剪的问题。
-            const rawDirPath = options.directoryPath || task.realFolderName || convertedPath;
-            const convertedDirPath = this._replacePath(rawDirPath);
-            const targetDirPath = this._normalizeDirPath(convertedDirPath);
-            if (targetDirPath) {
-                logTaskEvent(`Emby未命中媒体项，尝试目录事件局部刷新: ${targetDirPath}`);
-                const updated = await this.refreshMediaByPaths([targetDirPath]);
-                if (updated) {
-                    refreshMode = '目录路径事件';
-                }
+            // 改进3：缓存 embyId 到任务记录
+            if (task.id) {
+                await this._taskRepo.update(task.id, { embyId: String(item.Id) }).catch(e =>
+                    logTaskEvent(`缓存 embyId 失败(忽略): ${e.message}`)
+                );
             }
+        } else {
+            // 改进2：名称搜索 fallback（路径搜索失败时，用资源名尝试匹配）
+            logTaskEvent(`路径未命中，尝试名称搜索: ${taskName}`);
+            const nameSearchResult = await this.searchItemsByName(taskName);
+            const nameItem = nameSearchResult?.Items?.find(i => i.IsFolder);
+            if (nameItem) {
+                logTaskEvent(`名称搜索命中: ${nameItem.Name} (ID: ${nameItem.Id})`);
+                await this.refreshItemById(nameItem.Id);
+                refreshMode = '名称命中';
+                item = nameItem;
+                // 改进3：缓存 embyId 到任务记录
+                if (task.id) {
+                    await this._taskRepo.update(task.id, { embyId: String(nameItem.Id) }).catch(e =>
+                        logTaskEvent(`缓存 embyId 失败(忽略): ${e.message}`)
+                    );
+                }
+            } else {
+                // 目录事件刷新与搜索路径保持同一转换逻辑，避免出现前缀被裁剪的问题。
+                const rawDirPath = options.directoryPath || task.realFolderName || convertedPath;
+                const convertedDirPath = this._replacePath(rawDirPath);
+                const targetDirPath = this._normalizeDirPath(convertedDirPath);
+                if (targetDirPath) {
+                    logTaskEvent(`Emby未命中媒体项，尝试目录事件局部刷新: ${targetDirPath}`);
+                    const updated = await this.refreshMediaByPaths([targetDirPath]);
+                    if (updated) {
+                        refreshMode = '目录路径事件';
+                    }
+                }
 
-            if (!refreshMode) {
-                logTaskEvent(`目录事件局部刷新失败，降级执行全库扫描: ${taskName}`);
-                await this.refreshAllLibraries();
-                refreshMode = '全库刷新';
+                if (!refreshMode) {
+                    logTaskEvent(`目录事件局部刷新失败，降级执行全库扫描: ${taskName}`);
+                    await this.refreshAllLibraries();
+                    refreshMode = '全库刷新';
+                }
             }
         }
         return {
@@ -98,6 +131,13 @@ class EmbyService {
         const url = `${this.embyUrl}/emby/Items/${id}/Refresh`;
         await this.request(url, {
             method: 'POST',
+            searchParams: {
+                Recursive: 'true',
+                MetadataRefreshMode: 'FullRefresh',
+                ImageRefreshMode: 'FullRefresh',
+                ReplaceAllMetadata: 'false',
+                ReplaceAllImages: 'false',
+            },
         })
         return true;
     }
@@ -265,10 +305,8 @@ class EmbyService {
     }
     /**
      * 将 realFolderName 转换为 Emby 可搜索的完整路径
-     * 精准模式（推荐）：embyLibraryPath + '/' + realFolderName
-     *   适用于 OpenList STRM 和本地 STRM 两种场景，只需填写 Emby 内该账号内容的根路径
-     * 兼容模式（旧）：对路径应用 embyPathReplace 替换规则
-     *   适用于路径结构差异复杂的边缘场景
+     * 单方案：embyLibraryPath + '/' + realFolderName
+     * 适用于 OpenList STRM 和本地 STRM，两种场景都只需填写 Emby 内账号根路径
      */
     _replacePath(path) {
         path = String(path || '').replace(/\\/g, '/').trim();
@@ -283,20 +321,8 @@ class EmbyService {
             const prefixed = `${libraryPath.replace(/\/+$/, '')}/${rel}`.replace(/\/+/g, '/');
             return prefixed.replace(/\/+$/g, '');
         }
-        // 兼容旧模式：embyPathReplace 规则替换
-        if (!path.startsWith('/')) {
-            path = '/' + path;
-        }
-        if (this.embyPathReplace) {
-            const pathReplaceArr = this.embyPathReplace.split(';');
-            for (let i = 0; i < pathReplaceArr.length; i++) {
-                const pathReplace = pathReplaceArr[i].split(':');
-                path = path.replace(pathReplace[0], pathReplace[1]);
-            }
-        }
-        // 如果结尾有斜杠, 则移除
-        path = path.replace(/\/+$/, '');
-        return path;
+        // 未配置库根路径时，保持原路径，仅做标准化
+        return this._normalizeDirPath(path);
     }
 
 
@@ -327,88 +353,66 @@ class EmbyService {
         logTaskEvent(`检测到删除事件，路径: ${itemPath}, 类型: ${type}, 是否文件夹: ${isFolder}`);
 
         try {
-            // 根据path获取对应的task
-            // 1. 首先获取所有embyPathReplacex不为空的account
-            const accounts = await this._accountRepo.find({
-                where: [
-                    { embyPathReplace: Not(IsNull()) }
-                ]
-            })
-            // 2. 遍历accounts, 检查path是否包含embyPathReplace(本地路径) embyPathReplace的内容为: xx(网盘路径):xxx(本地路径)
+            // 根据 embyLibraryPath 将 Emby 本地路径映射为任务 realFolderName 的相对路径
+            const normalizedItemPath = String(itemPath).replace(/\\/g, '/');
+            const accounts = await this._accountRepo.find();
             const tasks = [];
             for (const account of accounts) {
-                let embyPathReplace = account.embyPathReplace.split(':');
-                let embyPath = ""
-                let cloudPath = embyPathReplace[0]
-                if (embyPathReplace.length === 2) {
-                    embyPath = embyPathReplace[1]
+                const libraryPath = String(account.embyLibraryPath || '').replace(/\\/g, '/').replace(/\/+$/g, '').trim();
+                if (!libraryPath) {
+                    continue;
                 }
-                // 检查itemPath是否是embyPath开头
-                if (itemPath.startsWith(embyPath)) {
-                    // 将itemPath中的embyPath替换为cloudPath 并且去掉首尾的/
-                    itemPath = itemPath.replace(embyPath, cloudPath).replace(/^\/+|\/+$/g, '');
-                    if (!isFolder) {
-                        // 剧集, 需要去掉文件名
-                        itemPath = path.dirname(itemPath);
-                    }
-                    const task = await this._taskRepo.findOne({
-                        where: {
-                            accountId: account.id,
-                            realFolderName: Like(`%${itemPath}%`)
-                        },
-                        relations: {
-                            account: true
-                        },
-                        select: {
-                            account: {
-                                username: true,
-                                password: true,
-                                cookies: true,
-                                localStrmPrefix: true,
-                                cloudStrmPrefix: true,
-                                embyPathReplace: true
-                            }
+                const normalizedLibraryPath = libraryPath.startsWith('/') ? libraryPath : `/${libraryPath}`;
+                if (!normalizedItemPath.startsWith(normalizedLibraryPath)) {
+                    continue;
+                }
+
+                let relativePath = normalizedItemPath.substring(normalizedLibraryPath.length).replace(/^\/+|\/+$/g, '');
+                if (!relativePath) {
+                    continue;
+                }
+                if (!isFolder) {
+                    relativePath = path.dirname(relativePath).replace(/^\/+|\/+$/g, '');
+                }
+                if (!relativePath || relativePath === '.') {
+                    continue;
+                }
+
+                const task = await this._taskRepo.findOne({
+                    where: {
+                        accountId: account.id,
+                        realFolderName: Like(`%${relativePath}%`)
+                    },
+                    relations: {
+                        account: true
+                    },
+                    select: {
+                        account: {
+                            username: true,
+                            password: true,
+                            cookies: true,
+                            localStrmPrefix: true,
+                            cloudStrmPrefix: true,
+                            embyLibraryPath: true
                         }
-                    })
-                    if (task) {
-                        tasks.push(task);
-                    }   
+                    }
+                });
+                if (task) {
+                    tasks.push(task);
                 }
             }
             if (tasks.length === 0) {
-                logTaskEvent(`未找到对应的任务, 路径: ${itemPath}`);
+                logTaskEvent(`未找到对应的任务, 路径: ${normalizedItemPath}`);
                 return;
             }
             logTaskEvent(`找到对应的任务, 任务数量: ${tasks.length}, 任务名称: ${tasks.map(task => task.resourceName).join(', ')}`);
             // 4. 遍历tasks, 删除本地strm, 删除任务和网盘
             for (const task of tasks) {
                 if (!isFolder) {
-                    // 如果是剧集文件，只删除对应的单个文件
-                    logTaskEvent(`删除单个剧集文件, 任务id: ${task.id}, 文件路径: ${itemPath}`);
-                    if (!this._isLegacy189RuntimeEnabled()) {
-                        logTaskEvent('当前默认运行链路已禁用 189，跳过 legacy189 文件删除逻辑');
-                        continue;
-                    }
-                    const cloud189 = Cloud189Service.getInstance(task.account);
-                    const folderInfo = await cloud189.listFiles(task.realFolderId);
-                    if (!folderInfo || !folderInfo.fileListAO) {
-                        logTaskEvent(`未找到对应的网盘文件列表: 跳过删除`);
-                        continue;
-                    }
-                    const fileList = [...(folderInfo.fileListAO.fileList || [])];
-                    const fileName = path.basename(itemPath);
-                    const fileNameWithoutExt = path.parse(fileName).name;
-                    const targetFile = fileList.find(file => path.parse(file.name).name === fileNameWithoutExt);
-                    if (targetFile) {
-                        await this._taskService.deleteCloudFile(cloud189, {
-                            id: targetFile.id,
-                            name: targetFile.name
-                        }, false)
-                        logTaskEvent(`成功删除文件: ${fileName}`);
-                    } else {
-                        logTaskEvent(`未找到对应的网盘文件: ${fileName}`);
-                    }
-                }else{
+                    logTaskEvent(`删除单个剧集文件, 任务id: ${task.id}, 文件路径: ${normalizedItemPath}`);
+                    // 移动云盘(139)暂不支持单个文件删除，跳过
+                    continue;
+                } else {
                     logTaskEvent(`删除任务和网盘, 任务id: ${task.id}`);
                     // 删掉任务并且删掉网盘
                     this._taskService.deleteTasks(tasks.map(task => task.id), true)
