@@ -38,6 +38,7 @@ if (logDirAvailable) {
         datePattern: 'YYYY-MM-DD',
         maxSize: '20m',
         maxFiles: '14d',
+        auditFile: path.join(logDir, '.audit.json'),
     }));
 }
 
