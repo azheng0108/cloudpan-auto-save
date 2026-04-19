@@ -20,6 +20,7 @@ const cors = require('cors');
 const logger = require('./utils/logger');
 
 const app = express();
+const sessionsPath = path.resolve(process.cwd(), 'data', 'sessions');
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
@@ -72,12 +73,16 @@ app.use(express.json());
 const sessionSecret = ConfigService.getOrCreateSessionSecret();
 app.use(session({
     store: new FileStore({
-        path: './data/sessions',  // session文件存储路径
+        path: sessionsPath,       // session文件存储路径（绝对路径，避免工作目录波动）
         ttl: 30 * 24 * 60 * 60,  // session过期时间，单位秒
         reapInterval: 3600,       // 清理过期session间隔，单位秒
-        retries: 0,           // 设置重试次数为0
-        logFn: () => {},      // 禁用内部日志
-        reapAsync: true,      // 异步清理过期session
+        retries: 5,
+        factor: 1,
+        minTimeout: 50,
+        maxTimeout: 200,
+        logFn: () => {},       // 保持静默，避免刷屏
+        reapAsync: false,      // Windows 下减少并发文件操作
+        reapSyncFallback: true,
     }),
     secret: sessionSecret,
     resave: false,
@@ -176,6 +181,15 @@ AppDataSource.initialize().then(async () => {
 
     // 全局错误处理中间件（必须在路由之后）
     app.use((err, req, res, next) => {
+        if (res.headersSent) {
+            logger.warn('错误发生时响应已发送，跳过重复写入响应头', {
+                error: err.message,
+                url: req.url,
+                method: req.method,
+            });
+            return next(err);
+        }
+
         if (err.status === 403 || err.statusCode === 403) {
             logger.warn(`访问被拒绝: ${err.message}`, {
                 url: req.url,
