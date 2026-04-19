@@ -102,6 +102,35 @@ function buildNameToFileIdMap(files = []) {
     return map;
 }
 
+function extractEpisodeKey(name = '') {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+
+    const seasonEpisodeMatch = raw.match(/s(\d{1,2})\s*e(\d{1,4})/i);
+    if (seasonEpisodeMatch) {
+        const season = String(Number(seasonEpisodeMatch[1])).padStart(2, '0');
+        const episode = String(Number(seasonEpisodeMatch[2])).padStart(2, '0');
+        return `S${season}E${episode}`;
+    }
+
+    const chineseEpisodeMatch = raw.match(/第\s*0*(\d{1,4})\s*[集话]/i);
+    if (chineseEpisodeMatch) {
+        const episode = String(Number(chineseEpisodeMatch[1])).padStart(2, '0');
+        return `EP${episode}`;
+    }
+
+    return '';
+}
+
+function buildEpisodeKeySet(names = []) {
+    const set = new Set();
+    for (const name of names) {
+        const episodeKey = extractEpisodeKey(name);
+        if (episodeKey) set.add(episodeKey);
+    }
+    return set;
+}
+
 function dedupeTransferCandidates(files = [], getBucketKey = () => 'default') {
     const unique = [];
     const seenSource = new Set();
@@ -185,9 +214,11 @@ async function processCloud139Task(taskService, task, account) {
             }
 
             let existingNames = new Set();
+            let existingEpisodeKeys = new Set();
             try {
                 const existingOnDisk = await cloud139.listAllDiskFiles(task.realFolderId);
                 existingNames = new Set(existingOnDisk.map((f) => f.name));
+                existingEpisodeKeys = buildEpisodeKeySet(existingOnDisk.map((f) => f.name));
             } catch (e) {
                 logTaskEvent('[139] 根文件目标目录文件列取失败，降级使用DB记录去重');
             }
@@ -205,7 +236,14 @@ async function processCloud139Task(taskService, task, account) {
                 }
             }
 
-            const alreadyOnDisk = allFiles.filter((f) => existingNames.has(f.coName || ''));
+            const alreadyOnDiskExact = allFiles.filter((f) => existingNames.has(f.coName || ''));
+            const alreadyOnDiskByEpisode = allFiles.filter((f) => {
+                const name = f.coName || '';
+                if (existingNames.has(name)) return false;
+                const episodeKey = extractEpisodeKey(name);
+                return !!(episodeKey && existingEpisodeKeys.has(episodeKey));
+            });
+            const alreadyOnDisk = [...alreadyOnDiskExact, ...alreadyOnDiskByEpisode];
             if (alreadyOnDisk.length > 0) {
                 const toRecord = alreadyOnDisk.filter((f) => !transferredIds.has(f.path || String(f.coID ?? '')));
                 if (toRecord.length > 0) {
@@ -216,12 +254,20 @@ async function processCloud139Task(taskService, task, account) {
                     })));
                     toRecord.forEach((f) => transferredIds.add(f.path || String(f.coID ?? '')));
                 }
+                if (alreadyOnDiskByEpisode.length > 0) {
+                    logTaskEvent(`[转存去重] 按剧集号命中磁盘已存在: ${alreadyOnDiskByEpisode.length} 个`);
+                }
             }
 
             const newFiles = allFiles.filter((f) => {
                 const fileId = f.path || String(f.coID ?? '');
                 if (transferredIds.has(fileId)) return false;
-                if (existingNames.size > 0) return !existingNames.has(f.coName || '');
+                if (existingNames.size > 0 || existingEpisodeKeys.size > 0) {
+                    const name = f.coName || '';
+                    if (existingNames.has(name)) return false;
+                    const episodeKey = extractEpisodeKey(name);
+                    if (episodeKey && existingEpisodeKeys.has(episodeKey)) return false;
+                }
                 return true;
             });
 
@@ -388,12 +434,15 @@ async function processCloud139Task(taskService, task, account) {
         }
 
         const diskFilesMap = new Map();
+        const diskEpisodeKeysMap = new Map();
         await Promise.all([...new Set(physicalFolderMap.values())].map(async (physicalId) => {
             try {
                 const existing = await cloud139.listAllDiskFiles(physicalId);
                 diskFilesMap.set(physicalId, new Set(existing.map((f) => f.name)));
+                diskEpisodeKeysMap.set(physicalId, buildEpisodeKeySet(existing.map((f) => f.name)));
             } catch (e) {
                 diskFilesMap.set(physicalId, null);
+                diskEpisodeKeysMap.set(physicalId, null);
                 logTaskEvent(`[139] 目录 ${physicalId} 文件列取失败，降级使用DB记录去重`);
             }
         }));
@@ -411,11 +460,23 @@ async function processCloud139Task(taskService, task, account) {
             }
         }
 
-        const alreadyOnDisk = allFiles.filter((f) => {
+        const alreadyOnDiskExact = allFiles.filter((f) => {
             const physicalId = physicalFolderMap.get(String(f.pCaID));
             const names = diskFilesMap.get(physicalId);
-            return names !== null && names !== undefined && names.has(f.coName || '');
+            if (names === null || names === undefined) return false;
+            return names.has(f.coName || '');
         });
+        const alreadyOnDiskByEpisode = allFiles.filter((f) => {
+            const physicalId = physicalFolderMap.get(String(f.pCaID));
+            const names = diskFilesMap.get(physicalId);
+            const episodeKeys = diskEpisodeKeysMap.get(physicalId);
+            if (names === null || names === undefined) return false;
+            const name = f.coName || '';
+            if (names.has(name)) return false;
+            const episodeKey = extractEpisodeKey(name);
+            return !!(episodeKey && episodeKeys && episodeKeys.has(episodeKey));
+        });
+        const alreadyOnDisk = [...alreadyOnDiskExact, ...alreadyOnDiskByEpisode];
         if (alreadyOnDisk.length > 0) {
             const toRecord = alreadyOnDisk.filter((f) => !transferredIds.has(f.path || String(f.coID ?? '')));
             if (toRecord.length > 0) {
@@ -426,6 +487,9 @@ async function processCloud139Task(taskService, task, account) {
                 })));
                 toRecord.forEach((f) => transferredIds.add(f.path || String(f.coID ?? '')));
             }
+                if (alreadyOnDiskByEpisode.length > 0) {
+                    logTaskEvent(`[转存去重] 按剧集号命中磁盘已存在: ${alreadyOnDiskByEpisode.length} 个`);
+                }
             logTaskEvent(`${task.resourceName} 目标目录已有 ${alreadyOnDisk.length} 个文件，跳过`);
         }
 
@@ -434,8 +498,13 @@ async function processCloud139Task(taskService, task, account) {
             if (transferredIds.has(fileId)) return false;
             const physicalId = physicalFolderMap.get(String(f.pCaID));
             const names = diskFilesMap.get(physicalId);
+            const episodeKeys = diskEpisodeKeysMap.get(physicalId);
             if (names !== null && names !== undefined) {
-                return !names.has(f.coName || '');
+                const name = f.coName || '';
+                if (names.has(name)) return false;
+                const episodeKey = extractEpisodeKey(name);
+                if (episodeKey && episodeKeys && episodeKeys.has(episodeKey)) return false;
+                return true;
             }
             return true;
         });
