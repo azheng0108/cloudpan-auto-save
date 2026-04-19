@@ -8,17 +8,14 @@ class ConfigService {
     this._configPath = path.join(__dirname, '../../data');
     this._configFile = this._configPath + '/config.json';
     this._config = {
-        configVersion: 2, // 配置版本号：用于未来迁移管理
+      configVersion: 3, // 配置版本号：用于未来迁移管理
         task: {
           taskExpireDays: 3,
           taskCheckCron: '0 19-23 * * *',
           retryTaskCron: '*/10 * * * *',
-          cleanRecycleCron: '0 */8 * * *',
         cloud139Concurrency: 3,
         maxRetries: 3,        // 最大重试次数
         retryInterval: 300,   // 重试间隔（秒）
-        enableAutoClearRecycle: false,
-        enableAutoClearFamilyRecycle: false,
         // 媒体文件后缀：视频格式 + 常见压缩包格式（rar/zip/tar/7z 等资源分发时常用压缩包）
         mediaSuffix: '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov;.rar;.zip;.7z;.tar;.gz;.tar.gz;.tar.bz2;.tar.xz',
         enableOnlySaveMedia: false, // 只保存媒体文件
@@ -130,9 +127,23 @@ class ConfigService {
           needSave = true;
         }
         
+        // v2 -> v3: 清理已移除的回收站配置字段
+        if (this._config.task?.cleanRecycleCron !== undefined) {
+          delete this._config.task.cleanRecycleCron;
+          needSave = true;
+        }
+        if (this._config.task?.enableAutoClearRecycle !== undefined) {
+          delete this._config.task.enableAutoClearRecycle;
+          needSave = true;
+        }
+        if (this._config.task?.enableAutoClearFamilyRecycle !== undefined) {
+          delete this._config.task.enableAutoClearFamilyRecycle;
+          needSave = true;
+        }
+
         // 更新配置版本号
-        if (!this._config.configVersion || this._config.configVersion < 2) {
-          this._config.configVersion = 2;
+        if (!this._config.configVersion || this._config.configVersion < 3) {
+          this._config.configVersion = 3;
           needSave = true;
         }
         

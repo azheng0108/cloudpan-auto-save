@@ -841,8 +841,9 @@
                                 <div class="sm:col-span-2">
                                     <label class="text-sm dark:text-gray-300">
                                         <input type="checkbox" id="enableAutoCreateFolder">
-                                        <span class="ml-2">云盘文件夹不存在时自动创建</span>
+                                        <span class="ml-2">任务执行时目标目录被删除后自动重建</span>
                                     </label>
+                                    <small class="form-text">仅影响任务执行中根目录失效的情况；新建任务时始终会在目标位置创建任务目录</small>
                                 </div>
                             </div>
                         </div>
@@ -860,24 +861,6 @@
                                     <label for="retryTaskCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">重试任务检查</label>
                                     <input type="text" id="retryTaskCron" placeholder="Cron表达式（5位或6位）" class="input-base">
                                     <small class="form-text">默认：*/10 * * * * (每10分钟执行一次重试扫描) | 支持5位或6位格式</small>
-                                </div>
-                                <div id="recycleSettingsGroup">
-                                    <label for="cleanRecycleCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">
-                                        回收站清理
-                                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">(移动云盘139不支持，设置无效)</span>
-                                    </label>
-                                    <input type="text" id="cleanRecycleCron" placeholder="Cron表达式（5位或6位）" class="input-base">
-                                    <small class="form-text">默认：0 */8 * * * (每8小时执行一次) | 支持5位或6位格式</small>
-                                    <div class="mt-2 space-y-2">
-                                        <label class="text-sm dark:text-gray-300">
-                                            <input type="checkbox" id="enableAutoClearRecycle">
-                                            <span class="ml-2">自动清空个人回收站</span>
-                                        </label>
-                                        <label class="text-sm dark:text-gray-300 block">
-                                            <input type="checkbox" id="enableAutoClearFamilyRecycle">
-                                            <span class="ml-2">自动清空家庭回收站</span>
-                                        </label>
-                                    </div>
                                 </div>
                                 <div>
                                     <label for="vacuumCron" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-slate-400">SQLite VACUUM</label>
@@ -1247,31 +1230,24 @@
                             </div>
                         </div>
 
-                        <div class="form-group mb-0">
-                            <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" id="enableTemplateRename" class="w-4 h-4">
-                                <span>启用 Jinja2 模板重命名（使用媒体Tab中的通用模板）</span>
-                            </label>
-                            <small class="form-text">模板在媒体 Tab 中配置；当前任务只需勾选即可启用。</small>
-                        </div>
+                        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2 mt-4">规则与定时</h4>
 
                         <!-- 文件名匹配规则 -->
-                        <div class="form-group mb-0">
-                            <label>文件名匹配规则（可选）</label>
+                        <div class="form-group mb-0 bg-gray-50/30 dark:bg-[#0f172a] border border-gray-200 dark:border-[#334155] p-4 rounded-[8px]">
+                            <label class="flex justify-between items-center mb-2">
+                                <span class="text-sm font-medium">更新匹配规则</span>
+                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="document.getElementById('regexTooltip').classList.remove('is-hidden')">查看帮助</button>
+                            </label>
                             <div class="flex flex-col sm:flex-row gap-3">
-                                <input type="text" id="matchPattern" class="input-base flex-[2] font-mono text-xs" placeholder="正则表达式 例如: (?<=E)\d+">
+                                <input type="text" id="matchPattern" class="input-base flex-[2] font-mono text-xs" placeholder="正则: 第(\d+)集">
                                 <select id="matchOperator" class="input-base flex-[1] min-w-[90px]">
-                                    <option value="lt">小于 (<)</option>
-                                    <option value="eq">等于 (=)</option>
-                                    <option value="gt">大于 (>)</option>
+                                    <option value="lt">小于</option>
+                                    <option value="eq">等于</option>
+                                    <option value="gt">大于</option>
                                     <option value="contains">包含</option>
                                     <option value="notContains">不包含</option>
                                 </select>
                                 <input type="text" id="matchValue" class="input-base flex-1" placeholder="值">
-                            </div>
-                            <div class="mt-2">
-                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="toggleHelpText(this)">显示帮助</button>
-                                <small class="form-text is-hidden">例如：沙尘暴 - S01E06 - 第6集.mkv 想要转存大于8集的剧集, 正则就填写 (?<=E)\d+ 值填写8</small>
                             </div>
                         </div>
 
@@ -1279,7 +1255,7 @@
                         <div class="form-group mb-0">
                             <label class="flex items-center gap-2">
                                 <input type="checkbox" id="enableCron" class="w-4 h-4">
-                                <span>启用自定义定时任务</span>
+                                <span>自定义定时任务</span>
                             </label>
                             <div class="cronExpression-box mt-3 space-y-3 p-4 bg-gray-50 dark:bg-[#0f172a] rounded border border-gray-200 dark:border-[#334155]" style="display: none;">
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1352,6 +1328,14 @@
                                     <small class="form-text">每30分钟执行：0 */30 * * * *  |  每天凌晨2点执行：0 0 2 * * *</small>
                                 </div>
                             </div>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="enableTemplateRename" class="w-4 h-4">
+                                <span>启用 Jinja2 模板重命名（使用媒体Tab中的通用模板）</span>
+                            </label>
+                            <small class="form-text">模板在媒体 Tab 中配置；当前任务只需勾选即可启用。</small>
                         </div>
 
                     </div>
@@ -1806,15 +1790,6 @@
                 cronBox.style.display = this.checked ? 'block' : 'none';
             }
         });
-
-        // Help text toggle
-        function toggleHelpText(btn) {
-            const helpText = btn.nextElementSibling;
-            if (helpText) {
-                helpText.classList.toggle('is-hidden');
-                btn.textContent = helpText.classList.contains('is-hidden') ? '显示帮助' : '隐藏帮助';
-            }
-        }
 
         // Lucide icons initialization on load
         setTimeout(() => lucide.createIcons(), 100);
