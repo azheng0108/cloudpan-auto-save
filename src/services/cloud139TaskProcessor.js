@@ -192,9 +192,18 @@ async function processCloud139Task(taskService, task, account) {
                 logTaskEvent('[139] 根文件目标目录文件列取失败，降级使用DB记录去重');
             }
 
-            const transferredIds = taskService.transferredFileRepo
-                ? new Set((await taskService.transferredFileRepo.find({ where: { taskId: task.id } })).map((r) => r.fileId))
-                : new Set();
+            let transferredIds = new Set();
+            if (taskService.transferredFileRepo) {
+                try {
+                    const records = await taskService.transferredFileRepo.find({ where: { taskId: task.id } });
+                    transferredIds = new Set((records || []).map((r) => r.fileId));
+                    if (transferredIds.size > 0) {
+                        logTaskEvent(`[已转存DB] 从数据库加载已转存文件: ${transferredIds.size} 个`);
+                    }
+                } catch (error) {
+                    logTaskEvent(`⚠️ [已转存DB] 加载已转存文件失败: ${error.message}，将仅依赖磁盘检查`);
+                }
+            }
 
             const alreadyOnDisk = allFiles.filter((f) => existingNames.has(f.coName || ''));
             if (alreadyOnDisk.length > 0) {
@@ -389,9 +398,18 @@ async function processCloud139Task(taskService, task, account) {
             }
         }));
 
-        const transferredIds = taskService.transferredFileRepo
-            ? new Set((await taskService.transferredFileRepo.find({ where: { taskId: task.id } })).map((r) => r.fileId))
-            : new Set();
+        let transferredIds = new Set();
+        if (taskService.transferredFileRepo) {
+            try {
+                const records = await taskService.transferredFileRepo.find({ where: { taskId: task.id } });
+                transferredIds = new Set((records || []).map((r) => r.fileId));
+                if (transferredIds.size > 0) {
+                    logTaskEvent(`[已转存DB] 从数据库加载已转存文件: ${transferredIds.size} 个`);
+                }
+            } catch (error) {
+                logTaskEvent(`⚠️ [已转存DB] 加载已转存文件失败: ${error.message}，将仅依赖磁盘检查`);
+            }
+        }
 
         const alreadyOnDisk = allFiles.filter((f) => {
             const physicalId = physicalFolderMap.get(String(f.pCaID));
