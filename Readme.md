@@ -75,16 +75,16 @@
 
 ```bash
 docker run -d \
-  -v /yourpath/data:/home/data \
-  -v /yourpath/strm:/home/strm \
+  -v $(pwd)/data:/home/data \
+  -v $(pwd)/strm:/home/strm \
   -p 3001:3000 \
   --restart unless-stopped \
   --name cloudpan-auto-save \
   -e TZ=Asia/Shanghai \
-  -e PUID=1000 \
-  -e PGID=1000 \
   azheng0108/cloudpan-auto-save:latest
 ```
+
+> `data` 和 `strm` 目录会自动创建在执行命令的当前目录下。
 
 ### 方式二：Docker Compose
 
@@ -104,8 +104,6 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=Asia/Shanghai
-      - PUID=1000
-      - PGID=1000
 ```
 
 启动命令：
@@ -225,8 +223,6 @@ Emby 路径替换示例：
 | `NODE_ENV` | `production` | 运行环境 |
 | `PORT` | `3000` | 容器内监听端口 |
 | `TZ` | `Asia/Shanghai` | 时区 |
-| `PUID` | `1000` | 容器运行用户 ID |
-| `PGID` | `1000` | 容器运行组 ID |
 | `DEBUG` | `false` | 是否开启调试日志 |
 | `ALLOWED_ORIGINS` | 空 | CORS 白名单，逗号分隔 |
 
