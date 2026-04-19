@@ -251,7 +251,17 @@ async function saveSettings() {
             apiKey: document.getElementById('embyApiKey').value,
             libraryPath: document.getElementById('embyLibraryPath').value
         },
-        strm: { {
+        strm: {
+            enable: document.getElementById('strmEnable').checked,
+            localStrmPrefix: document.getElementById('strmLocalPrefix').value,
+            cloudStrmPrefix: document.getElementById('strmCloudPrefix').value
+        },
+        tmdb: {
+            tmdbApiKey: document.getElementById('tmdbApiKey').value,
+            movieRenameFormat: document.getElementById('tmdbMovieFormat').value,
+            tvRenameFormat: document.getElementById('tmdbTvFormat').value
+        },
+        pushplus: {
             enable: document.getElementById('enablePushPlus').checked,
             token: document.getElementById('pushplusToken').value,
             topic: document.getElementById('pushplusTopic').value,
