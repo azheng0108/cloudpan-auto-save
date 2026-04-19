@@ -102,6 +102,13 @@ function buildNameToFileIdMap(files = []) {
     return map;
 }
 
+function normalizeFileId(file) {
+    const path = String(file?.path ?? '').trim();
+    const coID = String(file?.coID ?? '').trim();
+    const raw = path || coID;
+    return raw.replace(/\s+/g, ' ');
+}
+
 function extractEpisodeKey(name = '') {
     const raw = String(name || '').trim();
     if (!raw) return '';
@@ -140,7 +147,7 @@ function dedupeTransferCandidates(files = [], getBucketKey = () => 'default') {
 
     for (const f of files) {
         const bucket = String(getBucketKey(f) || 'default');
-        const sourceId = String(f?.path || f?.coID || '').trim();
+        const sourceId = normalizeFileId(f);
         const name = String(f?.coName || '').trim().toLowerCase();
 
         if (sourceId) {
@@ -172,6 +179,32 @@ function dedupeTransferCandidates(files = [], getBucketKey = () => 'default') {
     };
 }
 
+async function reconcileTransferredFileRecords(taskService, taskId, taskInfoList = [], scopeLabel = '') {
+    if (!taskService?.transferredFileRepo || !Array.isArray(taskInfoList) || taskInfoList.length === 0) {
+        return 0;
+    }
+
+    try {
+        const records = await taskService.transferredFileRepo.find({ where: { taskId } });
+        const existingIds = new Set((records || []).map((r) => String(r.fileId || '').trim()));
+        const missing = taskInfoList.filter((info) => {
+            const fileId = String(info?.fileId || '').trim();
+            return fileId && !existingIds.has(fileId);
+        });
+
+        if (missing.length === 0) {
+            return 0;
+        }
+
+        const repaired = await taskService._recordTransferredFiles(taskId, missing);
+        logTaskEvent(`⚙️ [已转存DB] ${scopeLabel} 触发补记: 缺失 ${missing.length}，补入 ${repaired}`);
+        return repaired;
+    } catch (error) {
+        logTaskEvent(`⚠️ [已转存DB] ${scopeLabel} 补记失败: ${error.message}`);
+        return 0;
+    }
+}
+
 async function processCloud139Task(taskService, task, account) {
     const cloud139 = Cloud139Service.getInstance(account);
     try {
@@ -195,7 +228,7 @@ async function processCloud139Task(taskService, task, account) {
             const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
 
             const allFiles = directFiles.filter((f) => {
-                const fileId = f.path || String(f.coID ?? '');
+                const fileId = normalizeFileId(f);
                 if (!fileId) return false;
                 const name = (f.coName || '').toLowerCase();
                 if (enableOnlySaveMedia && !mediaSuffixs.some((s) => name.endsWith(s))) return false;
@@ -215,11 +248,13 @@ async function processCloud139Task(taskService, task, account) {
 
             let existingNames = new Set();
             let existingEpisodeKeys = new Set();
+            let rootDiskFetchFailed = false;
             try {
                 const existingOnDisk = await cloud139.listAllDiskFiles(task.realFolderId);
                 existingNames = new Set(existingOnDisk.map((f) => f.name));
                 existingEpisodeKeys = buildEpisodeKeySet(existingOnDisk.map((f) => f.name));
             } catch (e) {
+                rootDiskFetchFailed = true;
                 logTaskEvent('[139] 根文件目标目录文件列取失败，降级使用DB记录去重');
             }
 
@@ -245,14 +280,17 @@ async function processCloud139Task(taskService, task, account) {
             });
             const alreadyOnDisk = [...alreadyOnDiskExact, ...alreadyOnDiskByEpisode];
             if (alreadyOnDisk.length > 0) {
-                const toRecord = alreadyOnDisk.filter((f) => !transferredIds.has(f.path || String(f.coID ?? '')));
+                const toRecord = alreadyOnDisk.filter((f) => !transferredIds.has(normalizeFileId(f)));
                 if (toRecord.length > 0) {
-                    await taskService._recordTransferredFiles(task.id, toRecord.map((f) => ({
-                        fileId: f.path || String(f.coID ?? ''),
+                    const recordedCount = await taskService._recordTransferredFiles(task.id, toRecord.map((f) => ({
+                        fileId: normalizeFileId(f),
                         fileName: f.coName || '',
                         md5: null,
                     })));
-                    toRecord.forEach((f) => transferredIds.add(f.path || String(f.coID ?? '')));
+                    if (typeof recordedCount === 'number' && recordedCount < toRecord.length) {
+                        logTaskEvent(`⚠️ [已转存DB] 根目录补记录偏差: 期望 ${toRecord.length}，实际 ${recordedCount}`);
+                    }
+                    toRecord.forEach((f) => transferredIds.add(normalizeFileId(f)));
                 }
                 if (alreadyOnDiskByEpisode.length > 0) {
                     logTaskEvent(`[转存去重] 按剧集号命中磁盘已存在: ${alreadyOnDiskByEpisode.length} 个`);
@@ -260,8 +298,11 @@ async function processCloud139Task(taskService, task, account) {
             }
 
             const newFiles = allFiles.filter((f) => {
-                const fileId = f.path || String(f.coID ?? '');
+                const fileId = normalizeFileId(f);
                 if (transferredIds.has(fileId)) return false;
+                if (rootDiskFetchFailed) {
+                    return true;
+                }
                 if (existingNames.size > 0 || existingEpisodeKeys.size > 0) {
                     const name = f.coName || '';
                     if (existingNames.has(name)) return false;
@@ -327,11 +368,19 @@ async function processCloud139Task(taskService, task, account) {
                 await CheckpointManager.saveCheckpoint(taskService.taskRepo, task, checkpoint);
             }
 
-            await taskService._recordTransferredFiles(task.id, dedupedNewFiles.map((f) => ({
-                fileId: f.path || String(f.coID ?? ''),
+            const rootRecordedCount = await taskService._recordTransferredFiles(task.id, dedupedNewFiles.map((f) => ({
+                fileId: normalizeFileId(f),
                 fileName: f.coName || '',
                 md5: null,
             })));
+            if (typeof rootRecordedCount === 'number' && rootRecordedCount < dedupedNewFiles.length) {
+                logTaskEvent(`⚠️ [已转存DB] 根目录转存记录偏差: 转存 ${dedupedNewFiles.length}，入库 ${rootRecordedCount}`);
+                await reconcileTransferredFileRecords(taskService, task.id, dedupedNewFiles.map((f) => ({
+                    fileId: normalizeFileId(f),
+                    fileName: f.coName || '',
+                    md5: null,
+                })), '根目录转存');
+            }
 
             const fileCount = dedupedNewFiles.length;
             const firstExecution = !task.lastFileUpdateTime;
@@ -393,7 +442,7 @@ async function processCloud139Task(taskService, task, account) {
         const enableOnlySaveMedia = ConfigService.getConfigValue('task.enableOnlySaveMedia');
 
         const allFiles = coLst.filter((f) => {
-            const fileId = f.path || String(f.coID ?? '');
+            const fileId = normalizeFileId(f);
             if (!fileId) return false;
             const name = (f.coName || '').toLowerCase();
             if (enableOnlySaveMedia && !mediaSuffixs.some((s) => name.endsWith(s))) return false;
@@ -435,6 +484,7 @@ async function processCloud139Task(taskService, task, account) {
 
         const diskFilesMap = new Map();
         const diskEpisodeKeysMap = new Map();
+        const diskFetchFailedFolderIds = new Set();
         await Promise.all([...new Set(physicalFolderMap.values())].map(async (physicalId) => {
             try {
                 const existing = await cloud139.listAllDiskFiles(physicalId);
@@ -443,9 +493,13 @@ async function processCloud139Task(taskService, task, account) {
             } catch (e) {
                 diskFilesMap.set(physicalId, null);
                 diskEpisodeKeysMap.set(physicalId, null);
+                diskFetchFailedFolderIds.add(physicalId);
                 logTaskEvent(`[139] 目录 ${physicalId} 文件列取失败，降级使用DB记录去重`);
             }
         }));
+        if (diskFetchFailedFolderIds.size > 0) {
+            logTaskEvent(`[转存去重] 磁盘目录读取失败 ${diskFetchFailedFolderIds.size} 个，已降级仅使用已转存DB去重`);
+        }
 
         let transferredIds = new Set();
         if (taskService.transferredFileRepo) {
@@ -478,14 +532,17 @@ async function processCloud139Task(taskService, task, account) {
         });
         const alreadyOnDisk = [...alreadyOnDiskExact, ...alreadyOnDiskByEpisode];
         if (alreadyOnDisk.length > 0) {
-            const toRecord = alreadyOnDisk.filter((f) => !transferredIds.has(f.path || String(f.coID ?? '')));
+            const toRecord = alreadyOnDisk.filter((f) => !transferredIds.has(normalizeFileId(f)));
             if (toRecord.length > 0) {
-                await taskService._recordTransferredFiles(task.id, toRecord.map((f) => ({
-                    fileId: f.path || String(f.coID ?? ''),
+                const recordedCount = await taskService._recordTransferredFiles(task.id, toRecord.map((f) => ({
+                    fileId: normalizeFileId(f),
                     fileName: f.coName || '',
                     md5: null,
                 })));
-                toRecord.forEach((f) => transferredIds.add(f.path || String(f.coID ?? '')));
+                if (typeof recordedCount === 'number' && recordedCount < toRecord.length) {
+                    logTaskEvent(`⚠️ [已转存DB] 多目录补记录偏差: 期望 ${toRecord.length}，实际 ${recordedCount}`);
+                }
+                toRecord.forEach((f) => transferredIds.add(normalizeFileId(f)));
             }
                 if (alreadyOnDiskByEpisode.length > 0) {
                     logTaskEvent(`[转存去重] 按剧集号命中磁盘已存在: ${alreadyOnDiskByEpisode.length} 个`);
@@ -494,7 +551,7 @@ async function processCloud139Task(taskService, task, account) {
         }
 
         const newFiles = allFiles.filter((f) => {
-            const fileId = f.path || String(f.coID ?? '');
+            const fileId = normalizeFileId(f);
             if (transferredIds.has(fileId)) return false;
             const physicalId = physicalFolderMap.get(String(f.pCaID));
             const names = diskFilesMap.get(physicalId);
@@ -612,11 +669,15 @@ async function processCloud139Task(taskService, task, account) {
         }
 
         const taskInfoList = dedupedNewFiles.map((f) => ({
-            fileId: f.path || String(f.coID ?? ''),
+            fileId: normalizeFileId(f),
             fileName: f.coName || '',
             md5: null,
         }));
-        await taskService._recordTransferredFiles(task.id, taskInfoList);
+        const recordedCount = await taskService._recordTransferredFiles(task.id, taskInfoList);
+        if (typeof recordedCount === 'number' && recordedCount < taskInfoList.length) {
+            logTaskEvent(`⚠️ [已转存DB] 多目录转存记录偏差: 转存 ${taskInfoList.length}，入库 ${recordedCount}`);
+            await reconcileTransferredFileRecords(taskService, task.id, taskInfoList, '多目录转存');
+        }
 
         const fileCount = dedupedNewFiles.filter((f) => {
             const name = (f.coName || '').toLowerCase();

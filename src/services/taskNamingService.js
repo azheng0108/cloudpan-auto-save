@@ -56,6 +56,13 @@ class TaskNamingService {
                 vars.season = '1';
                 vars.episode = String(parseInt(epMatch[1]));
                 vars.season_episode = `S01E${epMatch[1].padStart(2, '0')}`;
+            } else {
+                const cnEpisodeMatch = base.match(/第\s*(\d{1,4})\s*[集话]/);
+                if (cnEpisodeMatch) {
+                    vars.season = '1';
+                    vars.episode = String(parseInt(cnEpisodeMatch[1]));
+                    vars.season_episode = `S01E${String(parseInt(cnEpisodeMatch[1])).padStart(2, '0')}`;
+                }
             }
         }
 
@@ -65,6 +72,7 @@ class TaskNamingService {
         const titleEndPatterns = [
             /[._\s-]+[Ss]\d{1,3}[._\s-]?[Ee]\d{1,3}/,
             /[._\s-]+[Ee][Pp]?\d{2,3}\b/,
+            /第\s*\d{1,4}\s*[集话]/,
             /[._\s-]*\((?:19|20)\d{2}\)/,
             /[._\s-]+(?:19|20)\d{2}[._\s-]/,
             /[._\s-]+(?:2160p|1440p|1080p|720p|480p|4k|uhd)\b/i,

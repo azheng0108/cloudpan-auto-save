@@ -155,11 +155,11 @@ class TaskService {
      * 使用 INSERT OR IGNORE ，唯一约束冲突时静默跳过。
      */
     async _recordTransferredFiles(taskId, taskInfoList) {
-        if (!this.transferredFileRepo || !taskInfoList.length) return;
+        if (!this.transferredFileRepo || !taskInfoList.length) return 0;
         try {
             const records = taskInfoList.map(info => this.transferredFileRepo.create({
                 taskId,
-                fileId: String(info.fileId),
+                fileId: String(info.fileId || '').trim(),
                 fileName: info.fileName || null,
                 md5: info.md5 || null,
             }));
@@ -171,9 +171,17 @@ class TaskService {
                 .values(records)
                 .orIgnore()
                 .execute();
-            logTaskEvent(`✓ [已转存DB] 保存已转存文件记录: ${records.length} 个`);
+            const rawChanges = Number(result?.raw?.changes);
+            const rawAffectedRows = Number(result?.raw?.affectedRows);
+            const identifierCount = Array.isArray(result?.identifiers) ? result.identifiers.length : 0;
+            const insertedCount = Number.isFinite(rawChanges)
+                ? rawChanges
+                : (Number.isFinite(rawAffectedRows) ? rawAffectedRows : identifierCount);
+            logTaskEvent(`✓ [已转存DB] 保存已转存文件记录: 请求 ${records.length} 个，入库 ${insertedCount} 个`);
+            return insertedCount;
         } catch (e) {
             logTaskEvent(`⚠️ [已转存DB] 记录已转存文件时出错: ${e.message}`);
+            return 0;
         }
     }
 

@@ -1008,9 +1008,34 @@ class Cloud139Service {
     async listAllDiskFiles(folderId) {
         const allFiles = [];
         let cursor = null;
-        let lastFirstId = null; // 防死循环锁：接口异常返回同一页时及时跳出
+        let lastFirstId = null;
+        let repeatedFirstPageCount = 0;
+        let pageCount = 0;
+        const seenCursor = new Set();
+        const seenFileKeys = new Set();
         const catalogID = folderId || '/';
+        const maxScanMs = Number(ConfigService.getConfigValue('task.cloud139ListMaxScanMs', 60000)) || 60000;
+        const configuredRepeatThreshold = Number(ConfigService.getConfigValue('task.cloud139ListRepeatPageThreshold', 3));
+        const maxRepeatedPages = Number.isFinite(configuredRepeatThreshold) && configuredRepeatThreshold > 0
+            ? Math.floor(configuredRepeatThreshold)
+            : 3;
+        const scanStartAt = Date.now();
+        let terminationReason = 'completed';
         do {
+            if (Date.now() - scanStartAt > maxScanMs) {
+                terminationReason = 'timeout';
+                logTaskEvent(`[139] listAllDiskFiles 扫描超时，停止翻页: 目录=${catalogID}, 已耗时=${Date.now() - scanStartAt}ms`);
+                break;
+            }
+
+            const cursorKey = String(cursor || '__FIRST_PAGE__');
+            if (seenCursor.has(cursorKey)) {
+                terminationReason = 'duplicate-cursor';
+                logTaskEvent(`[139] listAllDiskFiles 检测到重复游标，停止翻页: ${cursorKey}`);
+                break;
+            }
+            seenCursor.add(cursorKey);
+
             const body = {
                 pageInfo: { pageSize: 100, pageCursor: cursor },
                 orderBy: 'updated_at',
@@ -1018,15 +1043,28 @@ class Cloud139Service {
                 parentFileId: catalogID,
             };
             const data = await this._personalKdNjsPost('/hcy/file/list', body, catalogID).catch(() => null);
-            if (!data) break;
+            if (!data) {
+                terminationReason = 'api-empty';
+                break;
+            }
             const items = data.items ?? data.fileList ?? [];
-            if (!items.length) break;
+            if (!items.length) {
+                terminationReason = 'no-items';
+                break;
+            }
+            pageCount += 1;
 
-            // 139 API 偶发传游标仍返回第一页；通过首条 ID 判定并断路防止死循环
+            // 139 API 偶发游标异常导致重复页，允许少量重复后再断路。
             const currFirstId = items[0].fileId || items[0].id;
             if (lastFirstId === currFirstId) {
-                logTaskEvent(`[139] listAllDiskFiles 触发防死循环锁，跳出翻页`);
-                break;
+                repeatedFirstPageCount += 1;
+                if (repeatedFirstPageCount >= maxRepeatedPages) {
+                    terminationReason = 'repeated-page';
+                    logTaskEvent(`[139] listAllDiskFiles 连续命中重复页(${repeatedFirstPageCount}/${maxRepeatedPages})，跳出翻页`);
+                    break;
+                }
+            } else {
+                repeatedFirstPageCount = 0;
             }
             lastFirstId = currFirstId;
 
@@ -1035,6 +1073,9 @@ class Cloud139Service {
                 // 去除 && f.fileExtension 条件：压缩包等文件在 139 API 中 fileExtension 可能为空，
                 // 若以此判断会导致磁盘已有压缩包无法计入去重名单，引发重复转存
                 if (f.fileType !== 'folder' && f.category !== 'folder' && f.name) {
+                    const fileKey = `${String(f.fileId || '').trim()}::${String(f.name || '').trim()}`;
+                    if (!fileKey || seenFileKeys.has(fileKey)) continue;
+                    seenFileKeys.add(fileKey);
                     allFiles.push({ fileId: f.fileId, name: f.name });
                 }
             }
@@ -1042,6 +1083,7 @@ class Cloud139Service {
             // 139 API 实际把 nextPageCursor 放在 data 根节点，pageInfo 仅作兼容兜底
             cursor = data.nextPageCursor ?? data.pageInfo?.nextPageCursor ?? null;
         } while (cursor);
+        logTaskEvent(`[139] listAllDiskFiles 扫描完成: 目录=${catalogID}, 页数=${pageCount}, 文件数=${allFiles.length}, 游标数=${seenCursor.size}, 终止原因=${terminationReason}`);
         return allFiles;
     }
 
