@@ -127,8 +127,8 @@ const gracefulShutdown = async (signal, botManager) => {
 
 // 初始化数据库连接
 AppDataSource.initialize().then(async () => {
-    // 当前版本:
-    const currentVersion = packageJson.version;
+    // 当前版本优先使用发布时注入的 APP_VERSION，回退到 package.json
+    const currentVersion = String(process.env.APP_VERSION || packageJson.version || 'dev').replace(/^v/i, '');
     logger.info(`当前系统版本: ${currentVersion}`);
     logger.info('数据库连接成功');
 

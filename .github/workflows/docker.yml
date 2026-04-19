@@ -85,6 +85,17 @@ jobs:
             echo "使用package.json版本: $(node -p "require('./package.json').version")"
           fi
 
+      - name: Resolve app runtime version
+        id: appver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            echo "使用发布tag版本: ${GITHUB_REF#refs/tags/v}"
+          else
+            echo "version=${{ steps.pkg.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "使用package版本: ${{ steps.pkg.outputs.version }}"
+          fi
+
       - name: Extract metadata (tags & labels)
         id: meta
         uses: docker/metadata-action@v5
@@ -109,6 +120,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           no-cache: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            APP_VERSION=${{ steps.appver.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 

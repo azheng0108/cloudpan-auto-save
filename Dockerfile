@@ -40,6 +40,8 @@ FROM node:18-alpine AS production
 
 WORKDIR /home
 
+ARG APP_VERSION=dev
+
 # 安装系统运行时包、设置时区、创建持久化目录 — 合并为单层
 RUN apk add --no-cache ca-certificates tzdata && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
@@ -57,6 +59,7 @@ COPY --from=builder /home/package.json ./
 
 ENV TZ=Asia/Shanghai
 ENV NODE_ENV=production
+ENV APP_VERSION=${APP_VERSION}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
