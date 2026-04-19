@@ -225,7 +225,7 @@ async function processCloud139Task(taskService, task, account) {
 
             if (dedupedNewFiles.length === 0) {
                 logTaskEvent(`${task.resourceName}(根目录文件) 没有新文件`);
-                logTaskEvent(`任务完成: 无新文件需要处理，更新状态为最新扫描时间`);
+                logTaskEvent(`跳过后处理 [任务 ${task.id}]: 无新文件`);
                 task.currentEpisodes = transferredIds.size;
                 task.lastCheckTime = new Date();
                 await taskService.taskRepo.save(task);
@@ -294,10 +294,10 @@ async function processCloud139Task(taskService, task, account) {
                 md5: null,
             }));
             const mappedCount = eventFileList.filter((f) => rootNameToFileId.has(f.name)).length;
-            logTaskEvent(`文件磁盘ID映射完成: ${mappedCount}/${eventFileList.length} 个`);
+            logTaskEvent(`文件磁盘 ID 映射完成: ${mappedCount}/${eventFileList.length} 个`);
 
             process.nextTick(() => {
-                logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件`);
+                logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
                 taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                     task,
                     fileList: eventFileList,
@@ -434,7 +434,7 @@ async function processCloud139Task(taskService, task, account) {
 
         if (dedupedNewFiles.length === 0) {
             logTaskEvent(`${task.resourceName} 没有增量剧集`);
-            logTaskEvent(`任务状态: 无增量内容，更新最后检查时间`);
+            logTaskEvent(`跳过后处理 [任务 ${task.id}]: 无新文件`);
             const totalExisting = [...diskFilesMap.values()]
                 .filter((names) => names !== null)
                 .reduce((sum, names) => {
@@ -485,14 +485,14 @@ async function processCloud139Task(taskService, task, account) {
                 }
             });
         } else {
-            logTaskEvent(`从检查点恢复任务: 进度 ${checkpoint.currentBatchIndex}/${checkpoint.metadata.totalBatches}`);
+            logTaskEvent(`[恢复] 任务 ${task.id} 从检查点恢复，进度: ${checkpoint.currentBatchIndex}/${checkpoint.metadata.totalBatches}`);
         }
 
         let processedBatchCount = Array.isArray(checkpoint.processedFolders) ? checkpoint.processedFolders.length : 0;
         for (const [physicalId, files] of groupedByFolder) {
-            // 跳过已处理的批次
+            // P1-01: 跳过已处理的批次
             if (isResuming && CheckpointManager.isFolderProcessed(checkpoint, physicalId)) {
-                logTaskEvent(`跳过已处理的文件夹: ${physicalId}`);
+                logTaskEvent(`[恢复] 跳过已处理的文件夹: ${physicalId}`);
                 continue;
             }
 
@@ -514,7 +514,7 @@ async function processCloud139Task(taskService, task, account) {
                 task,
             });
 
-            // 保存批次检查点
+            // P1-01: 保存批次检查点
             processedBatchCount += 1;
             checkpoint = CheckpointManager.updateProgress(checkpoint, {
                 processedFolder: physicalId,
@@ -550,7 +550,7 @@ async function processCloud139Task(taskService, task, account) {
             lines.push(`  📁 ${task.resourceName}${label ? `/${label}` : ''}/ (${files.length}个)`);
             for (let fi = 0; fi < files.length; fi++) {
                 const tree = fi < files.length - 1 ? '  ├─' : '  └─';
-                lines.push(`${tree} ${files[fi].coName || files[fi].path}`);
+                lines.push(`${tree} ${files[fi].coName || '(文件名未知)'}`);
             }
         }
 
@@ -583,7 +583,7 @@ async function processCloud139Task(taskService, task, account) {
         task.retryCount = 0;
         task.lastCheckTime = new Date();
         
-        // 清除检查点（任务完成）
+        // P1-01: 清除检查点（任务完成）
         await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
         
         await taskService.taskRepo.save(task);
@@ -610,10 +610,10 @@ async function processCloud139Task(taskService, task, account) {
                 md5: null,
             };
         });
-        logTaskEvent(`文件ID映射完成: ${mappedCount}/${eventFileList.length} 个`);
+        logTaskEvent(`文件磁盘 ID 映射完成: ${mappedCount}/${eventFileList.length} 个`);
 
         process.nextTick(() => {
-            logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件`);
+            logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
             taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                 task,
                 fileList: eventFileList,
@@ -627,7 +627,7 @@ async function processCloud139Task(taskService, task, account) {
         // 增强错误处理
         const classifiedError = ErrorClassifier.enhance(err);
         
-        logTaskEvent(`任务执行出错: ${classifiedError.errorTypeName || '未知'} - ${classifiedError.message}`);
+        logTaskEvent(`任务执行错误: ${classifiedError.errorTypeName || '未知'} - ${classifiedError.message}`);
         
         // 记录错误到数据库
         if (taskService.taskErrorService) {
