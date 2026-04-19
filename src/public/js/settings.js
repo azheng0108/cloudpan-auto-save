@@ -127,6 +127,7 @@ async function loadSettings() {
             document.getElementById('embyEnable').checked = settings.emby?.enable || false;
             document.getElementById('embyServerUrl').value = settings.emby?.serverUrl || '';
             document.getElementById('embyApiKey').value = settings.emby?.apiKey || '';
+            document.getElementById('embyLibraryPath').value = settings.emby?.libraryPath || '';
 
             // 本地 STRM 生成
             document.getElementById('strmEnable').checked = settings.strm?.enable || false;
@@ -247,19 +248,10 @@ async function saveSettings() {
         emby: {
             enable: document.getElementById('embyEnable').checked,
             serverUrl: document.getElementById('embyServerUrl').value,
-            apiKey: document.getElementById('embyApiKey').value
+            apiKey: document.getElementById('embyApiKey').value,
+            libraryPath: document.getElementById('embyLibraryPath').value
         },
-        strm: {
-            enable: document.getElementById('strmEnable').checked,
-            localStrmPrefix: document.getElementById('strmLocalPrefix').value,
-            cloudStrmPrefix: document.getElementById('strmCloudPrefix').value
-        },
-        tmdb: {
-            tmdbApiKey: document.getElementById('tmdbApiKey').value,
-            movieRenameFormat: document.getElementById('tmdbMovieFormat').value,
-            tvRenameFormat: document.getElementById('tmdbTvFormat').value
-        },
-        pushplus: {
+        strm: { {
             enable: document.getElementById('enablePushPlus').checked,
             token: document.getElementById('pushplusToken').value,
             topic: document.getElementById('pushplusTopic').value,
@@ -343,7 +335,8 @@ async function saveMediaSettings() {
         emby: {
             enable: document.getElementById('embyEnable').checked,
             serverUrl: document.getElementById('embyServerUrl').value,
-            apiKey: document.getElementById('embyApiKey').value
+            apiKey: document.getElementById('embyApiKey').value,
+            libraryPath: document.getElementById('embyLibraryPath').value
         },
         strm: {
             enable: document.getElementById('strmEnable').checked,
