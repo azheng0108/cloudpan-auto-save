@@ -91,6 +91,17 @@ function buildPushMessageWithThreshold({
     return `${title}\n${detailLines.join('\n')}`;
 }
 
+function buildNameToFileIdMap(files = []) {
+    const map = new Map();
+    for (const f of files) {
+        const name = String(f?.name || '').trim();
+        const fileId = String(f?.fileId || '').trim();
+        if (!name || !fileId || map.has(name)) continue;
+        map.set(name, fileId);
+    }
+    return map;
+}
+
 async function processCloud139Task(taskService, task, account) {
     const cloud139 = Cloud139Service.getInstance(account);
     try {
@@ -228,11 +239,21 @@ async function processCloud139Task(taskService, task, account) {
             task.lastCheckTime = new Date();
             await taskService.taskRepo.save(task);
 
+            const rootDiskFiles = await cloud139.listAllDiskFiles(task.realFolderId).catch(() => []);
+            const rootNameToFileId = buildNameToFileIdMap(rootDiskFiles);
+            const eventFileList = newFiles.map((f) => ({
+                id: rootNameToFileId.get(f.coName || '') || f.coID,
+                name: f.coName || '',
+                md5: null,
+            }));
+            const mappedCount = eventFileList.filter((f) => rootNameToFileId.has(f.name)).length;
+            logTaskEvent(`[139] taskComplete 文件ID映射(root-files): mapped=${mappedCount}/${eventFileList.length}`);
+
             process.nextTick(() => {
                 logTaskEvent(`事件触发: taskComplete | taskId=${task.id} | fileCount=${newFiles.length} | firstExecution=${firstExecution}`);
                 taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                     task,
-                    fileList: newFiles.map((f) => ({ id: f.coID, name: f.coName || '', md5: null })),
+                    fileList: eventFileList,
                     overwriteStrm: false,
                     firstExecution,
                 }));
@@ -511,11 +532,35 @@ async function processCloud139Task(taskService, task, account) {
         
         await taskService.taskRepo.save(task);
 
+        const physicalIdToNameMap = new Map();
+        await Promise.all([...new Set(physicalFolderMap.values())].map(async (physicalId) => {
+            try {
+                const diskFiles = await cloud139.listAllDiskFiles(physicalId);
+                physicalIdToNameMap.set(physicalId, buildNameToFileIdMap(diskFiles));
+            } catch (_) {
+                physicalIdToNameMap.set(physicalId, new Map());
+            }
+        }));
+
+        let mappedCount = 0;
+        const eventFileList = newFiles.map((f) => {
+            const physicalId = physicalFolderMap.get(String(f.pCaID));
+            const nameToFileId = physicalIdToNameMap.get(physicalId) || new Map();
+            const mappedId = nameToFileId.get(f.coName || '');
+            if (mappedId) mappedCount += 1;
+            return {
+                id: mappedId || f.coID,
+                name: f.coName || '',
+                md5: null,
+            };
+        });
+        logTaskEvent(`[139] taskComplete 文件ID映射: mapped=${mappedCount}/${eventFileList.length}`);
+
         process.nextTick(() => {
             logTaskEvent(`事件触发: taskComplete | taskId=${task.id} | fileCount=${newFiles.length} | firstExecution=${firstExecution}`);
             taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                 task,
-                fileList: newFiles.map((f) => ({ id: f.coID, name: f.coName || '', md5: null })),
+                fileList: eventFileList,
                 overwriteStrm: false,
                 firstExecution,
             }));
