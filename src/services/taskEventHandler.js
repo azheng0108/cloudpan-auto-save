@@ -7,11 +7,7 @@ const { ScrapeService } = require('./ScrapeService');
 const alistService = require('./alistService');
 const ConfigService = require('./ConfigService');
 
-/**
- * 任务完成事件处理器
- * 按顺序执行：自动重命名 → 本地 STRM 生成 → OpenList 缓存刷新 → Emby 通知
- * STRM 文件始终存储在本地供 Emby 读取；OpenList 刷新仅用于解决转存后缓存不及时的问题
- */
+
 class TaskEventHandler {
     constructor(messageUtil) {
         this.messageUtil = messageUtil;
@@ -36,7 +32,7 @@ class TaskEventHandler {
 
         const rootFolders = await this._getAListRootFolders(normalizedBasePath);
         if (rootFolders.length === 0) {
-            logTaskEvent('未获取到 OpenList 挂载根首层目录，保持原始相对路径');
+            logger.debug('未获取到 OpenList 挂载根首层目录，保持原始相对路径');
             return {
                 taskSubfolder,
                 matchedAnchor: '',
@@ -65,11 +61,11 @@ class TaskEventHandler {
 
         if (matchedIndex > 0) {
             taskSubfolder = rawSegments.slice(matchedIndex).join('/');
-            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}`);
+            logger.debug(`OpenList 路径锁点命中: ${matchedAnchor}`);
         } else if (matchedIndex === 0) {
-            logTaskEvent(`OpenList 路径锚点命中: ${matchedAnchor}`);
+            logger.debug(`OpenList 路径锁点命中: ${matchedAnchor}`);
         } else {
-            logTaskEvent(`OpenList 路径锚点未命中，保持原路径: ${taskSubfolder}`);
+            logger.debug(`OpenList 路径锁点未命中，保持原路径: ${taskSubfolder}`);
             matchedAnchor = '';
         }
 
@@ -93,11 +89,11 @@ class TaskEventHandler {
             const folders = await alistService.getFirstLevelFolders(cacheKey);
             this._alistFirstLevelCache.set(cacheKey, { folders, timestamp: now });
             if (folders.length > 0) {
-                logTaskEvent(`OpenList 挂载根首层目录: ${folders.join(', ')}`);
+                logger.debug(`OpenList 挂载根首层目录: ${folders.join(', ')}`);
             }
             return folders;
         } catch (error) {
-            logTaskEvent(`读取 OpenList 挂载根首层目录失败: ${error.message}`);
+            logger.debug(`读取 OpenList 挂载根首层目录失败: ${error.message}`);
             this._alistFirstLevelCache.set(cacheKey, { folders: [], timestamp: now });
             return [];
         }
@@ -106,52 +102,65 @@ class TaskEventHandler {
     async handle(taskCompleteEventDto) {
         const task = taskCompleteEventDto.task;
         const fileCount = Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0;
-        logTaskEvent(`事件接收: taskComplete | taskId=${task?.id} | resource=${task?.resourceName || '未知'} | fileCount=${fileCount}`);
+        const resourceName = task?.resourceName || '未知';
+        logTaskEvent(`── 后处理开始: ${resourceName}（共 ${fileCount} 个文件）──`);
+        
         if (taskCompleteEventDto.fileList.length === 0) {
-            logTaskEvent(`事件跳过: taskComplete | taskId=${task?.id} | reason=fileList=0`);
+            logTaskEvent(`[任务 ${task?.id}] 文件列表为空，跳过后处理`);
+            logTaskEvent(`── 后处理完成 ──`);
             return;
         }
+        
         let refreshContext = null;
-        logTaskEvent(` ${task.resourceName} 触发事件:`);
+
+        // [1] 自动重命名
         try {
             await this._handleAutoRename(taskCompleteEventDto);
         } catch (error) {
             logger.error('自动重命名失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`自动重命名失败: ${error.message}`);
+            logTaskEvent(`[1] 自动重命名失败: ${error.message}`);
         }
+
+        // [2] 本地 STRM 生成
         try {
             await this._handleLocalStrmGenerate(taskCompleteEventDto);
         } catch (error) {
             logger.error('本地 STRM 生成失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`本地 STRM 生成失败: ${error.message}`);
+            logTaskEvent(`[2] 本地 STRM 生成失败: ${error.message}`);
         }
+
+        // [3] NFO 刮削
         try {
             await this._handleNfoGenerate(taskCompleteEventDto);
         } catch (error) {
             logger.error('NFO 刮削失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`NFO 刮削失败（不阻断后续流程）: ${error.message}`);
+            logTaskEvent(`[3] NFO 刮削失败（不阻断后续流程）: ${error.message}`);
         }
+
+        // [4] OpenList 缓存刷新
         try {
-            // 优先使用原生驱动路径刷新 OpenList 缓存，降级使用 STRM 路径；失败不阻断 Emby 通知
             refreshContext = await this._handleCloudCacheRefresh(taskCompleteEventDto);
         } catch (error) {
             logger.error('OpenList 缓存刷新失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`OpenList 缓存刷新失败（不阻断 Emby 通知）: ${error.message}`);
+            logTaskEvent(`[4] OpenList 缓存刷新失败（不阻断 Emby 通知）: ${error.message}`);
         }
+
+        // [5] Emby 通知
         try {
             const notifyResult = await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
             if (notifyResult?.status === 'success') {
                 logTaskEvent(
-                    `Emby通知完成 | firstExecution=${!!notifyResult.firstExecution} | refreshMode=${notifyResult.refreshMode || 'unknown'}`
+                    `[5] Emby 通知完成 (检索模式: ${notifyResult.refreshMode || '未知'})`
                 );
             } else if (notifyResult?.status === 'skipped') {
-                logTaskEvent(`Emby通知跳过: ${notifyResult.reason || 'unknown'}`);
+                logTaskEvent(`[5] Emby 通知跳过: ${notifyResult.reason || '未知'}`);
             }
         } catch (error) {
             logger.error('Emby 通知失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`Emby 通知失败: ${error.message}`);
+            logTaskEvent(`[5] Emby 通知失败: ${error.message}`);
         }
-        logTaskEvent(`================事件处理完成================`);
+        
+        logTaskEvent(`── 后处理完成 ──`);
     }
 
     async _handleAutoRename(taskCompleteEventDto) {
@@ -159,8 +168,9 @@ class TaskEventHandler {
             const task = taskCompleteEventDto.task || {};
             const hasTaskTemplate = !!(String(task.movieRenameFormat || '').trim() || String(task.tvRenameFormat || '').trim());
             const hasRegexRule = !!(String(task.sourceRegex || '').trim() && String(task.targetRegex || '').trim());
+            const fileCount = Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0;
             logTaskEvent(
-                `自动重命名开始: taskId=${task?.id} | fileCount=${Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0} | taskTemplate=${hasTaskTemplate} | regexRule=${hasRegexRule}`
+                `[1] 自动重命名（共 ${fileCount} 个文件，命名模板: ${hasTaskTemplate ? '是' : '否'}，正则规则: ${hasRegexRule ? '是' : '否'}）`
             );
 
             const newFiles = await taskCompleteEventDto.taskService.autoRename(
@@ -172,7 +182,7 @@ class TaskEventHandler {
             }
         } catch (error) {
             logger.error('自动重命名失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`自动重命名失败: ${error.message}`);
+            logTaskEvent(`[1] 自动重命名失败: ${error.message}`);
         }
     }
 
@@ -270,9 +280,9 @@ class TaskEventHandler {
             if (strmMountPath) {
                 const nativeSuffix = alistNativePath.replace(/^\/+/, '');
                 strmBasePath = `${strmMountPath}/${nativeSuffix}`;
-                logTaskEvent(`STRM 虚拟路径自动推算: ${strmMountPath} + ${alistNativePath} → ${strmBasePath}`);
+                logger.debug(`STRM 虚拟路径自动推算: ${strmMountPath} + ${alistNativePath} → ${strmBasePath}`);
             } else {
-                logTaskEvent(`STRM 挂载路径未配置，跳过 STRM 虚拟路径自动推算`);
+                logger.debug(`STRM 挂载路径未配置，跳过 STRM 虚拟路径自动推算`);
             }
         }
 
@@ -301,17 +311,17 @@ class TaskEventHandler {
                     ? nativeRefreshPath.substring(0, nativeRefreshPath.lastIndexOf('/'))
                     : null;
                 if (parentPath) {
-                    logTaskEvent(`首次执行，预热原生父目录缓存: ${parentPath}`);
+                    logger.debug(`首次执行，预热原生父目录缓存: ${parentPath}`);
                     await alistService.refreshSingleDirectory(parentPath).catch(e =>
-                        logTaskEvent(`原生父目录预热失败(忽略): ${e.message}`)
+                        logger.debug(`原生父目录预热失败(忽略): ${e.message}`)
                     );
                 }
             }
 
-            logTaskEvent(`触发 OpenList 原生路径缓存刷新: ${nativeRefreshPath}`);
+            logger.debug(`触发 OpenList 原生路径缓存刷新: ${nativeRefreshPath}`);
             try {
                 nativeRefreshResult = await alistService.refreshSingleDirectory(nativeRefreshPath);
-                logTaskEvent(`OpenList 原生路径刷新完成: ${nativeRefreshPath} | count=${nativeRefreshResult.contentCount}`);
+                logTaskEvent(`原生目录缓存刷新完成: ${nativeRefreshPath}（共 ${nativeRefreshResult.contentCount} 个文件）`);
             } catch (e) {
                 if (dto.firstExecution && /object not found/i.test(e.message)) {
                     logTaskEvent(`OpenList 原生路径新目录刷新失败(首次执行容错，不阻断): ${e.message}`);
@@ -350,17 +360,17 @@ class TaskEventHandler {
                     ? strmRefreshPath.substring(0, strmRefreshPath.lastIndexOf('/'))
                     : null;
                 if (parentPath) {
-                    logTaskEvent(`首次执行，预热 STRM 父目录缓存: ${parentPath}`);
+                    logger.debug(`首次执行，预热 STRM 父目录缓存: ${parentPath}`);
                     await alistService.refreshSingleDirectory(parentPath).catch(e =>
-                        logTaskEvent(`STRM 父目录预热失败(忽略): ${e.message}`)
+                        logger.debug(`STRM 父目录预热失败(忽略): ${e.message}`)
                     );
                 }
             }
 
-            logTaskEvent(`触发 OpenList STRM 路径缓存刷新: ${strmRefreshPath}`);
+            logger.debug(`触发 OpenList STRM 路径缓存刷新: ${strmRefreshPath}`);
             try {
                 strmRefreshResult = await alistService.refreshSingleDirectory(strmRefreshPath);
-                logTaskEvent(`OpenList STRM 路径刷新完成: ${strmRefreshPath} | count=${strmRefreshResult.contentCount}`);
+                logTaskEvent(`STRM 目录缓存刷新完成: ${strmRefreshPath}（共 ${strmRefreshResult.contentCount} 个文件）`);
             } catch (e) {
                 if (dto.firstExecution && /object not found/i.test(e.message)) {
                     logTaskEvent(`OpenList STRM 路径新目录刷新失败(首次执行容错，不阻断): ${e.message}`);
@@ -381,11 +391,15 @@ class TaskEventHandler {
                 if (expectedFileNames.length > 0) {
                     let verifyResult = await alistService.verifyStrmContent(strmRefreshPath, expectedFileNames);
                     if (!verifyResult.verified) {
-                        logTaskEvent(`STRM 内容验证未通过，等待 3s 后重试: found=${verifyResult.foundCount}, missing=${verifyResult.missingCount}`);
+                        logTaskEvent(`STRM 内容验证未通过，等待 3s 后重试: 找到 ${verifyResult.foundCount} 个，缺失 ${verifyResult.missingCount} 个`);
                         await new Promise(resolve => setTimeout(resolve, 3000));
                         verifyResult = await alistService.verifyStrmContent(strmRefreshPath, expectedFileNames);
                     }
-                    logTaskEvent(`STRM 内容验证: verified=${verifyResult.verified}, found=${verifyResult.foundCount}, missing=${verifyResult.missingCount}`);
+                    if (verifyResult.verified) {
+                        logTaskEvent(`STRM 内容验证通过（共 ${verifyResult.foundCount} 个文件）`);
+                    } else {
+                        logger.debug(`STRM 内容验证未通过: 找到 ${verifyResult.foundCount} 个，缺失 ${verifyResult.missingCount} 个`);
+                    }
                 }
             }
         }
@@ -398,10 +412,10 @@ class TaskEventHandler {
 
         const refreshPath = nativeRefreshPath || strmRefreshPath;
         const refreshMode = alistNativePath
-            ? (strmBasePath ? 'dual-path' : 'native-only')
-            : 'strm-only';
+            ? (strmBasePath ? '双路径' : '原生专用')
+            : 'STRM专用';
 
-        logTaskEvent(`OpenList 缓存刷新完成 | mode=${refreshMode} | native=${nativeRefreshPath || '无'} | strm=${strmRefreshPath || '无'}`);
+        logTaskEvent(`OpenList 缓存刷新完成 (模式: ${refreshMode})`);
         return {
             taskSubfolder,
             refreshPath,

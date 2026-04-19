@@ -207,9 +207,6 @@ const registerApiRoutes = (app, deps) => {
             select: { account: { username: true } },
             where: whereClause,
         });
-        tasks.forEach((task) => {
-            task.account.username = maskUsername(task.account.username);
-        });
         res.json({ success: true, data: tasks });
     });
 
