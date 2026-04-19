@@ -338,7 +338,7 @@ class TaskService {
     async autoRename(task, fileList = []) {
         const files = Array.isArray(fileList) ? fileList : [];
         if (files.length === 0) {
-            logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=fileList=0`);
+            logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 文件列表为空`);
             return [];
         }
 
@@ -355,18 +355,19 @@ class TaskService {
         const useRegex = !!(sourceRegex && targetRegex !== undefined);
 
         if (!useTemplate && !useRegex) {
-            logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=no-rules`);
+            logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 未配置重命名规则`);
             return files;
         }
 
         const account = task.account || await this._getAccountById(task.accountId);
         if (!account) {
-            logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=account-not-found`);
+            logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 账号不存在`);
             return files;
         }
 
         const cloud139 = Cloud139Service.getInstance(account);
         const updatedFiles = [];
+        const renamedNames = [];
         let renamedCount = 0;
         let skippedCount = 0;
         let failedCount = 0;
@@ -376,7 +377,7 @@ class TaskService {
             try {
                 regex = new RegExp(sourceRegex);
             } catch (error) {
-                logTaskEvent(`自动重命名跳过: taskId=${task?.id} | reason=invalid-regex | error=${error.message}`);
+                logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 正则表达式无效 - ${error.message}`);
                 return files;
             }
         }
@@ -422,6 +423,7 @@ class TaskService {
                 const renameResult = await cloud139.renameFile(fileId, newName);
                 if (renameResult && renameResult.res_code === 0) {
                     renamedCount += 1;
+                    renamedNames.push(newName);
                     updatedFiles.push({ ...file, name: newName });
                 } else {
                     failedCount += 1;
@@ -429,14 +431,21 @@ class TaskService {
                 }
             } catch (error) {
                 failedCount += 1;
-                logTaskEvent(`自动重命名单文件失败: taskId=${task?.id} | fileId=${fileId} | error=${error.message}`);
+                logTaskEvent(`重命名失败 [任务 ${task?.id}]: ${oldName} - ${error.message}`);
                 updatedFiles.push(file);
             }
         }
 
+        const modeLabel = useTemplate ? '命名模板' : '正则替换';
         logTaskEvent(
-            `自动重命名完成: taskId=${task?.id} | mode=${useTemplate ? 'template' : 'regex'} | renamed=${renamedCount} | skipped=${skippedCount} | failed=${failedCount}`
+            `自动重命名完成 [任务 ${task?.id}]: ${modeLabel}，重命名 ${renamedCount} 个，跳过 ${skippedCount} 个，失败 ${failedCount} 个`
         );
+        if (renamedCount > 0) {
+            const lines = renamedNames.map((name, idx) =>
+                (idx < renamedNames.length - 1 ? '  ├─ ' : '  └─ ') + name
+            );
+            logTaskEvent(`重命名结果:\n${lines.join('\n')}`);
+        }
         return updatedFiles;
     }
 
@@ -447,34 +456,39 @@ class TaskService {
             logTaskEvent('没有待处理的任务');
             return;
         }
-        let saveResults = []
-        logTaskEvent(`================================`);
-        for (const task of tasks) {
+        const total = tasks.length;
+        let saveResults = [];
+        logTaskEvent(`════════ 开始批量检查（共 ${total} 个任务）════════`);
+        for (let i = 0; i < tasks.length; i++) {
+            const task = tasks[i];
             // root-files 任务显示为 "[散文件]" 标签，避免拼出 "test/root-files" 误导日志
             const taskName = (task.shareFolderId === 'root-files')
                 ? `${task.resourceName || '未知'} [散文件]`
                 : task.shareFolderName
                     ? (task.resourceName + '/' + task.shareFolderName)
-                    : task.resourceName || '未知'
-            logTaskEvent(`任务[${taskName}]开始执行`);
+                    : task.resourceName || '未知';
+            logTaskEvent(`── [${i + 1}/${total}] ${taskName} ──`);
             try {
                 const result = await this.processTask(task);
-            if (result) {
-                saveResults.push(result)
-            }
+                if (result) {
+                    saveResults.push(result);
+                }
             } catch (error) {
-                logTaskEvent(`任务${task.id}执行失败: ${error.message}`);
-            }finally {
-                logTaskEvent(`任务[${taskName}]执行完成`);
+                logTaskEvent(`[任务 ${task.id}] 执行失败: ${error.message}`);
+            } finally {
+                logTaskEvent(`[任务 ${task.id}] 执行完成`);
             }
-            // 暂停500ms
+            // 任务间隔 500ms，多任务时追加空行分隔
             await new Promise(resolve => setTimeout(resolve, 500));
+            if (i < tasks.length - 1) {
+                logTaskEvent('');
+            }
         }
         if (saveResults.length > 0) {
-            this.messageUtil.sendMessage(saveResults.join("\n\n"))
+            this.messageUtil.sendMessage(saveResults.join('\n\n'));
         }
-        logTaskEvent(`================================`);
-        return saveResults
+        logTaskEvent(`════════ 批量检查完成 ════════`);
+        return saveResults;
     }
     // 处理匹配模式
     _handleMatchMode(task, file) {
