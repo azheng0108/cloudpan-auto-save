@@ -87,7 +87,8 @@ class ConfigService {
       emby: {
         enable: false,
         serverUrl: '',
-        apiKey: ''
+        apiKey: '',
+        libraryPath: ''
       },
       // 本地 STRM 文件生成配置
       strm: {

@@ -31,8 +31,8 @@ class EmbyService {
         }
         const taskName = task.resourceName;
         logTaskEvent(`执行Emby通知: ${taskName}`);
-        // 单方案：统一使用 embyLibraryPath 精准拼接（账号级 > 全局配置）
-        this.embyLibraryPath = task.account.embyLibraryPath?.trim() || ConfigService.getConfigValue('emby.libraryPath') || '';
+        // 单方案：统一使用全局 embyLibraryPath 精准拼接
+        this.embyLibraryPath = ConfigService.getConfigValue('emby.libraryPath') || '';
 
         let item = null;
         let refreshMode = '';
