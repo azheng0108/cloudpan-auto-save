@@ -63,6 +63,33 @@ async function loadSettings() {
         const data = await response.json();
         if (data.success) {
             const settings = data.data;
+            // 先回填媒体页字段，避免设置页其他控件缺失时影响媒体配置展示
+            document.getElementById('cloudSaverUrl').value = settings.cloudSaver?.baseUrl || '';
+            document.getElementById('cloudSaverUsername').value = settings.cloudSaver?.username || '';
+            document.getElementById('cloudSaverPassword').value = settings.cloudSaver?.password || '';
+
+            document.getElementById('alistEnable').checked = settings.alist?.enable || false;
+            document.getElementById('alistBaseUrl').value = settings.alist?.baseUrl || '';
+            document.getElementById('alistApiKey').value = settings.alist?.apiKey || '';
+            document.getElementById('alistStrmMountPath').value = (settings.alist?.strmMountPath || '').trim();
+
+            document.getElementById('embyEnable').checked = settings.emby?.enable || false;
+            document.getElementById('embyServerUrl').value = settings.emby?.serverUrl || '';
+            document.getElementById('embyApiKey').value = settings.emby?.apiKey || '';
+            document.getElementById('embyLibraryPath').value = settings.emby?.libraryPath || '';
+
+            document.getElementById('strmEnable').checked = settings.strm?.enable || false;
+            document.getElementById('strmLocalPrefix').value = settings.strm?.localStrmPrefix || '';
+            document.getElementById('strmCloudPrefix').value = settings.strm?.cloudStrmPrefix || '';
+
+            document.getElementById('tmdbApiKey').value = settings.tmdb?.tmdbApiKey || '';
+            document.getElementById('tmdbMovieFormat').value = (settings.tmdb?.movieRenameFormat || '').trim() || DEFAULT_MOVIE_FORMAT;
+            document.getElementById('tmdbTvFormat').value = (settings.tmdb?.tvRenameFormat || '').trim() || DEFAULT_TV_FORMAT;
+            syncRenameTemplateDefaults(
+                document.getElementById('tmdbMovieFormat').value,
+                document.getElementById('tmdbTvFormat').value
+            );
+
             // 系统apiKey
             document.getElementById('systemApiKey').value = settings.system?.apiKey || '';
             // 任务设置
@@ -112,37 +139,6 @@ async function loadSettings() {
             document.getElementById('enableTgBot').checked = settings.telegram?.bot?.enable || false;
             document.getElementById('tgBotToken').value = settings.telegram?.bot?.botToken || '';
             document.getElementById('tgBotChatId').value = settings.telegram?.bot?.chatId || '';
-            // cloudSaver设置
-            document.getElementById('cloudSaverUrl').value = settings.cloudSaver?.baseUrl || '';
-            document.getElementById('cloudSaverUsername').value = settings.cloudSaver?.username || '';
-            document.getElementById('cloudSaverPassword').value = settings.cloudSaver?.password || '';
-
-            // Alist / OpenList 设置
-            document.getElementById('alistEnable').checked = settings.alist?.enable || false;
-            document.getElementById('alistBaseUrl').value = settings.alist?.baseUrl || '';
-            document.getElementById('alistApiKey').value = settings.alist?.apiKey || '';
-            document.getElementById('alistStrmMountPath').value = (settings.alist?.strmMountPath || '').trim();
-
-            // Emby 通知设置
-            document.getElementById('embyEnable').checked = settings.emby?.enable || false;
-            document.getElementById('embyServerUrl').value = settings.emby?.serverUrl || '';
-            document.getElementById('embyApiKey').value = settings.emby?.apiKey || '';
-            document.getElementById('embyLibraryPath').value = settings.emby?.libraryPath || '';
-
-            // 本地 STRM 生成
-            document.getElementById('strmEnable').checked = settings.strm?.enable || false;
-            document.getElementById('strmLocalPrefix').value = settings.strm?.localStrmPrefix || '';
-            document.getElementById('strmCloudPrefix').value = settings.strm?.cloudStrmPrefix || '';
-
-            // TMDB / NFO 刮削
-            document.getElementById('tmdbApiKey').value = settings.tmdb?.tmdbApiKey || '';
-            document.getElementById('tmdbMovieFormat').value = (settings.tmdb?.movieRenameFormat || '').trim() || DEFAULT_MOVIE_FORMAT;
-            document.getElementById('tmdbTvFormat').value = (settings.tmdb?.tvRenameFormat || '').trim() || DEFAULT_TV_FORMAT;
-            syncRenameTemplateDefaults(
-                document.getElementById('tmdbMovieFormat').value,
-                document.getElementById('tmdbTvFormat').value
-            );
-
             // pushplus
             document.getElementById('enablePushPlus').checked = settings.pushplus?.enable || false;
             document.getElementById('pushplusToken').value = settings.pushplus?.token || '';
@@ -367,6 +363,7 @@ async function saveMediaSettings() {
         });
         const data = await response.json();
         if (data.success) {
+            await loadSettings();
             message.success('保存成功');
         } else {
             message.warning('保存失败: ' + data.error);

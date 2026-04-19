@@ -197,7 +197,7 @@ class ConfigService {
   }
 
   setConfig(config) {
-    this._config = { ...this._config, ...config };
+    this._config = this._deepMerge(this._config, config);
     this._saveConfig();
   }
 
