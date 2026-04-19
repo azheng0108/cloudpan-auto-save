@@ -131,7 +131,6 @@ async function editAccount(id) {
     document.getElementById('cookie').value = chooseAccount.cookies || '';
     document.getElementById('alistNativePath').value = chooseAccount.alistNativePath || '';
     document.getElementById('alistStrmPath').value = chooseAccount.alistStrmPath || '';
-    document.getElementById('embyLibraryPath').value = chooseAccount.embyLibraryPath || '';
     // 账号不允许修改
     document.getElementById('username').setAttribute('readonly', true )
     // 修改提交按钮文本
@@ -158,7 +157,6 @@ async function createAccount() {
     const cookies  = document.getElementById('cookie').value;
     const alistNativePath = document.getElementById('alistNativePath').value;
     const alistStrmPath = document.getElementById('alistStrmPath').value;
-    const embyLibraryPath = document.getElementById('embyLibraryPath').value;
     const validateCodeDom = document.getElementById('validateCode')
     let validateCode = "";
     if (validateCodeDom) {
@@ -193,7 +191,6 @@ async function createAccount() {
             validateCode,
             alistNativePath,
             alistStrmPath,
-            embyLibraryPath,
         })
     });
     const data = await response.json();
