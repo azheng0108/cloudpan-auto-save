@@ -9,7 +9,6 @@ class SchedulerService {
     static messageUtil = new MessageUtil();
     static DEFAULT_TASK_CHECK_CRON = '0 19-23 * * *';
     static DEFAULT_RETRY_TASK_CRON = '*/10 * * * *';
-    static DEFAULT_CLEAN_RECYCLE_CRON = '0 */8 * * *';
     static DEFAULT_VACUUM_CRON = '0 4 * * 0';
 
     static async initTaskJobs(taskRepo, taskService) {
@@ -169,13 +168,6 @@ class SchedulerService {
             throw new Error(`重试任务检查 Cron 无效: ${retryTaskCron}`);
         }
 
-        const cleanRecycleCron = (typeof taskSettings.cleanRecycleCron === 'string' && taskSettings.cleanRecycleCron.trim())
-            ? taskSettings.cleanRecycleCron.trim()
-            : this.DEFAULT_CLEAN_RECYCLE_CRON;
-        if (!cron.validate(cleanRecycleCron)) {
-            throw new Error(`回收站清理 Cron 无效: ${cleanRecycleCron}`);
-        }
-
         const vacuumCron = (typeof taskSettings.vacuumCron === 'string' && taskSettings.vacuumCron.trim())
             ? taskSettings.vacuumCron.trim()
             : this.DEFAULT_VACUUM_CRON;
@@ -186,7 +178,6 @@ class SchedulerService {
         return {
             taskCheckCron: taskCheckCrons.join('|'),
             retryTaskCron,
-            cleanRecycleCron,
             vacuumCron,
         };
     }
@@ -204,16 +195,6 @@ class SchedulerService {
         this.saveDefaultTaskJob('重试任务检查', normalized.retryTaskCron, async () => {
             await taskService.processRetryTasks();
         });
-
-        const enableAutoClearRecycle = taskSettings.enableAutoClearRecycle === true;
-        const enableAutoClearFamilyRecycle = taskSettings.enableAutoClearFamilyRecycle === true;
-        if (enableAutoClearRecycle || enableAutoClearFamilyRecycle) {
-            this.saveDefaultTaskJob('自动清空回收站', normalized.cleanRecycleCron, async () => {
-                await taskService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle);
-            });
-        } else {
-            this.removeTaskJob('自动清空回收站');
-        }
 
         this.saveDefaultTaskJob('SQLite-VACUUM', normalized.vacuumCron, async () => {
             try {

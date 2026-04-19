@@ -49,21 +49,6 @@ function updatePlatformDisplay(capabilities) {
     }
 }
 
-// 根据能力控制功能可见性
-function applyCapabilityGating(capabilities) {
-    if (!capabilities) return;
-    
-    // 控制回收站设置可见性
-    const recycleGroup = document.getElementById('recycleSettingsGroup');
-    if (recycleGroup) {
-        if (capabilities.features.recycle) {
-            recycleGroup.style.display = '';
-        } else {
-            recycleGroup.style.display = 'none';
-        }
-    }
-}
-
 async function loadSettings() {
     const alistStrmMountPathInput = document.getElementById('alistStrmMountPath');
     if (alistStrmMountPathInput) {
@@ -80,9 +65,10 @@ async function loadSettings() {
     // 更新运行模式显示
     updatePlatformDisplay(capabilities);
     
-    // 应用能力控制
-    applyCapabilityGating(capabilities);
-    
+    // 清除可能存在的旧加载失败提示
+    const existingBanner = document.getElementById('settingsLoadErrorBanner');
+    if (existingBanner) existingBanner.remove();
+
     try {
         const response = await fetch('/api/settings');
         const data = await response.json();
@@ -94,7 +80,6 @@ async function loadSettings() {
             document.getElementById('taskExpireDays').value = settings.task?.taskExpireDays || 3;
             document.getElementById('taskCheckCron').value = settings.task?.taskCheckCron || '0 19-23 * * *';
             document.getElementById('retryTaskCron').value = settings.task?.retryTaskCron || '*/1 * * * *';
-            document.getElementById('cleanRecycleCron').value = settings.task?.cleanRecycleCron || '0 */8 * * *';
             document.getElementById('vacuumCron').value = settings.task?.vacuumCron || '0 4 * * 0';
             document.getElementById('taskMaxRetries').value = settings.task?.maxRetries || 3;
             document.getElementById('taskRetryInterval').value = settings.task?.retryInterval || 300;
@@ -102,8 +87,6 @@ async function loadSettings() {
             document.getElementById('mediaSuffix').value = settings.task?.mediaSuffix || '.mkv;.iso;.ts;.mp4;.avi;.rmvb;.wmv;.m2ts;.mpg;.flv;.rm;.mov';
             document.getElementById('enableOnlySaveMedia').checked = settings.task?.enableOnlySaveMedia || false;
             document.getElementById('enableAutoCreateFolder').checked = settings.task?.enableAutoCreateFolder || false;
-            document.getElementById('enableAutoClearRecycle').checked = settings.task?.enableAutoClearRecycle || false;
-            document.getElementById('enableAutoClearFamilyRecycle').checked = settings.task?.enableAutoClearFamilyRecycle || false;
 
             // 企业微信设置
             document.getElementById('enableWecom').checked = settings.wecom?.enable || false;
@@ -179,10 +162,23 @@ async function loadSettings() {
             document.getElementById('pushplusTo').value = settings.pushplus?.to || '';
 
             customPushConfigs = settings.customPush || [];
+        } else {
+            _showSettingsLoadError('服务器返回错误，设置可能未正确加载');
         }
     } catch (error) {
         console.error('加载设置失败:', error);
+        _showSettingsLoadError('设置加载失败，当前显示的值可能不是已保存的配置，请刷新页面重试');
     }
+}
+
+function _showSettingsLoadError(msg) {
+    const settingsForm = document.getElementById('settingsForm');
+    if (!settingsForm) return;
+    const banner = document.createElement('div');
+    banner.id = 'settingsLoadErrorBanner';
+    banner.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;color:#856404;padding:10px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;';
+    banner.innerHTML = `⚠️ ${msg}`;
+    settingsForm.prepend(banner);
 }
 
 document.getElementById('settingsForm').addEventListener('submit', async (e) => {
@@ -200,7 +196,6 @@ async function saveSettings() {
             taskExpireDays: parseInt(document.getElementById('taskExpireDays').value) || 3,
             taskCheckCron: document.getElementById('taskCheckCron').value || '0 19-23 * * *',
             retryTaskCron: document.getElementById('retryTaskCron').value || '*/1 * * * *',
-            cleanRecycleCron: document.getElementById('cleanRecycleCron').value || '0 */8 * * *',
             vacuumCron: document.getElementById('vacuumCron').value || '0 4 * * 0',
             maxRetries: parseInt(document.getElementById('taskMaxRetries').value) || 3,
             retryInterval: parseInt(document.getElementById('taskRetryInterval').value) || 300,
@@ -208,8 +203,6 @@ async function saveSettings() {
             mediaSuffix: document.getElementById('mediaSuffix').value,
             enableOnlySaveMedia: document.getElementById('enableOnlySaveMedia').checked,
             enableAutoCreateFolder: document.getElementById('enableAutoCreateFolder').checked,
-            enableAutoClearRecycle: document.getElementById('enableAutoClearRecycle').checked,
-            enableAutoClearFamilyRecycle: document.getElementById('enableAutoClearFamilyRecycle').checked
         },
         wecom: {
             enable: document.getElementById('enableWecom').checked,

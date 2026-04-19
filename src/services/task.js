@@ -15,7 +15,6 @@ const { processCloud139Task } = require('./cloud139TaskProcessor');
 const { TaskNamingService } = require('./taskNamingService');
 const { TaskParserService } = require('./taskParserService');
 const { TaskRetryService } = require('./taskRetryService');
-const { TaskRecycleService } = require('./taskRecycleService');
 const { TaskStorageService } = require('./taskStorageService');
 const TaskErrorService = require('./taskErrorService');
 
@@ -30,7 +29,6 @@ class TaskService {
         this.taskNamingService = new TaskNamingService();
         this.taskParserService = new TaskParserService();
         this.taskRetryService = new TaskRetryService(this);
-        this.taskRecycleService = new TaskRecycleService(this);
         this.taskStorageService = new TaskStorageService(this);
         this.taskErrorService = taskErrorRepo ? new TaskErrorService(taskErrorRepo) : null;
         /** @type {Set<number|string>} 记录当前进程内正在执行的任务，避免并发回写状态 */
@@ -522,10 +520,7 @@ class TaskService {
     async processRetryTasks() {
         return this.taskRetryService.processRetryTasks();
     }
-    // 定时清空回收站
-    async clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle) {
-        return this.taskRecycleService.clearRecycleBin(enableAutoClearRecycle, enableAutoClearFamilyRecycle);
-    }
+
     // 校验文件后缀
     _checkFileSuffix(file,enableOnlySaveMedia, mediaSuffixs) {
         // 获取文件后缀

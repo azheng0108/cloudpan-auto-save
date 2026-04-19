@@ -257,12 +257,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 function toggleHelpText(button) {
-    const helpText = button.nextElementSibling;
-    if (helpText.style.display === 'block') {
-        helpText.style.display = 'none';
-        button.textContent = '显示帮助';
-    } else {
-        helpText.style.display = 'block';
-        button.textContent = '隐藏帮助';
-    }
+    if (!button) return;
+    const helpText = button.nextElementSibling || button.parentElement?.querySelector('.form-text, .help-text');
+    if (!helpText) return;
+
+    // 与 .is-hidden { display:none !important } 保持一致，避免 inline style 被覆盖。
+    helpText.classList.toggle('is-hidden');
+    button.textContent = helpText.classList.contains('is-hidden') ? '显示帮助' : '隐藏帮助';
 }
