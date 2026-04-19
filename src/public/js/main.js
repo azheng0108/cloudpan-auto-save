@@ -199,26 +199,69 @@ function saveToCache(key, value) {
 
 document.addEventListener('DOMContentLoaded', function() {
     const tooltip = document.getElementById('regexTooltip');
+    if (!tooltip) return;
+
+    function isTooltipVisible() {
+        return !tooltip.classList.contains('is-hidden');
+    }
+
+    function showRegexTooltip(anchorEl = null) {
+        tooltip.classList.remove('is-hidden');
+        tooltip.style.display = 'block';
+        tooltip.style.zIndex = '3000';
+
+        // 默认居中显示，避免被任意 modal 裁剪或遮挡
+        tooltip.style.left = '50%';
+        tooltip.style.top = '50%';
+        tooltip.style.transform = 'translate(-50%, -50%)';
+        tooltip.style.maxWidth = '90vw';
+        tooltip.style.maxHeight = '80vh';
+        tooltip.style.overflow = 'auto';
+
+        tooltip._currentIcon = anchorEl || null;
+    }
+
+    function hideRegexTooltip() {
+        tooltip.classList.add('is-hidden');
+        tooltip.style.display = 'none';
+    }
+
+    window.openRegexTooltip = function(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        showRegexTooltip(event?.currentTarget || null);
+    };
+
+    window.closeRegexTooltip = function(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        hideRegexTooltip();
+    };
 
     // 使用事件委托，监听整个文档的点击事件
     document.addEventListener('click', function(e) {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+
         // 检查点击的是否是帮助图标
-        if (e.target.classList.contains('help-icon')) {
+        if (target.classList.contains('help-icon')) {
             e.stopPropagation();
-            const helpIcon = e.target;
+            const helpIcon = target;
             const rect = helpIcon.getBoundingClientRect();
-            const isVisible = tooltip.style.display === 'block';
+            const isVisible = isTooltipVisible();
             
             // 关闭弹窗
             if (isVisible && tooltip._currentIcon === helpIcon) {
-                tooltip.style.display = 'none';
+                hideRegexTooltip();
                 return;
             }
 
             // 显示弹窗
-            tooltip.style.display = 'block';
-            tooltip._currentIcon = helpIcon;
-            tooltip.style.zIndex = 9999;
+            showRegexTooltip(helpIcon);
             
             // 计算位置
             const viewportWidth = window.innerWidth;
@@ -241,16 +284,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 tooltip.style.left = `${left}px`;
                 tooltip.style.transform = 'none';
             }
-        } else if (!tooltip.contains(e.target)) {
+        } else if (!tooltip.contains(target)) {
             // 点击其他地方关闭弹窗
-            tooltip.style.display = 'none';
+            hideRegexTooltip();
         }
     });
 
     // 添加 ESC 键关闭
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            tooltip.style.display = 'none';
+            hideRegexTooltip();
         }
     });
 });

@@ -41,14 +41,6 @@ async function loadVersionInfo() {
     }
 }
 
-// 更新运行模式显示
-function updatePlatformDisplay(capabilities) {
-    const platformElement = document.getElementById('systemPlatform');
-    if (platformElement && capabilities) {
-        platformElement.textContent = capabilities.platform || '移动云盘(139)';
-    }
-}
-
 async function loadSettings() {
     const alistStrmMountPathInput = document.getElementById('alistStrmMountPath');
     if (alistStrmMountPathInput) {
@@ -57,13 +49,10 @@ async function loadSettings() {
     }
 
     // 加载系统能力信息
-    const capabilities = await loadSystemCapabilities();
+    await loadSystemCapabilities();
     
     // 加载版本信息
     await loadVersionInfo();
-    
-    // 更新运行模式显示
-    updatePlatformDisplay(capabilities);
     
     // 清除可能存在的旧加载失败提示
     const existingBanner = document.getElementById('settingsLoadErrorBanner');

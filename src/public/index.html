@@ -155,6 +155,7 @@
             overflow-y: auto; /* 允许整体滚动 */
             -webkit-overflow-scrolling: touch; /* iOS 流畅滚动 */
         }
+        #addAccountModal { z-index: 1300; }
         .modal-wrapper { 
             display: flex; align-items: center; justify-content: center; 
             width: 100%; min-height: 100%; padding: 12px; box-sizing: border-box; 
@@ -1060,10 +1061,6 @@
                                             <span class="text-sm text-gray-600 dark:text-gray-400">当前版本:</span>
                                             <span class="text-sm font-medium text-gray-900 dark:text-gray-200" id="systemVersion">loading...</span>
                                         </div>
-                                        <div class="flex justify-between items-center p-2 bg-gray-50 dark:bg-[#0f172a] rounded">
-                                            <span class="text-sm text-gray-600 dark:text-gray-400">运行模式:</span>
-                                            <span class="text-sm font-medium text-gray-900 dark:text-gray-200" id="systemPlatform">loading...</span>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1236,7 +1233,7 @@
                         <div class="form-group mb-0 bg-gray-50/30 dark:bg-[#0f172a] border border-gray-200 dark:border-[#334155] p-4 rounded-[8px]">
                             <label class="flex justify-between items-center mb-2">
                                 <span class="text-sm font-medium">更新匹配规则</span>
-                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="document.getElementById('regexTooltip').classList.remove('is-hidden')">查看帮助</button>
+                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="openRegexTooltip(event)">查看帮助</button>
                             </label>
                             <div class="flex flex-col sm:flex-row gap-3">
                                 <input type="text" id="matchPattern" class="input-base flex-[2] font-mono text-xs" placeholder="正则: 第(\d+)集">
@@ -1249,6 +1246,14 @@
                                 </select>
                                 <input type="text" id="matchValue" class="input-base flex-1" placeholder="值">
                             </div>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="enableTemplateRename" class="w-4 h-4">
+                                <span>启用 Jinja2 模板重命名（使用媒体Tab中的通用模板）</span>
+                            </label>
+                            <small class="form-text">模板在媒体 Tab 中配置；当前任务只需勾选即可启用。</small>
                         </div>
 
                         <!-- 定时任务 -->
@@ -1330,14 +1335,6 @@
                             </div>
                         </div>
 
-                        <div class="form-group mb-0">
-                            <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" id="enableTemplateRename" class="w-4 h-4">
-                                <span>启用 Jinja2 模板重命名（使用媒体Tab中的通用模板）</span>
-                            </label>
-                            <small class="form-text">模板在媒体 Tab 中配置；当前任务只需勾选即可启用。</small>
-                        </div>
-
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn-default" onclick="closeCreateTaskModal()">取消</button>
@@ -1417,7 +1414,7 @@
                         <div class="form-group mb-0 bg-gray-50/30 dark:bg-[#0f172a] border border-gray-200 dark:border-[#334155] p-4 rounded-[8px]">
                             <label class="flex justify-between items-center mb-2">
                                 <span class="text-sm font-medium">更新匹配规则</span>
-                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="document.getElementById('regexTooltip').style.display='block'">查看帮助</button>
+                                <button type="button" class="text-xs text-[#1677ff] dark:text-[#60a5fa] hover:underline" onclick="openRegexTooltip(event)">查看帮助</button>
                             </label>
                             <div class="flex flex-col sm:flex-row gap-3">
                                 <input type="text" id="editMatchPattern" placeholder="正则: 第(\d+)集" class="input-base flex-[2] font-mono text-xs">
@@ -1429,6 +1426,23 @@
                                     <option value="notContains">不包含</option>
                                 </select>
                                 <input type="text" id="editMatchValue" placeholder="值" class="input-base flex-1">
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-0">
+                            <label>Jinja2 模板重命名（可选）</label>
+                            <div class="rename-template-panel">
+                                <div class="rename-template-tip">支持任务级覆盖模板；留空则使用系统默认模板。</div>
+                                <div class="rename-template-grid">
+                                    <div class="rename-template-item">
+                                        <label for="editMovieRenameFormat">电影模板</label>
+                                        <textarea id="editMovieRenameFormat" rows="3" spellcheck="false" placeholder="电影模板" class="rename-template-textarea"></textarea>
+                                    </div>
+                                    <div class="rename-template-item">
+                                        <label for="editTvRenameFormat">电视剧模板</label>
+                                        <textarea id="editTvRenameFormat" rows="3" spellcheck="false" placeholder="电视剧模板" class="rename-template-textarea"></textarea>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -1506,23 +1520,6 @@
                                 <div>
                                     <input type="text" id="editCronExpression" placeholder="Cron表达式，如：0 */30 * * * *" class="input-base font-mono text-xs">
                                     <small class="form-text">每30分钟执行：0 */30 * * * *  |  每天凌晨2点执行：0 0 2 * * *</small>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-group mb-0">
-                            <label>Jinja2 模板重命名（可选）</label>
-                            <div class="rename-template-panel">
-                                <div class="rename-template-tip">支持任务级覆盖模板；留空则使用系统默认模板。</div>
-                                <div class="rename-template-grid">
-                                    <div class="rename-template-item">
-                                        <label for="editMovieRenameFormat">电影模板</label>
-                                        <textarea id="editMovieRenameFormat" rows="3" spellcheck="false" placeholder="电影模板" class="rename-template-textarea"></textarea>
-                                    </div>
-                                    <div class="rename-template-item">
-                                        <label for="editTvRenameFormat">电视剧模板</label>
-                                        <textarea id="editTvRenameFormat" rows="3" spellcheck="false" placeholder="电视剧模板" class="rename-template-textarea"></textarea>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1656,7 +1653,7 @@
         <span class="block mb-2 text-blue-300 font-medium">
             ⚠️ 捕获组正则仅对重命名有效；文件匹配请使用零宽断言。
         </span>
-        <button class="absolute top-2 right-2 text-gray-400 hover:text-white" onclick="document.getElementById('regexTooltip').classList.add('is-hidden')">&times;</button>
+        <button class="absolute top-2 right-2 text-gray-400 hover:text-white" onclick="closeRegexTooltip(event)">&times;</button>
         <div class="overflow-x-auto mt-3">
             <table class="w-full text-left border-collapse text-sm whitespace-nowrap">
                 <thead>

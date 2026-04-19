@@ -158,6 +158,7 @@ async function fetchTasks() {
             const taskName = (task.shareFolderId === 'root-files')
                 ? ((task.resourceName || '未知') + ' <span style="font-size:11px;color:#888;font-weight:normal;">[散文件]</span>')
                 : taskNameText
+            const taskAccountName = task.account?.original_username || task.account?.username || '-'
             const cronIcon = task.enableCron ? '<span class="cron-icon" title="已开启自定义定时任务">⏰</span>' : '';
             tbody.innerHTML += `
                 <tr data-status='${task.status}' data-task-id='${task.id}' data-name='${taskNameText}'>
@@ -172,7 +173,7 @@ async function fetchTasks() {
                         </div>
                     </td>
                     <td data-label="资源名称">${cronIcon}<a href="${task.shareLink}" target="_blank" rel="noopener noreferrer" class="interactive-link task-resource-link ellipsis" title="${taskNameText}">${taskName}</a></td>
-                    <td data-label="账号">${task.account.username}</td>
+                    <td data-label="账号">${taskAccountName}</td>
                     <td data-label="更新目录"><a href="javascript:void(0)" onclick="showFileListModal('${task.id}')" class="interactive-link folder-link folder-link-action ellipsis" title="查看目录文件列表">${task.realFolderName || task.realFolderId}</a></td>
                     <td data-label="更新数/总数">${task.currentEpisodes || 0}/${task.totalEpisodes || '未知'}${progressRing}</td>
                     <td data-label="转存时间">${formatDateTime(task.lastFileUpdateTime)}</td>
