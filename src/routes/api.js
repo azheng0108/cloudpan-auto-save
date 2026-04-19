@@ -559,7 +559,7 @@ const registerApiRoutes = (app, deps) => {
                 logTaskEvent('[system] 检测到系统密码变更，已清理会话并要求重新登录');
             }
 
-            res.json({ success: true, data: null });
+            res.json({ success: true, data: { passwordChanged } });
         } catch (error) {
             logger.error('更新系统设置失败', { error: error.message, stack: error.stack });
             const isValidationError = typeof error?.message === 'string'
