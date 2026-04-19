@@ -74,7 +74,20 @@ const registerAuthRoutes = (app, publicDir, assetVersion) => {
     });
 
     // 认证检查后再提供静态资源，避免直接访问 /index.html 绕过会话校验。
-    app.use(express.static(publicDir, { index: false }));
+    app.use(express.static(publicDir, {
+        index: false,
+        etag: false,
+        lastModified: false,
+        maxAge: 0,
+        setHeaders: (res, filePath) => {
+            if (/\.(js|css|html)$/i.test(filePath)) {
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
+                res.setHeader('Surrogate-Control', 'no-store');
+            }
+        },
+    }));
 };
 
 module.exports = {
