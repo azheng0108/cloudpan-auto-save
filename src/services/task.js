@@ -163,15 +163,17 @@ class TaskService {
                 fileName: info.fileName || null,
                 md5: info.md5 || null,
             }));
-            await this.transferredFileRepo.manager
+            logTaskEvent(`[已转存DB] 正在保存 ${records.length} 个文件到已转存表...`);
+            const result = await this.transferredFileRepo.manager
                 .createQueryBuilder()
                 .insert()
                 .into(this.transferredFileRepo.target)
                 .values(records)
                 .orIgnore()
                 .execute();
+            logTaskEvent(`✓ [已转存DB] 保存已转存文件记录: ${records.length} 个`);
         } catch (e) {
-            logTaskEvent(`记录已转存文件时出错（可忽略）: ${e.message}`);
+            logTaskEvent(`⚠️ [已转存DB] 记录已转存文件时出错: ${e.message}`);
         }
     }
 
