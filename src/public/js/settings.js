@@ -291,7 +291,14 @@ async function saveSettings() {
                 document.getElementById('tmdbMovieFormat').value,
                 document.getElementById('tmdbTvFormat').value
             );
-            message.success('保存成功');
+            if (data.data?.passwordChanged) {
+                message.success('密码已修改，即将退出登录...');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 2000);
+            } else {
+                message.success('保存成功');
+            }
         } else {
             message.warning('保存失败: ' + data.error);
         }
