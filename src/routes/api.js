@@ -570,14 +570,41 @@ const registerApiRoutes = (app, deps) => {
 
     app.post('/api/settings/media', async (req, res) => {
         const settings = req.body;
+        logger.debug('收到媒体设置保存请求', {
+            cloudSaver: settings?.cloudSaver ? {
+                baseUrl: settings.cloudSaver.baseUrl || '',
+                username: settings.cloudSaver.username || '',
+                hasPassword: Boolean(settings.cloudSaver.password),
+            } : undefined,
+            alist: settings?.alist ? {
+                enable: Boolean(settings.alist.enable),
+                baseUrl: settings.alist.baseUrl || '',
+                hasApiKey: Boolean(settings.alist.apiKey),
+                strmMountPath: settings.alist.strmMountPath || '',
+            } : undefined,
+            emby: settings?.emby ? {
+                enable: Boolean(settings.emby.enable),
+                serverUrl: settings.emby.serverUrl || '',
+                hasApiKey: Boolean(settings.emby.apiKey),
+                libraryPath: settings.emby.libraryPath || '',
+            } : undefined,
+            strm: settings?.strm,
+            tmdb: settings?.tmdb ? {
+                hasApiKey: Boolean(settings.tmdb.tmdbApiKey),
+                movieRenameFormat: settings.tmdb.movieRenameFormat || '',
+                tvRenameFormat: settings.tmdb.tvRenameFormat || '',
+            } : undefined,
+        });
         if (
             settings.cloudSaver?.baseUrl != ConfigService.getConfigValue('cloudSaver.baseUrl') ||
             settings.cloudSaver?.username != ConfigService.getConfigValue('cloudSaver.username') ||
             settings.cloudSaver?.password != ConfigService.getConfigValue('cloudSaver.password')
         ) {
             clearCloudSaverToken();
+            logger.debug('检测到 CloudSaver 配置变化，已清理缓存令牌');
         }
         ConfigService.setConfig(settings);
+        logger.debug('媒体设置保存完成');
         res.json({ success: true, data: null });
     });
 
