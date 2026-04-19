@@ -197,6 +197,26 @@ class ConfigService {
   }
 
   setConfig(config) {
+    logger.debug('写入系统配置', {
+      sections: Object.keys(config || {}),
+      cloudSaver: config?.cloudSaver ? {
+        baseUrl: config.cloudSaver.baseUrl || '',
+        username: config.cloudSaver.username || '',
+        hasPassword: Boolean(config.cloudSaver.password)
+      } : undefined,
+      alist: config?.alist ? {
+        enable: Boolean(config.alist.enable),
+        baseUrl: config.alist.baseUrl || '',
+        hasApiKey: Boolean(config.alist.apiKey),
+        strmMountPath: config.alist.strmMountPath || ''
+      } : undefined,
+      emby: config?.emby ? {
+        enable: Boolean(config.emby.enable),
+        serverUrl: config.emby.serverUrl || '',
+        hasApiKey: Boolean(config.emby.apiKey),
+        libraryPath: config.emby.libraryPath || ''
+      } : undefined,
+    });
     this._config = this._deepMerge(this._config, config);
     this._saveConfig();
   }

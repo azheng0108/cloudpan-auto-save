@@ -2,7 +2,10 @@ async function loadVersion() {
     try {
         const response = await fetch('/api/version');
         const data = await response.json();
-        document.getElementById('version').innerText = `v${data.version}`;
+        const versionElement = document.getElementById('version');
+        if (versionElement) {
+            versionElement.innerText = `v${data.version}`;
+        }
     } catch (error) {
         console.error('Failed to load version:', error);
     }

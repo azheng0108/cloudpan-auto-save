@@ -1,12 +1,12 @@
 let customPushConfigs = []
 let systemCapabilities = null; // 存储系统能力信息
-const DEFAULT_MOVIE_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}`;
-const DEFAULT_TV_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{% if title and title != season_episode %}{{title}} - {% endif %}{{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{{fileExt}}`;
+const SETTINGS_DEFAULT_MOVIE_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/{{title}}{% if year %} ({{year}}){% endif %}{% if part %}-{{part}}{% endif %}{% if videoFormat %} - {{videoFormat}}{% endif %}{% if videoSource %} {{videoSource}}{% endif %}{% if videoCodec %} {{videoCodec}}{% endif %}{% if audioCodec %} {{audioCodec}}{% endif %}{{fileExt}}`;
+const SETTINGS_DEFAULT_TV_FORMAT = `{{title}}{% if year %} ({{year}}){% endif %}/Season {{season}}/{% if title and title != season_episode %}{{title}} - {% endif %}{{season_episode}}{% if part %}-{{part}}{% endif %}{% if episode %} - 第 {{episode}} 集{% endif %}{{fileExt}}`;
 
 function syncRenameTemplateDefaults(movieValue, tvValue) {
     window._renameFormats = {
-        movie: (movieValue || '').trim() || DEFAULT_MOVIE_FORMAT,
-        tv: (tvValue || '').trim() || DEFAULT_TV_FORMAT,
+        movie: (movieValue || '').trim() || SETTINGS_DEFAULT_MOVIE_FORMAT,
+        tv: (tvValue || '').trim() || SETTINGS_DEFAULT_TV_FORMAT,
     };
 }
 
@@ -83,8 +83,8 @@ async function loadSettings() {
             document.getElementById('strmCloudPrefix').value = settings.strm?.cloudStrmPrefix || '';
 
             document.getElementById('tmdbApiKey').value = settings.tmdb?.tmdbApiKey || '';
-            document.getElementById('tmdbMovieFormat').value = (settings.tmdb?.movieRenameFormat || '').trim() || DEFAULT_MOVIE_FORMAT;
-            document.getElementById('tmdbTvFormat').value = (settings.tmdb?.tvRenameFormat || '').trim() || DEFAULT_TV_FORMAT;
+            document.getElementById('tmdbMovieFormat').value = (settings.tmdb?.movieRenameFormat || '').trim() || SETTINGS_DEFAULT_MOVIE_FORMAT;
+            document.getElementById('tmdbTvFormat').value = (settings.tmdb?.tvRenameFormat || '').trim() || SETTINGS_DEFAULT_TV_FORMAT;
             syncRenameTemplateDefaults(
                 document.getElementById('tmdbMovieFormat').value,
                 document.getElementById('tmdbTvFormat').value
@@ -355,6 +355,33 @@ async function saveMediaSettings() {
             tvRenameFormat: document.getElementById('tmdbTvFormat').value
         }
     };
+
+    console.debug('[media] 提交媒体设置', {
+        cloudSaver: {
+            baseUrl: settings.cloudSaver.baseUrl,
+            username: settings.cloudSaver.username,
+            hasPassword: Boolean(settings.cloudSaver.password),
+        },
+        alist: {
+            enable: settings.alist.enable,
+            baseUrl: settings.alist.baseUrl,
+            hasApiKey: Boolean(settings.alist.apiKey),
+            strmMountPath: settings.alist.strmMountPath,
+        },
+        emby: {
+            enable: settings.emby.enable,
+            serverUrl: settings.emby.serverUrl,
+            hasApiKey: Boolean(settings.emby.apiKey),
+            libraryPath: settings.emby.libraryPath,
+        },
+        strm: settings.strm,
+        tmdb: {
+            hasApiKey: Boolean(settings.tmdb.tmdbApiKey),
+            movieRenameFormat: settings.tmdb.movieRenameFormat,
+            tvRenameFormat: settings.tmdb.tvRenameFormat,
+        },
+    });
+
     try {
         const response = await fetch('/api/settings/media', {
             method: 'POST',
@@ -364,11 +391,14 @@ async function saveMediaSettings() {
         const data = await response.json();
         if (data.success) {
             await loadSettings();
+            console.debug('[media] 媒体设置保存成功', { response: data });
             message.success('保存成功');
         } else {
+            console.debug('[media] 媒体设置保存失败', { response: data });
             message.warning('保存失败: ' + data.error);
         }
     } catch (error) {
+        console.debug('[media] 媒体设置请求异常', { error: error.message });
         message.warning('保存失败: ' + error.message);
     }
 }
