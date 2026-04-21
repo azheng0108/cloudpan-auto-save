@@ -322,7 +322,10 @@ async function processCloud139Task(taskService, task, account) {
             if (dedupedNewFiles.length === 0) {
                 logTaskEvent(`${task.resourceName}(根目录文件) 没有新文件`);
                 logTaskEvent(`跳过后处理 [任务 ${task.id}]: 无新文件`);
+                task.status = 'pending';
                 task.currentEpisodes = transferredIds.size;
+                task.retryCount = 0;
+                task.nextRetryTime = null;
                 task.lastCheckTime = new Date();
                 await taskService.taskRepo.save(task);
                 return '';
@@ -384,9 +387,11 @@ async function processCloud139Task(taskService, task, account) {
 
             const fileCount = dedupedNewFiles.length;
             const firstExecution = !task.lastFileUpdateTime;
-            task.status = 'processing';
+            task.status = 'pending';
             task.currentEpisodes = (task.currentEpisodes || 0) + fileCount;
             task.lastFileUpdateTime = new Date();
+            task.retryCount = 0;
+            task.nextRetryTime = null;
             task.lastCheckTime = new Date();
             await taskService.taskRepo.save(task);
 
@@ -593,8 +598,14 @@ async function processCloud139Task(taskService, task, account) {
                 const daysDiff = (Date.now() - new Date(task.lastFileUpdateTime).getTime()) / 86400000;
                 if (daysDiff >= ConfigService.getConfigValue('task.taskExpireDays')) {
                     task.status = 'completed';
+                } else {
+                    task.status = 'pending';
                 }
+            } else {
+                task.status = 'pending';
             }
+            task.retryCount = 0;
+            task.nextRetryTime = null;
             task.lastCheckTime = new Date();
             await taskService.taskRepo.save(task);
             await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
@@ -716,7 +727,7 @@ async function processCloud139Task(taskService, task, account) {
         });
 
         const firstExecution = !task.lastFileUpdateTime;
-        task.status = 'processing';
+        task.status = 'pending';
         task.lastFileUpdateTime = new Date();
         const existingMediaCount = [...diskFilesMap.values()]
             .filter((names) => names !== null)
@@ -729,6 +740,7 @@ async function processCloud139Task(taskService, task, account) {
             }, 0);
         task.currentEpisodes = existingMediaCount + fileCount;
         task.retryCount = 0;
+        task.nextRetryTime = null;
         task.lastCheckTime = new Date();
         
         // P1-01: 清除检查点（任务完成）
