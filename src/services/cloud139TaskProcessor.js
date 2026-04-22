@@ -327,7 +327,7 @@ async function processCloud139Task(taskService, task, account) {
                 task.retryCount = 0;
                 task.nextRetryTime = null;
                 task.lastCheckTime = new Date();
-                await taskService.taskRepo.save(task);
+                await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
                 return '';
             }
 
@@ -393,7 +393,7 @@ async function processCloud139Task(taskService, task, account) {
             task.retryCount = 0;
             task.nextRetryTime = null;
             task.lastCheckTime = new Date();
-            await taskService.taskRepo.save(task);
+            await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
 
             const rootDiskFiles = await cloud139.listAllDiskFiles(task.realFolderId).catch(() => []);
             const rootNameToFileId = buildNameToFileIdMap(rootDiskFiles);

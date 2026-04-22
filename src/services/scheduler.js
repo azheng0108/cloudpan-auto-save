@@ -188,15 +188,18 @@ class SchedulerService {
         this._removeJobsByPrefix('任务定时检查-');
         taskCheckCrons.forEach((cronExpression, index) => {
             this.saveDefaultTaskJob(`任务定时检查-${index}`, cronExpression, async () => {
+                logTaskEvent(`[定时检查] 全局任务检查触发（表达式: ${cronExpression}）`);
                 await taskService.processAllTasks();
             });
         });
 
         this.saveDefaultTaskJob('重试任务检查', normalized.retryTaskCron, async () => {
+            logTaskEvent(`[定时检查] 重试任务检查触发`);
             await taskService.processRetryTasks();
         });
 
         this.saveDefaultTaskJob('SQLite-VACUUM', normalized.vacuumCron, async () => {
+            logTaskEvent(`[定时检查] SQLite VACUUM 触发`);
             try {
                 if (!AppDataSource.isInitialized) {
                     logTaskEvent('VACUUM 跳过：数据库未初始化');
