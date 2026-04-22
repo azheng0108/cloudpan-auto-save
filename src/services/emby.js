@@ -16,7 +16,6 @@ class EmbyService {
         this.enable = ConfigService.getConfigValue('emby.enable');
         this.embyUrl = ConfigService.getConfigValue('emby.serverUrl');
         this.embyApiKey = ConfigService.getConfigValue('emby.apiKey');
-        this.embyLibraryPath = '';
         this.messageUtil = new MessageUtil();
 
         this._taskRepo = AppDataSource.getRepository(Task);
@@ -31,8 +30,8 @@ class EmbyService {
         }
         const taskName = task.resourceName;
         logTaskEvent(`执行Emby通知: ${taskName}`);
-        // 单方案：统一使用全局 embyLibraryPath 精准拼接
-        this.embyLibraryPath = ConfigService.getConfigValue('emby.libraryPath') || '';
+        // 单方案：统一使用局部变量 embyLibraryPath，避免并发下实例属性相互覆盖
+        const embyLibraryPath = ConfigService.getConfigValue('emby.libraryPath') || '';
 
         let item = null;
         let refreshMode = '';
@@ -54,7 +53,7 @@ class EmbyService {
 
         // 路径搜索
         const rawPath = task.realFolderName;
-        const convertedPath = this._replacePath(rawPath);
+        const convertedPath = this._replacePath(rawPath, embyLibraryPath);
         logTaskEvent('Emby 路径转换完成，开始路径检索媒体项');
         item = await this.searchItemsByPathRecursive(convertedPath);
         logTaskEvent(`Emby路径搜索结果: ${item ? item.Id : '未命中'}`);
@@ -64,11 +63,13 @@ class EmbyService {
             if (refreshed) {
                 refreshMode = '路径命中';
             }
-            // 改进3：缓存 embyId 到任务记录
-            if (task.id) {
+            // 仅在路径精准匹配时缓存 embyId，避免将父目录 ID 误存入数据库
+            if (task.id && item._isExactMatch !== false) {
                 await this._taskRepo.update(task.id, { embyId: String(item.Id) }).catch(e =>
                     logTaskEvent(`缓存 embyId 失败(忽略): ${e.message}`)
                 );
+            } else if (item._isExactMatch === false) {
+                logTaskEvent(`路径搜索命中父目录，跳过 embyId 缓存: foundAt=${item._foundPath}`);
             }
         } else {
             // 改进2：名称搜索 fallback（路径搜索失败时，用资源名尝试匹配）
@@ -91,7 +92,7 @@ class EmbyService {
             } else {
                 // 目录事件刷新与搜索路径保持同一转换逻辑，避免出现前缀被裁剪的问题。
                 const rawDirPath = options.directoryPath || task.realFolderName || convertedPath;
-                const convertedDirPath = this._replacePath(rawDirPath);
+                const convertedDirPath = this._replacePath(rawDirPath, embyLibraryPath);
                 const targetDirPath = this._normalizeDirPath(convertedDirPath);
                 if (targetDirPath) {
                     logTaskEvent(`Emby未命中媒体项，尝试目录事件局部刷新: ${targetDirPath}`);
@@ -278,17 +279,22 @@ class EmbyService {
     }
 
     // 传入path, 调用searchItemsByPath, 如果返回结果为空, 则递归调用searchItemsByPath, 直到返回结果不为空
-    async searchItemsByPathRecursive(path) {
+    async searchItemsByPathRecursive(path, _originalPath) {
         try {
             // 防止空路径
             if (!path) return null;
             // 移除路径末尾的斜杠
             const normalizedPath = path.replace(/\/+$/, '');
+            // 首次调用时记录原始目标路径，用于精准命中判定
+            const originalPath = _originalPath ?? normalizedPath;
             // 搜索当前路径
             const result = await this.searchItemsByPath(normalizedPath);
             if (result?.Items?.[0]) {
                 logTaskEvent(`在路径 ${normalizedPath} 找到媒体项`);
-                return result.Items[0];
+                const item = result.Items[0];
+                item._foundPath = normalizedPath;
+                item._isExactMatch = (normalizedPath === originalPath);
+                return item;
             }
             // 获取父路径
             const parentPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
@@ -298,7 +304,7 @@ class EmbyService {
             }
             // 递归搜索父路径
             logTaskEvent(`在路径 ${parentPath} 继续搜索`);
-            return await this.searchItemsByPathRecursive(parentPath);
+            return await this.searchItemsByPathRecursive(parentPath, originalPath);
         } catch (error) {
             logTaskEvent(`路径搜索出错: ${error.message}`);
             return null;
@@ -339,7 +345,7 @@ class EmbyService {
     _cleanMediaName(name) {
         return name
             // 移除括号内的年份，如：沙尘暴 (2025)
-            .replace(/\s*[\(\[【］\[]?\d{4}[\)\]】］\]]?\s*/g, '')
+            .replace(/\s*[(\[【（]?\d{4}[)\]】）]?\s*/g, '')
             // 移除清晰度标识，如：4K、1080P、720P等
             .replace(/\s*[0-9]+[Kk](?![a-zA-Z])/g, '')
             .replace(/\s*[0-9]+[Pp](?![a-zA-Z])/g, '')
@@ -353,11 +359,11 @@ class EmbyService {
      * 单方案：embyLibraryPath + '/' + realFolderName
      * 适用于 OpenList STRM 和本地 STRM，两种场景都只需填写 Emby 内账号根路径
      */
-    _replacePath(path) {
+    _replacePath(path, embyLibraryPath) {
         path = String(path || '').replace(/\\/g, '/').trim();
-        if (this.embyLibraryPath) {
+        if (embyLibraryPath) {
             // 精准模式：若 realFolderName 已包含 embyLibraryPath 前缀（忽略前导斜杠），则不重复拼接
-            const libraryPath = String(this.embyLibraryPath).replace(/\\/g, '/').trim();
+            const libraryPath = String(embyLibraryPath).replace(/\\/g, '/').trim();
             const libraryTrimmed = libraryPath.replace(/^\/+|\/+$/g, '');
             const rel = path.replace(/^\/+/, '').replace(/\/+$/g, '');
             if (libraryTrimmed && (rel === libraryTrimmed || rel.startsWith(`${libraryTrimmed}/`))) {
@@ -460,7 +466,11 @@ class EmbyService {
                 } else {
                     logTaskEvent(`删除任务和网盘, 任务id: ${task.id}`);
                     // 删掉任务并且删掉网盘
-                    this._taskService.deleteTasks(tasks.map(task => task.id), true)
+                    try {
+                        await this._taskService.deleteTasks(tasks.map(task => task.id), true);
+                    } catch (e) {
+                        logTaskEvent(`删除任务失败(忽略): ${e.message}`);
+                    }
                 }
             }
 
