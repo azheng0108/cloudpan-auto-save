@@ -1,4 +1,4 @@
-const { In, IsNull } = require('typeorm');
+const { In, IsNull, Or } = require('typeorm');
 const { Cloud139Service } = require('./cloud139');
 const { MessageUtil } = require('./message');
 const { logTaskEvent } = require('../utils/logUtils');
@@ -226,14 +226,14 @@ class TaskService {
             {
                 status: 'pending',
                 nextRetryTime: null,
-                enableSystemProxy: IsNull(),
+                enableSystemProxy: Or(IsNull(), false),
                 ...(ignore ? {} : { enableCron: false })
             }
         ];
         if (includeProcessing) {
             conditions.push({
                 status: 'processing',
-                enableSystemProxy: IsNull(),
+                enableSystemProxy: Or(IsNull(), false),
                 ...(ignore ? {} : { enableCron: false })
             });
         }
@@ -463,7 +463,14 @@ class TaskService {
     async processAllTasks(ignore = false, taskIds = []) {
         const tasks = await this.getPendingTasks(ignore, taskIds, false);
         if (tasks.length === 0) {
-            logTaskEvent('没有待处理的任务');
+            // 查询全部任务数，帮助排查"为何没有待处理任务"
+            const allTasks = await this.taskRepo.find({ select: { id: true, status: true, enableCron: true, nextRetryTime: true, resourceName: true } });
+            const total = allTasks.length;
+            const skippedCron = allTasks.filter(t => t.enableCron && t.status === 'pending').length;
+            const skippedRetry = allTasks.filter(t => t.nextRetryTime !== null && t.status === 'pending').length;
+            const completed = allTasks.filter(t => t.status === 'completed').length;
+            const failed = allTasks.filter(t => t.status === 'failed').length;
+            logTaskEvent(`没有待处理的任务（共 ${total} 个任务：完结 ${completed}，失败 ${failed}，跳过-独立定时 ${skippedCron}，跳过-等待重试 ${skippedRetry}）`);
             return;
         }
         const total = tasks.length;

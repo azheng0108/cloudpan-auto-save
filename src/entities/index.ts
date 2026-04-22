@@ -56,10 +56,7 @@ export class Account {
     rootFolderId!: string;
     @Column('text', { nullable: true, default: '' })
     embyPathReplace!:string;
-    /** Emby 媒体库根路径（账号级），用于精准拼接 Emby 搜索路径，避免全库扫描
-     *  OpenList STRM 用户: Emby 内 OpenList 挂载点，如 /media/移动云盘/130
-     *  本地 STRM 用户: Emby 内 .strm 文件挂载点，如 /tv_strm
-     */
+
     @Column('text', { nullable: true, default: '' })
     embyLibraryPath!: string;
 
