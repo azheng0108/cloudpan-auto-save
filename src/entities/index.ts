@@ -241,6 +241,10 @@ export class Task {
     /** 最后检查点时间 */
     @Column('datetime', { nullable: true })
     lastCheckpointTime!: Date;
+
+    /** 是否禁用自动命名（true = 彻底跳过，null/false = 沿用全局模板） */
+    @Column('boolean', { nullable: true })
+    disableRename!: boolean;
 }
 
 // 常用目录表

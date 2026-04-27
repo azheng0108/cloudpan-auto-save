@@ -158,10 +158,18 @@ class TaskEventHandler {
         try {
             const task = taskCompleteEventDto.task || {};
             const hasTaskTemplate = !!(String(task.movieRenameFormat || '').trim() || String(task.tvRenameFormat || '').trim());
+            const hasGlobalTemplate = !!(
+                String(ConfigService.getConfigValue('tmdb.movieRenameFormat') || '').trim() ||
+                String(ConfigService.getConfigValue('tmdb.tvRenameFormat') || '').trim()
+            );
             const hasRegexRule = !!(String(task.sourceRegex || '').trim() && String(task.targetRegex || '').trim());
             const fileCount = Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0;
+            const templateLabel = task.disableRename === true ? '已禁用'
+                : hasTaskTemplate ? '任务级'
+                : hasGlobalTemplate ? '全局'
+                : '否';
             logTaskEvent(
-                `[1] 自动重命名（共 ${fileCount} 个文件，命名模板: ${hasTaskTemplate ? '是' : '否'}，正则规则: ${hasRegexRule ? '是' : '否'}）`
+                `[1] 自动重命名（共 ${fileCount} 个文件，命名模板: ${templateLabel}，正则规则: ${hasRegexRule ? '是' : '否'}）`
             );
 
             const newFiles = await taskCompleteEventDto.taskService.autoRename(

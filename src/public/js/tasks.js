@@ -384,7 +384,8 @@ function initTaskForm() {
             selectedFolders,
             taskName,
             movieRenameFormat,
-            tvRenameFormat
+            tvRenameFormat,
+            disableRename: !enableTemplateRename,
         };
         await createTask(e,body)
             
@@ -1007,7 +1008,6 @@ function formatDateTime(dateStr) {
 
 const statusOptions = {
     pending: '等待中',
-    processing: '追剧中',
     completed: '已完结',
     failed: '失败'
 }

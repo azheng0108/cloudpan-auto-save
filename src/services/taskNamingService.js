@@ -17,6 +17,7 @@ class TaskNamingService {
             videoSource: '',
             videoCodec: '',
             audioCodec: '',
+            _seasonInferred: false, // true = 季号是从集号/中文集数推断出的，并非文件名明确携带 SxxExx
         };
 
         const resMap = {
@@ -56,12 +57,14 @@ class TaskNamingService {
                 vars.season = '1';
                 vars.episode = String(parseInt(epMatch[1]));
                 vars.season_episode = `S01E${epMatch[1].padStart(2, '0')}`;
+                vars._seasonInferred = true;
             } else {
                 const cnEpisodeMatch = base.match(/第\s*(\d{1,4})\s*[集话]/);
                 if (cnEpisodeMatch) {
                     vars.season = '1';
                     vars.episode = String(parseInt(cnEpisodeMatch[1]));
                     vars.season_episode = `S01E${String(parseInt(cnEpisodeMatch[1])).padStart(2, '0')}`;
+                    vars._seasonInferred = true;
                 }
             }
         }

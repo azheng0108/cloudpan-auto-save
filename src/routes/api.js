@@ -54,6 +54,11 @@ const maskUsername = (username) => {
     return `${value.slice(0, headLen)}${'*'.repeat(maskLen)}${value.slice(-tailLen)}`;
 };
 
+const createEmptyCapacity = () => ({
+    cloudCapacityInfo: { usedSize: 0, totalSize: 0 },
+    familyCapacityInfo: { usedSize: 0, totalSize: 0 },
+});
+
 const registerApiRoutes = (app, deps) => {
     const {
         accountRepo,
@@ -69,11 +74,16 @@ const registerApiRoutes = (app, deps) => {
     app.get('/api/accounts', async (req, res) => {
         const accounts = await accountRepo.find();
         await Promise.all(accounts.map(async (account) => {
-            account.capacity = {
-                cloudCapacityInfo: { usedSize: 0, totalSize: 0 },
-                familyCapacityInfo: { usedSize: 0, totalSize: 0 },
-            };
+            account.capacity = createEmptyCapacity();
+            account.memberInfo = null;
+            account.memberStatus = account.isActive === false ? 'auth_failed' : 'unknown';
+            account.memberStatusText = account.isActive === false ? '认证失效' : '-';
             if (!account.username.startsWith('n_') && account.accountType === 'cloud139') {
+                if (account.isActive === false) {
+                    account.original_username = account.username;
+                    account.username = maskUsername(account.username);
+                    return;
+                }
                 try {
                     const cloud139 = Cloud139Service.getInstance(account);
                     const capacity = await cloud139.getUserSizeInfo();
@@ -81,8 +91,30 @@ const registerApiRoutes = (app, deps) => {
                         account.capacity.cloudCapacityInfo = capacity.cloudCapacityInfo;
                         account.capacity.familyCapacityInfo = capacity.familyCapacityInfo;
                         account.memberInfo = capacity.memberInfo || null;
+                        account.memberStatus = 'ok';
+                        account.memberStatusText = account.memberInfo?.memberName || '普通';
+                    } else {
+                        account.memberStatus = 'unavailable';
+                        account.memberStatusText = '获取失败';
                     }
                 } catch (e) {
+                    if (Cloud139Service.isAuthFailure(e)) {
+                        account.memberStatus = 'auth_failed';
+                        account.memberStatusText = '认证失效';
+                        if (account.isActive !== false) {
+                            try {
+                                account.isActive = false;
+                                await accountRepo.save(account);
+                                Cloud139Service.clearInstance(account);
+                            } catch (saveError) {
+                                logTaskEvent(`[账号状态] 标记认证失效失败: accountId=${account.id}, error=${saveError.message}`);
+                            }
+                        }
+                    } else {
+                        account.memberStatus = 'unavailable';
+                        account.memberStatusText = '获取失败';
+                        logTaskEvent(`[账号信息] 拉取容量失败: accountId=${account.id}, error=${e.message}`);
+                    }
                 }
             }
             account.original_username = account.username;
@@ -94,13 +126,25 @@ const registerApiRoutes = (app, deps) => {
     app.post('/api/accounts', async (req, res) => {
         try {
             const payload = { ...req.body };
+            const accountId = Number(payload.id || 0);
             ['alistStrmPath', 'alistNativePath', 'rootFolderId', 'localStrmPrefix', 'cloudStrmPrefix', 'embyLibraryPath', 'embyPathReplace']
                 .forEach((field) => {
                     if (typeof payload[field] === 'string') {
                         payload[field] = payload[field].trim();
                     }
                 });
-            const account = accountRepo.create(payload);
+
+            let account;
+            if (accountId > 0) {
+                account = await accountRepo.findOneBy({ id: accountId });
+                if (!account) {
+                    return res.json({ success: false, error: '账号不存在' });
+                }
+                Object.assign(account, payload);
+            } else {
+                account = accountRepo.create(payload);
+            }
+
             if (account.accountType !== 'cloud139') {
                 return res.json({ success: false, error: '仅支持移动云盘（139）账号' });
             }
@@ -108,8 +152,61 @@ const registerApiRoutes = (app, deps) => {
                 res.json({ success: false, error: '移动云盘（139）只支持 Cookie 登录，请填写 Cookie' });
                 return;
             }
+
             await accountRepo.save(account);
-            res.json({ success: true, data: null });
+            Cloud139Service.clearInstance(account);
+
+            let runtimeCapacity = createEmptyCapacity();
+            let memberInfo = null;
+            let memberStatus = 'unavailable';
+            let memberStatusText = '获取失败';
+            let authError = null;
+
+            try {
+                const cloud139 = Cloud139Service.getInstance(account);
+                const capacity = await cloud139.getUserSizeInfo();
+                if (capacity && capacity.res_code === 0) {
+                    runtimeCapacity = {
+                        cloudCapacityInfo: capacity.cloudCapacityInfo,
+                        familyCapacityInfo: capacity.familyCapacityInfo,
+                    };
+                    memberInfo = capacity.memberInfo || null;
+                    memberStatus = 'ok';
+                    memberStatusText = memberInfo?.memberName || '普通';
+                }
+            } catch (error) {
+                if (Cloud139Service.isAuthFailure(error)) {
+                    memberStatus = 'auth_failed';
+                    memberStatusText = '认证失效';
+                    authError = error.message;
+                } else {
+                    logTaskEvent(`[账号信息] 更新后验证失败: accountId=${account.id}, error=${error.message}`);
+                }
+            }
+
+            account.isActive = memberStatus !== 'auth_failed';
+            await accountRepo.save(account);
+            Cloud139Service.clearInstance(account);
+
+            const result = {
+                accountId: account.id,
+                memberInfo,
+                capacity: runtimeCapacity,
+                memberStatus,
+                memberStatusText,
+                isActive: account.isActive,
+            };
+
+            if (memberStatus === 'auth_failed') {
+                return res.json({
+                    success: false,
+                    code: 'AUTH_FAILED',
+                    error: authError || 'Cookie 认证失效，请重新填写。',
+                    data: result,
+                });
+            }
+
+            res.json({ success: true, data: result });
         } catch (error) {
             res.json({ success: false, error: error.message });
         }

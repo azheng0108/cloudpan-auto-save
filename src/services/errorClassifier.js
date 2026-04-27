@@ -33,6 +33,18 @@ const ERROR_TYPES = {
         apiCodes: ['200000402'],
         description: '分享链接已达到访问次数上限'
     },
+
+    // 认证相关错误（致命，不重试）
+    AUTH_FAILED: {
+        code: 'AUTH_FAILED',
+        name: '认证失效',
+        fatal: true,
+        retryable: false,
+        apiCodes: ['04000005', '05050006', 'HTTP_401', 'HTTP_403'],
+        httpStatus: [401, 403],
+        patterns: ['认证失败', '缺少 authorization 或 cookie', 'authorization', 'cookie 失效', 'token 失效'],
+        description: '账号认证已失效，请更新 Cookie 或授权信息'
+    },
     
     // 权限相关错误（致命）
     PERMISSION_DENIED: {
@@ -186,6 +198,9 @@ class ErrorClassifier {
             if (apiCode === '200000401') return { type: ERROR_TYPES.LINK_EXPIRED, originalError: error, context: { apiCode } };
             if (apiCode === '200000402') return { type: ERROR_TYPES.LINK_LIMIT_EXCEEDED, originalError: error, context: { apiCode } };
             if (apiCode === '05010003') return { type: ERROR_TYPES.USER_INFO_QUERY_FAILED, originalError: error, context: { apiCode } };
+            if (apiCode === '04000005' || apiCode === '05050006' || apiCode === 'HTTP_401' || apiCode === 'HTTP_403') {
+                return { type: ERROR_TYPES.AUTH_FAILED, originalError: error, context: { apiCode } };
+            }
             
             return {
                 type: { ...ERROR_TYPES.UNKNOWN_ERROR, fatal: true },

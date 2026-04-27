@@ -110,12 +110,50 @@ class Cloud139Service {
     static MAX_INSTANCES = 50; // 最大实例数
     static instanceAccess = new Map(); // 记录实例访问时间
 
+    static _getCacheKey(account) {
+        if (!account) return 'unknown';
+        if (typeof account === 'number') return `id:${account}`;
+        if (typeof account === 'string') {
+            const text = account.trim();
+            if (!text) return 'unknown';
+            return text.startsWith('id:') ? text : `id:${text}`;
+        }
+        if (account.id !== undefined && account.id !== null) return `id:${account.id}`;
+        if (account.phone) return `phone:${account.phone}`;
+        if (account.username) return `user:${account.username}`;
+        return 'unknown';
+    }
+
+    static _buildAuthSignature(account) {
+        if (!account || typeof account !== 'object') return '';
+        return [
+            String(account.authorization || ''),
+            String(account.cookie || ''),
+            String(account.cookies || ''),
+        ].join('|');
+    }
+
+    static isAuthFailure(error) {
+        if (!error) return false;
+        const apiCode = String(error.apiCode || '').toUpperCase();
+        const statusCode = Number(error.statusCode || error.response?.statusCode || 0);
+        const message = String(error.message || '').toLowerCase();
+        if (apiCode === '04000005' || apiCode === '05050006' || apiCode === 'HTTP_401' || apiCode === 'HTTP_403') {
+            return true;
+        }
+        if (statusCode === 401 || statusCode === 403) {
+            return true;
+        }
+        return message.includes('认证失败') || message.includes('authorization') || message.includes('cookie') || message.includes('token 失效');
+    }
+
     /**
      * 获取单例（按手机号缓存）
      * @param {object} account - DB 中的账号记录
      */
     static getInstance(account) {
-        const key = account.phone || account.username;
+        const key = this._getCacheKey(account);
+        const authSignature = this._buildAuthSignature(account);
         
         // 更新访问时间
         this.instanceAccess.set(key, Date.now());
@@ -126,6 +164,11 @@ class Cloud139Service {
                 this._evictLRU();
             }
             this.instances.set(key, new Cloud139Service(account));
+        } else {
+            const cached = this.instances.get(key);
+            if (cached && cached.authSignature !== authSignature) {
+                this.instances.set(key, new Cloud139Service(account));
+            }
         }
         return this.instances.get(key);
     }
@@ -152,9 +195,30 @@ class Cloud139Service {
     /**
      * 清除指定账号的实例缓存（用于 token 刷新后重建）
      */
-    static clearInstance(phone) {
-        this.instances.delete(phone);
-        this.instanceAccess.delete(phone);
+    static clearInstance(accountOrKey) {
+        if (accountOrKey === undefined || accountOrKey === null) return;
+        const keys = new Set();
+        const directKey = this._getCacheKey(accountOrKey);
+        if (directKey) keys.add(directKey);
+
+        if (typeof accountOrKey === 'object') {
+            if (accountOrKey.username) keys.add(`user:${accountOrKey.username}`);
+            if (accountOrKey.phone) keys.add(`phone:${accountOrKey.phone}`);
+            if (accountOrKey.id !== undefined && accountOrKey.id !== null) keys.add(`id:${accountOrKey.id}`);
+        }
+
+        if (typeof accountOrKey === 'string') {
+            const plain = accountOrKey.trim();
+            if (plain) {
+                keys.add(`user:${plain}`);
+                keys.add(`phone:${plain}`);
+            }
+        }
+
+        for (const key of keys) {
+            this.instances.delete(key);
+            this.instanceAccess.delete(key);
+        }
     }
 
     // 清除所有实例
@@ -167,6 +231,7 @@ class Cloud139Service {
 
     constructor(account) {
         this.phone = account.phone || account.username;
+        this.authSignature = Cloud139Service._buildAuthSignature(account);
 
         // 构建认证头
         // 将 auth 字符串规范化为带 "Basic " 前缀的完整头值
@@ -255,13 +320,28 @@ class Cloud139Service {
                     '200000401', // 外链已过期
                     '200000402', // 外链已达到访问次数上限
                     '05010003',  // 查询不到用户信息（分享者账号异常）
+                    '04000005',  // 认证失败
+                    '05050006',  // token失效
                 ]);
                 err.fatal = FATAL_CODES.has(err.apiCode);
+                if (err.apiCode === '04000005' || err.apiCode === '05050006') {
+                    err.statusCode = 401;
+                }
                 throw err;
             }
             return (res && res.data !== undefined) ? res.data : res;
         } catch (err) {
             if (err.apiCode !== undefined) throw err;
+            if (err.name === 'HTTPError') {
+                const statusCode = err.response?.statusCode;
+                if (statusCode === 401 || statusCode === 403) {
+                    const authErr = new Error(`139 分享接口认证失败: HTTP ${statusCode}`);
+                    authErr.apiCode = statusCode === 401 ? 'HTTP_401' : 'HTTP_403';
+                    authErr.statusCode = statusCode;
+                    authErr.fatal = true;
+                    throw authErr;
+                }
+            }
             logTaskEvent(`请求移动云盘 share-kd-njs 接口异常: ${err.message}`);
             return null;
         }
@@ -291,11 +371,28 @@ class Cloud139Service {
                 json: body,
                 headers: USER_NJS_HEADERS,
             }).json();
-            if (res && res.code !== undefined && String(res.code) !== '0000') {
-                return null;
+            if (res && res.code !== undefined && String(res.code) !== '0000' && String(res.code) !== '0') {
+                const err = new Error(`[139] user-njs 接口错误 [${res.code}]: ${res.desc || res.message || '未知错误'}`);
+                err.apiCode = String(res.code);
+                if (err.apiCode === '04000005' || err.apiCode === '05050006') {
+                    err.statusCode = 401;
+                    err.fatal = true;
+                }
+                throw err;
             }
             return (res && res.data !== undefined) ? res.data : res;
         } catch (err) {
+            if (err.apiCode !== undefined) throw err;
+            if (err.name === 'HTTPError') {
+                const statusCode = err.response?.statusCode;
+                if (statusCode === 401 || statusCode === 403) {
+                    const authErr = new Error(`139 user-njs 接口认证失败: HTTP ${statusCode}`);
+                    authErr.apiCode = statusCode === 401 ? 'HTTP_401' : 'HTTP_403';
+                    authErr.statusCode = statusCode;
+                    authErr.fatal = true;
+                    throw authErr;
+                }
+            }
             logTaskEvent(`请求移动云盘 user-njs 接口异常: ${err.message}`);
             return null;
         }
@@ -375,7 +472,11 @@ class Cloud139Service {
             // 内部 API 通常在顶层返回 code 字段（可能是数字或字符串）
             if (res && res.code !== undefined && String(res.code) !== '0') {
                 const err = new Error(`139 API 错误 [${res.code}]: ${res.message || '未知错误'}`);
-                err.apiCode = res.code;
+                err.apiCode = String(res.code);
+                if (err.apiCode === '04000005' || err.apiCode === '05050006') {
+                    err.statusCode = 401;
+                    err.fatal = true;
+                }
                 throw err;
             }
             // 实际数据可能包裹在 data 字段中
@@ -383,6 +484,14 @@ class Cloud139Service {
         } catch (err) {
             if (err.apiCode !== undefined) throw err;
             if (err.name === 'HTTPError') {
+                const statusCode = err.response?.statusCode;
+                if (statusCode === 401 || statusCode === 403) {
+                    const authErr = new Error(`139 接口认证失败: HTTP ${statusCode}`);
+                    authErr.apiCode = statusCode === 401 ? 'HTTP_401' : 'HTTP_403';
+                    authErr.statusCode = statusCode;
+                    authErr.fatal = true;
+                    throw authErr;
+                }
                 logTaskEvent(`请求移动云盘接口失败: HTTP ${err.response?.statusCode} ${url}`);
             } else if (err.name === 'TimeoutError') {
                 logTaskEvent(`请求移动云盘接口超时: ${url}`);
@@ -930,13 +1039,29 @@ class Cloud139Service {
             if (!res.success && String(res.code) !== '0000' && String(res.code) !== '0') {
                 const msg = `[139] personal-kd-njs 接口错误 [${res.code}]: ${res.desc || res.message || ''}`;
                 logTaskEvent(msg);
-                throw new Error(msg);
+                const apiError = new Error(msg);
+                apiError.apiCode = String(res.code);
+                if (apiError.apiCode === '04000005' || apiError.apiCode === '05050006') {
+                    apiError.statusCode = 401;
+                    apiError.fatal = true;
+                }
+                throw apiError;
             }
             return res.data ?? res;
         } catch (err) {
             if (err.name === 'HTTPError') {
-                const body = await err.response?.text?.().catch(() => '');
-                const msg = `[139] 请求接口失败: HTTP ${err.response?.statusCode} ${path} body=${body?.slice(0, 200)}`;
+                const statusCode = err.response?.statusCode;
+                if (statusCode === 401 || statusCode === 403) {
+                    const msg = `[139] 请求接口认证失败: HTTP ${statusCode} ${path}`;
+                    logTaskEvent(msg);
+                    const authErr = new Error(msg);
+                    authErr.apiCode = statusCode === 401 ? 'HTTP_401' : 'HTTP_403';
+                    authErr.statusCode = statusCode;
+                    authErr.fatal = true;
+                    throw authErr;
+                }
+                const responseBody = await err.response?.text?.().catch(() => '');
+                const msg = `[139] 请求接口失败: HTTP ${statusCode} ${path} body=${responseBody?.slice(0, 200)}`;
                 logTaskEvent(msg);
                 throw new Error(msg);
             }

@@ -24,6 +24,7 @@ class CreateTaskDto {
         this.taskName = data?.taskName; // 任务名称
         this.enableSystemProxy = data?.enableSystemProxy; // 启用系统代理
         this.isFolder = data?.isFolder; // 是否是文件夹
+        this.disableRename = data?.disableRename ?? null; // 禁用自动命名（true=禁用，null/false=使用全局模板）
     }
 
     validate() {
