@@ -44,6 +44,7 @@ class TaskRetryService {
             select: {
                 account: {
                     username: true,
+                    isActive: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     embyPathReplace: true
@@ -56,6 +57,7 @@ class TaskRetryService {
                 enableSystemProxy: Or(IsNull(), false)
             }
         });
+        return tasks.filter((task) => task.account?.isActive !== false);
     }
 
     async processRetryTasks() {

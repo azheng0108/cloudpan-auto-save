@@ -38,6 +38,8 @@ function showEditTaskModal(id) {
     document.getElementById('editRemark').value = task.remark;
     document.getElementById('editMovieRenameFormat').value = task.movieRenameFormat || '';
     document.getElementById('editTvRenameFormat').value = task.tvRenameFormat || '';
+    const editDisableRename = document.getElementById('editDisableRename');
+    if (editDisableRename) editDisableRename.checked = !!task.disableRename;
     document.getElementById('editTaskModal').style.display = 'flex';
     document.getElementById('editEnableCron').checked = task.enableCron;
     document.getElementById('editCronExpression').value = task.cronExpression;
@@ -107,6 +109,8 @@ function initEditTaskForm() {
         const cronExpression = enableCron ? buildEditCronExpression() : document.getElementById('editCronExpression').value;
         const movieRenameFormat = document.getElementById('editMovieRenameFormat').value;
         const tvRenameFormat = document.getElementById('editTvRenameFormat').value;
+        const editDisableRenameEl = document.getElementById('editDisableRename');
+        const disableRename = editDisableRenameEl ? editDisableRenameEl.checked : undefined;
 
         try {
             loading.show()
@@ -129,7 +133,8 @@ function initEditTaskForm() {
                     enableCron,
                     cronExpression,
                     movieRenameFormat,
-                    tvRenameFormat
+                    tvRenameFormat,
+                    ...(disableRename !== undefined ? { disableRename } : {}),
                 })
             });
             loading.hide()

@@ -631,7 +631,6 @@
                     <div class="flex flex-col sm:flex-row gap-3 items-center w-full xl:w-auto">
                         <select id="taskFilter" class="input-base w-full sm:w-32 cursor-pointer">
                             <option value="all" selected>全部任务</option>
-                            <option value="processing">追剧中</option>
                             <option value="completed">已完结</option>
                             <option value="failed">失败</option>
                             <option value="pending">等待中</option>
@@ -1391,7 +1390,6 @@
                                 <label for="editStatus">强制变更状态</label>
                                 <select id="editStatus" class="input-base" required>
                                     <option value="pending">待处理</option>
-                                    <option value="processing">追剧中</option>
                                     <option value="completed">已完结</option>
                                     <option value="failed">失败</option>
                                 </select>
@@ -1428,6 +1426,12 @@
                                 <div class="rename-template-tip">支持任务级覆盖模板；留空则使用系统默认模板。</div>
                                 <div class="rename-template-grid">
                                     <div class="rename-template-item">
+                                        <div class="form-group mb-2">
+                                            <label class="flex items-center gap-2 cursor-pointer">
+                                                <input type="checkbox" id="editDisableRename" class="w-4 h-4">
+                                                <span class="text-sm">禁用自动命名（不使用任务级及系统通用模板）</span>
+                                            </label>
+                                        </div>
                                         <label for="editMovieRenameFormat">电影模板</label>
                                         <textarea id="editMovieRenameFormat" rows="3" spellcheck="false" placeholder="电影模板" class="rename-template-textarea"></textarea>
                                     </div>

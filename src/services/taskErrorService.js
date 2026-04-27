@@ -8,8 +8,52 @@ const { ErrorClassifier, ERROR_TYPES } = require('./errorClassifier');
 const { logTaskEvent } = require('../utils/logUtils');
 
 class TaskErrorService {
-    constructor(taskErrorRepo) {
+    static authFailNotifyCache = new Map();
+
+    constructor(taskErrorRepo, options = {}) {
         this.taskErrorRepo = taskErrorRepo;
+        this.messageUtil = options.messageUtil || null;
+    }
+
+    _buildAuthFailureNotifyKey(taskId, additionalContext = {}) {
+        const accountId = additionalContext.accountId;
+        if (accountId !== undefined && accountId !== null) {
+            return `account:${accountId}`;
+        }
+        return `task:${taskId}`;
+    }
+
+    async _notifyAuthFailure(taskId, error, additionalContext = {}) {
+        if (!this.messageUtil || typeof this.messageUtil.sendMessage !== 'function') {
+            return;
+        }
+
+        const key = this._buildAuthFailureNotifyKey(taskId, additionalContext);
+        const now = Date.now();
+        const dedupeMs = 24 * 60 * 60 * 1000;
+        const lastNotifyAt = TaskErrorService.authFailNotifyCache.get(key) || 0;
+        if (now - lastNotifyAt < dedupeMs) {
+            return;
+        }
+
+        TaskErrorService.authFailNotifyCache.set(key, now);
+        const accountId = additionalContext.accountId ?? '未知';
+        const resourceName = additionalContext.resourceName || '未命名任务';
+        const code = error.apiCode || error.code || 'UNKNOWN';
+        const message = [
+            '【认证失效通知】',
+            `任务: ${resourceName} (ID: ${taskId})`,
+            `账号ID: ${accountId}`,
+            `错误码: ${code}`,
+            `原因: ${error.message || '认证失败'}`,
+            '处理建议: 请在账号页面更新Cookie后重试。',
+        ].join('\n');
+
+        try {
+            await this.messageUtil.sendMessage(message);
+        } catch (notifyError) {
+            logTaskEvent(`[错误记录] 发送认证失效通知失败: ${notifyError.message}`);
+        }
     }
 
     /**
@@ -49,6 +93,10 @@ class TaskErrorService {
             await this.taskErrorRepo.save(errorRecord);
 
             logTaskEvent(`[错误记录] 任务 ${taskId} 错误已记录: ${errorType.name} (${errorType.code})`);
+
+            if (errorType.code === 'AUTH_FAILED') {
+                await this._notifyAuthFailure(taskId, error, additionalContext);
+            }
         } catch (err) {
             logTaskEvent(`[错误记录] 记录失败: ${err.message}`);
             // 不抛出异常，错误记录失败不应影响主流程

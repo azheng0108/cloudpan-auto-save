@@ -30,7 +30,7 @@ class TaskService {
         this.taskParserService = new TaskParserService();
         this.taskRetryService = new TaskRetryService(this);
         this.taskStorageService = new TaskStorageService(this);
-        this.taskErrorService = taskErrorRepo ? new TaskErrorService(taskErrorRepo) : null;
+        this.taskErrorService = taskErrorRepo ? new TaskErrorService(taskErrorRepo, { messageUtil: this.messageUtil }) : null;
         /** @type {Set<number|string>} 记录当前进程内正在执行的任务，避免并发回写状态 */
         this.runningTaskIds = new Set();
         // 如果还没有taskComplete事件的监听器，则添加
@@ -73,7 +73,8 @@ class TaskService {
             targetRegex: taskDto.targetRegex,
             movieRenameFormat: taskDto.movieRenameFormat || '',
             tvRenameFormat: taskDto.tvRenameFormat || '',
-            isFolder: taskDto.isFolder
+            isFolder: taskDto.isFolder,
+            disableRename: taskDto.disableRename ?? null,
         };
     }
 
@@ -109,13 +110,19 @@ class TaskService {
     // cloud139 自动重建目标目录
     async _autoCreateFolder139(cloud139, task) {
         // 检查 targetFolderId 是否存在
-        const targetCheck = await cloud139.listDiskDir(task.targetFolderId).catch(() => null);
+        const targetCheck = await cloud139.listDiskDir(task.targetFolderId).catch((error) => {
+            if (Cloud139Service.isAuthFailure(error)) throw error;
+            return null;
+        });
         if (!targetCheck) {
             throw new Error('保存目录不存在，无法自动创建目录');
         }
 
         // 重建 realRootFolderId（如果不存在）
-        const rootCheck = await cloud139.listDiskDir(task.realRootFolderId).catch(() => null);
+        const rootCheck = await cloud139.listDiskDir(task.realRootFolderId).catch((error) => {
+            if (Cloud139Service.isAuthFailure(error)) throw error;
+            return null;
+        });
         if (!rootCheck) {
             const rootFolderName = task.resourceName;
             logTaskEvent(`[139] 正在创建根目录: ${rootFolderName}`);
@@ -199,6 +206,16 @@ class TaskService {
                 logTaskEvent(`账号不存在，accountId: ${task.accountId}`);
                 throw new Error('账号不存在');
             }
+            if (account.isActive === false) {
+                task.status = 'pending';
+                task.retryCount = 0;
+                task.nextRetryTime = null;
+                task.lastError = '账号认证失效，任务已暂停，请更新token后自动恢复';
+                task.lastCheckTime = new Date();
+                await this.taskRepo.save(task);
+                logTaskEvent(`账号认证失效，跳过任务执行: taskId=${task.id}, accountId=${task.accountId}`);
+                return '';
+            }
             task.account = account;
             // Cloud139 处理
             const result = await this._processCloud139Task(task, account);
@@ -237,13 +254,14 @@ class TaskService {
                 ...(ignore ? {} : { enableCron: false })
             });
         }
-        return await this.taskRepo.find({
+        const tasks = await this.taskRepo.find({
             relations: {
                 account: true
             },
             select: {
                 account: {
                     username: true,
+                    isActive: true,
                     localStrmPrefix: true,
                     cloudStrmPrefix: true,
                     alistStrmPath: true,
@@ -259,6 +277,17 @@ class TaskService {
                     : conditions)
             ]
         });
+
+        if (taskIds.length > 0) {
+            return tasks;
+        }
+
+        const activeTasks = tasks.filter((task) => task.account?.isActive !== false);
+        const skippedCount = tasks.length - activeTasks.length;
+        if (skippedCount > 0) {
+            logTaskEvent(`跳过 ${skippedCount} 个认证失效账号任务，等待用户更新token`);
+        }
+        return activeTasks;
     }
 
     // 更新任务
@@ -284,7 +313,7 @@ class TaskService {
         if (!task) throw new Error('任务不存在');
 
         // 只允许更新特定字段
-        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'sourceRegex', 'targetRegex', 'movieRenameFormat', 'tvRenameFormat'];
+        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'sourceRegex', 'targetRegex', 'movieRenameFormat', 'tvRenameFormat', 'disableRename'];
         for (const field of allowedFields) {
             if (updates[field] !== undefined) {
                 task[field] = updates[field];
@@ -343,6 +372,145 @@ class TaskService {
         return this.taskNamingService.sanitizeFileName(fileName);
     }
 
+    _parseChineseNumber(raw) {
+        if (!raw) return null;
+        const text = String(raw).trim();
+        if (!text) return null;
+        if (/^\d+$/.test(text)) return parseInt(text, 10);
+
+        const normalized = text.replace(/两/g, '二').replace(/〇/g, '零');
+        const map = {
+            零: 0,
+            一: 1,
+            二: 2,
+            三: 3,
+            四: 4,
+            五: 5,
+            六: 6,
+            七: 7,
+            八: 8,
+            九: 9,
+        };
+
+        if (normalized === '十') return 10;
+        const tenIndex = normalized.indexOf('十');
+        if (tenIndex >= 0) {
+            const left = normalized.slice(0, tenIndex);
+            const right = normalized.slice(tenIndex + 1);
+            const tens = left ? map[left] : 1;
+            const ones = right ? map[right] : 0;
+            if (Number.isInteger(tens) && Number.isInteger(ones)) {
+                return tens * 10 + ones;
+            }
+            return null;
+        }
+
+        if (normalized.length === 1 && Number.isInteger(map[normalized])) {
+            return map[normalized];
+        }
+        return null;
+    }
+
+    _stripSeasonSuffix(text) {
+        if (!text) return '';
+        return String(text)
+            .replace(/[\s\-_·.]*Season[\s\-_·.]*0*\d+\s*$/i, '')
+            .replace(/[\s\-_·.]*第\s*[0-9一二三四五六七八九十两〇零]+\s*季\s*$/, '')
+            .replace(/[\s\-_·.]*S(?:eason)?[\s\-_·.]*0*\d+\s*$/i, '')
+            .trim();
+    }
+
+    _isSeasonOnlyText(text) {
+        if (!text) return false;
+        const normalized = String(text).trim();
+        if (!normalized) return false;
+        return /^(Season[\s\-_·.]*0*\d+|S(?:eason)?[\s\-_·.]*0*\d+|第\s*[0-9一二三四五六七八九十两〇零]+\s*季)$/i.test(normalized);
+    }
+
+    _isMeaningfulShowTitle(title) {
+        if (!title) return false;
+        const text = String(title).trim();
+        if (!text) return false;
+        if (this._isSeasonOnlyText(text)) return false;
+        if (/^(第\s*\d+\s*[集话]|EP?\s*\d+|E\s*\d+)$/i.test(text)) return false;
+
+        const simplified = text.replace(/[\s\-_.·()\[\]【】（）]/g, '').toLowerCase();
+        if (!simplified) return false;
+        const junkTokens = new Set(['4k', '1080p', '720p', '2160p', 'webrip', 'webdl', 'bluray', 'hdtv']);
+        if (junkTokens.has(simplified)) return false;
+        return true;
+    }
+
+    /**
+     * 从文本中提取季号（如 "Season 2"、"第2季"、"S2" 等）
+     * @returns {number|null}
+     */
+    _inferSeasonFromText(text) {
+        if (!text) return null;
+        const source = String(text);
+
+        const enMatch = source.match(/Season[\s\-_·.]*0*(\d{1,3})/i);
+        if (enMatch) return parseInt(enMatch[1], 10);
+
+        const cnMatch = source.match(/第\s*([0-9一二三四五六七八九十两〇零]{1,4})\s*季/);
+        if (cnMatch) {
+            const parsed = this._parseChineseNumber(cnMatch[1]);
+            if (Number.isInteger(parsed)) return parsed;
+        }
+
+        // 独立 S2 / S02 / Season02（不跟 E 的情况）
+        const sMatch = source.match(/\bS(?:eason)?[\s\-_·.]*0*(\d{1,3})\b(?!\s*[Ee]\d)/i);
+        if (sMatch) return parseInt(sMatch[1], 10);
+
+        // 2x16 形式可提取季号
+        const xMatch = source.match(/\b(\d{1,2})\s*[xX]\s*\d{1,3}\b/);
+        if (xMatch) return parseInt(xMatch[1], 10);
+        return null;
+    }
+
+    /**
+     * 从目录名中剥离季号后缀，获取纯剧名。
+     * 如 "成何体统 Season 2" → "成何体统"，"Season 2" → null
+     * @returns {string|null}
+     */
+    _extractShowTitle(text) {
+        if (!text) return null;
+        const parts = String(text)
+            .split(/[\\/]+/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+        if (parts.length === 0) return null;
+
+        // 若最后一级是 Season 2 / S02 / 第2季，优先使用前一级作为剧名
+        if (parts.length >= 2 && this._isSeasonOnlyText(parts[parts.length - 1])) {
+            const previous = this._stripSeasonSuffix(parts[parts.length - 2]);
+            if (this._isMeaningfulShowTitle(previous)) return previous;
+        }
+
+        // 逆序尝试每个层级，找到第一个有意义的标题
+        for (let i = parts.length - 1; i >= 0; i -= 1) {
+            const candidate = this._stripSeasonSuffix(parts[i]);
+            if (this._isMeaningfulShowTitle(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    _inferTaskSeasonHint(task) {
+        return this._inferSeasonFromText(task?.shareFolderName)
+            || this._inferSeasonFromText(task?.resourceName)
+            || this._inferSeasonFromText(task?.realFolderName)
+            || null;
+    }
+
+    _inferTaskShowTitle(task) {
+        return this._extractShowTitle(task?.shareFolderName)
+            || this._extractShowTitle(task?.resourceName)
+            || this._extractShowTitle(task?.realFolderName)
+            || null;
+    }
+
     // 自动重命名（cloud139）
     // 优先级：Jinja2 模板 > 正则替换。仅处理本次增量 fileList。
     async autoRename(task, fileList = []) {
@@ -350,6 +518,12 @@ class TaskService {
         if (files.length === 0) {
             logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 文件列表为空`);
             return [];
+        }
+
+        // 任务级显式禁用：跳过，不回落到全局模板
+        if (task?.disableRename === true) {
+            logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 任务已禁用自动命名`);
+            return files;
         }
 
         const taskMovieTemplate = String(task?.movieRenameFormat || '').trim();
@@ -368,6 +542,10 @@ class TaskService {
             logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 未配置重命名规则`);
             return files;
         }
+
+        // 从任务/目录名中推断季号和剧名，用于补全文件名缺失的信息
+        const taskSeasonHint = this._inferTaskSeasonHint(task);
+        const taskShowTitle = this._inferTaskShowTitle(task);
 
         const account = task.account || await this._getAccountById(task.accountId);
         if (!account) {
@@ -405,6 +583,22 @@ class TaskService {
 
             if (useTemplate) {
                 const vars = this._parseMediaFileName(oldName);
+                const hasEpisodeKeyInfo = !!(vars.episode && vars.season_episode);
+
+                // 当文件名未携带明确季号时，从任务/目录名中推断并补填
+                if (hasEpisodeKeyInfo && vars._seasonInferred && taskSeasonHint !== null) {
+                    vars.season = String(taskSeasonHint);
+                    vars.season_episode = `S${String(taskSeasonHint).padStart(2, '0')}E${vars.episode.padStart(2, '0')}`;
+                }
+
+                // 当文件名解析出的标题为纯集数指示词时（如"第16集"），尝试用任务剧名补填
+                const titleIsEpIndicator = !vars.title
+                    || /^第\s*\d/.test(vars.title)
+                    || vars.title === vars.season_episode;
+                if (hasEpisodeKeyInfo && titleIsEpIndicator && taskShowTitle) {
+                    vars.title = taskShowTitle;
+                }
+
                 const pickedTemplate = vars.season_episode ? tvTemplate : movieTemplate;
                 if (!pickedTemplate) {
                     skippedCount += 1;
@@ -631,7 +825,10 @@ class TaskService {
         if (segments.length === 0) return '/';
         let currentId = '/';
         for (const seg of segments) {
-            const result = await cloud139.listDiskDir(currentId).catch(() => null);
+            const result = await cloud139.listDiskDir(currentId).catch((error) => {
+                if (Cloud139Service.isAuthFailure(error)) throw error;
+                return null;
+            });
             if (!result) throw new Error(`无法列出目录 "${currentId}"`);
             const match = result.items.find(f => f.type === 'folder' && f.name.trim() === seg.trim());
             if (!match) throw new Error(`路径 "${folderPath}" 中的目录 "${seg}" 不存在`);
@@ -737,7 +934,10 @@ class TaskService {
 
         // 验证目标目录是否可访问；若 fileId 已失效（可能是旧格式 ID），则通过路径重新解析
         let effectiveTargetFolderId = taskDto.targetFolderId;
-        const targetFolderCheck = await cloud139.listDiskDir(effectiveTargetFolderId).catch(() => null);
+        const targetFolderCheck = await cloud139.listDiskDir(effectiveTargetFolderId).catch((error) => {
+            if (Cloud139Service.isAuthFailure(error)) throw error;
+            return null;
+        });
         if (!targetFolderCheck) {
             const folderPath = composedTargetFolderPath || taskDto.targetFolder || '';
             logTaskEvent(`[139] 目标目录 fileId(${effectiveTargetFolderId}) 无效，尝试通过路径 "${folderPath}" 重新解析`);

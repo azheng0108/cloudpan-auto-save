@@ -236,7 +236,10 @@ async function processCloud139Task(taskService, task, account) {
                 return true;
             });
 
-            const realFolderCheck = await cloud139.listDiskDir(task.realFolderId).catch(() => null);
+            const realFolderCheck = await cloud139.listDiskDir(task.realFolderId).catch((error) => {
+                if (Cloud139Service.isAuthFailure(error)) throw error;
+                return null;
+            });
             if (!realFolderCheck) {
                 logTaskEvent('[139] 根文件目标目录不存在!');
                 if (ConfigService.getConfigValue('task.enableAutoCreateFolder')) {
@@ -455,7 +458,10 @@ async function processCloud139Task(taskService, task, account) {
             return true;
         });
 
-        const realFolderCheck = await cloud139.listDiskDir(task.realFolderId).catch(() => null);
+        const realFolderCheck = await cloud139.listDiskDir(task.realFolderId).catch((error) => {
+            if (Cloud139Service.isAuthFailure(error)) throw error;
+            return null;
+        });
         if (!realFolderCheck) {
             logTaskEvent('[139] 目标目录不存在!');
             const enableAutoCreateFolder = ConfigService.getConfigValue('task.enableAutoCreateFolder');
@@ -794,8 +800,29 @@ async function processCloud139Task(taskService, task, account) {
             await taskService.taskErrorService.recordError(task.id, classifiedError, {
                 shareLink: task.shareLink,
                 shareFolderId: task.shareFolderId,
-                accountId: task.accountId
+                accountId: task.accountId,
+                resourceName: task.resourceName,
             });
+        }
+
+        if (classifiedError.errorType === 'AUTH_FAILED') {
+            // 认证失效时暂停账号，避免同账号任务继续触发无效执行。
+            if (account && account.id && account.isActive !== false) {
+                account.isActive = false;
+                await taskService.accountRepo.save(account);
+            }
+            Cloud139Service.clearInstance(account || task.accountId);
+
+            task.status = 'pending';
+            task.retryCount = 0;
+            task.nextRetryTime = null;
+            task.lastError = `[${classifiedError.errorTypeName}] ${classifiedError.message}`;
+            task.lastCheckTime = new Date();
+
+            await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
+            await taskService.taskRepo.save(task);
+            logTaskEvent(`账号认证失效，任务暂停等待更新token: taskId=${task.id}, accountId=${task.accountId}`);
+            return '';
         }
 
         if (classifiedError.fatal) {

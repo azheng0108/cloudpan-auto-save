@@ -20,6 +20,11 @@ async function fetchAccounts(updateSelect = false) {
         accountsList = data.data
         data.data.forEach(account => {
             const displayUsername = account.original_username || account.username;
+            const capacityInfo = account.capacity?.cloudCapacityInfo || { usedSize: 0, totalSize: 0 };
+            const memberStatusText = account.memberStatusText || (account.memberInfo ? account.memberInfo.memberName : '-');
+            const capacityText = account.memberStatus === 'auth_failed'
+                ? '--/--'
+                : `${formatBytes(capacityInfo.usedSize)}/${formatBytes(capacityInfo.totalSize)}`;
             tbody.innerHTML += `
                 <tr>
                     <td>
@@ -32,8 +37,8 @@ async function fetchAccounts(updateSelect = false) {
                         </div>
                     </td>
                     <td data-label='账户名'>${displayUsername}</td>
-                    <td data-label='会员状态'>${account.memberInfo ? account.memberInfo.memberName : '-'}</td>
-                    <td data-label='容量'>${formatBytes(account.capacity.cloudCapacityInfo.usedSize) + '/' + formatBytes(account.capacity.cloudCapacityInfo.totalSize)}</td>
+                    <td data-label='会员状态'>${memberStatusText}</td>
+                    <td data-label='容量'>${capacityText}</td>
 
                 </tr>
             `;
@@ -197,6 +202,16 @@ async function createAccount() {
     if (data.success) {
         loading.hide()
         message.success('成功');
+        if (data.data?.accountId) {
+            const idx = accountsList.findIndex((item) => item.id === data.data.accountId);
+            if (idx >= 0) {
+                accountsList[idx].memberInfo = data.data.memberInfo || null;
+                accountsList[idx].capacity = data.data.capacity || { cloudCapacityInfo: { usedSize: 0, totalSize: 0 }, familyCapacityInfo: { usedSize: 0, totalSize: 0 } };
+                accountsList[idx].memberStatus = data.data.memberStatus || 'unknown';
+                accountsList[idx].memberStatusText = data.data.memberStatusText || '-';
+                accountsList[idx].isActive = data.data.isActive;
+            }
+        }
         document.getElementById('accountForm').reset();
         if (validateCodeDom) {
             // 移除验证码容器
@@ -214,6 +229,9 @@ async function createAccount() {
             document.getElementById('account-captcha').style.display = 'block';
             document.getElementById('captchaImage').src = data.data.captchaUrl;
             message.warning('请输入验证码后重新提交');
+        } else if (data.code === 'AUTH_FAILED') {
+            message.warning('Cookie 认证失效，请更新后重试');
+            fetchAccounts(true);
         }else{
             message.warning('账号添加失败: ' + data.error);
         }
