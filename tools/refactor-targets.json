@@ -2,14 +2,20 @@
   "version": 1,
   "baselineId": "baseline-20261021-1430",
   "lineLimit": 1500,
-  "splitStatusEnum": ["待保障", "保障中", "拆分中", "已完成", "已回滚"],
+  "splitStatusEnum": [
+    "待保障",
+    "保障中",
+    "拆分中",
+    "已完成",
+    "已回滚"
+  ],
   "executionOrder": "P2 路由模块化(api.js) -> P4 服务拆分(按行数升序: TgChannelMonitor -> EpisodeInspection -> TmdbOrganize -> RecognitionEngine)",
   "targets": [
     {
       "filePath": "src/routes/api.js",
       "currentLines": 3601,
       "responsibilitySummary": "路由域: 112 个 API 端点单体注册入口, 含顶层工具函数与 8 项 deps 依赖注入",
-      "splitStatus": "待保障",
+      "splitStatus": "拆分中",
       "capabilityDomain": "routing",
       "subModules": [
         "src/routes/api/accounts.js",
@@ -34,7 +40,7 @@
       "filePath": "src/services/channel/TgChannelMonitorService.js",
       "currentLines": 1634,
       "responsibilitySummary": "频道监控域: TG 频道帖子拉取/目录解析/前置门禁(含三级 AI 策略)/转存执行与扫描编排",
-      "splitStatus": "待保障",
+      "splitStatus": "拆分中",
       "capabilityDomain": "channel",
       "subModules": [
         "src/services/channel/ChannelPostFetcher.js",
@@ -49,7 +55,7 @@
       "filePath": "src/services/EpisodeInspectionService.js",
       "currentLines": 2015,
       "responsibilitySummary": "巡检域: TMDB 覆盖记录存取与缺集扫描匹配, 静态类 + 两个 data/ 文件缓存",
-      "splitStatus": "待保障",
+      "splitStatus": "拆分中",
       "capabilityDomain": "episode-inspection",
       "subModules": [
         "src/services/episode-inspection/TmdbOverridesStore.js",
@@ -62,7 +68,7 @@
       "filePath": "src/services/TmdbOrganizeService.js",
       "currentLines": 3558,
       "responsibilitySummary": "刮削整理域: 翻译获取/目录扫描/季数据加载/分组刮削/剧集匹配/整理执行/回滚, 8 个公开静态方法",
-      "splitStatus": "待保障",
+      "splitStatus": "拆分中",
       "capabilityDomain": "tmdb-organize",
       "subModules": [
         "src/services/tmdb-organize/TranslationProvider.js",
@@ -80,7 +86,7 @@
       "filePath": "src/services/RecognitionEngine.js",
       "currentLines": 3800,
       "responsibilitySummary": "识别引擎域: 国家码注册/标题分析/token 清洗/集数季解析(中文数字与上下集映射)/TMDB 候选评分/规范命名渲染/目录分类",
-      "splitStatus": "待保障",
+      "splitStatus": "拆分中",
       "capabilityDomain": "recognition",
       "subModules": [
         "src/services/recognition/CountryRegistry.js",
