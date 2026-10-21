@@ -196,15 +196,56 @@ function scanEndpointsInContent(content, sourceFile, state) {
     }
 }
 
-function detectFacadeDomainFiles(apiJsPath) {
-    const content = fs.readFileSync(apiJsPath, 'utf8');
-    const requireRegex = /require\('\.\/api\/([A-Za-z0-9_-]+)'\)/g;
-    const domainFiles = [];
+function collectDomainRegisterMap(content) {
+    const requireRegex = /const\s*\{([^}]+)\}\s*=\s*require\('\.\/api\/([A-Za-z0-9_-]+)'\)/g;
+    const registerToFile = new Map();
     let match;
     while ((match = requireRegex.exec(content)) !== null) {
-        domainFiles.push(path.join(ROUTES_DIR, 'api', `${match[1]}.js`));
+        const names = match[1].split(',').map((s) => s.trim()).filter(Boolean);
+        for (const name of names) {
+            registerToFile.set(name, path.join(ROUTES_DIR, 'api', `${match[2]}.js`));
+        }
     }
-    return domainFiles;
+    return registerToFile;
+}
+
+function scanApiJsContent(content, sourceFile, state) {
+    const registerToFile = collectDomainRegisterMap(content);
+    const tokenRegex = /\bapp\.(get|post|put|delete|patch)\s*\(|\b(register[A-Za-z0-9]+Routes)\s*\(/g;
+    let token;
+    while ((token = tokenRegex.exec(content)) !== null) {
+        if (token[1]) {
+            const method = token[1];
+            const argStart = token.index + token[0].length;
+            const paths = extractFirstPathArg(content, argStart);
+            if (!paths) {
+                fail(`无法解析路径参数 (${sourceFile}, 偏移 ${argStart}): ${content.slice(token.index, token.index + 80)}`);
+            }
+            for (const urlPath of paths) {
+                const domain = classifyDomain(urlPath);
+                if (!domain) {
+                    fail(`未知域归属: ${method.toUpperCase()} ${urlPath} (${sourceFile})`);
+                }
+                state.order += 1;
+                state.endpoints.push({
+                    method: method.toUpperCase(),
+                    path: urlPath,
+                    domain,
+                    sourceFile,
+                    order: state.order,
+                });
+            }
+        } else if (token[2]) {
+            const domainFile = registerToFile.get(token[2]);
+            if (domainFile) {
+                if (!fs.existsSync(domainFile)) {
+                    fail(`域路由文件不存在: ${relFromRoot(domainFile)} (由 ${sourceFile} 的 ${token[2]} 引用)`);
+                }
+                const domainContent = fs.readFileSync(domainFile, 'utf8');
+                scanEndpointsInContent(domainContent, relFromRoot(domainFile), state);
+            }
+        }
+    }
 }
 
 function scanRouteFile(filePath, state) {
@@ -222,14 +263,7 @@ function generateSnapshot() {
     if (!fs.existsSync(apiJsPath)) {
         fail('路由文件不存在: src/routes/api.js');
     }
-    const domainFiles = detectFacadeDomainFiles(apiJsPath);
-    if (domainFiles.length > 0) {
-        for (const domainFile of domainFiles) {
-            scanRouteFile(domainFile, state);
-        }
-    } else {
-        scanRouteFile(apiJsPath, state);
-    }
+    scanApiJsContent(fs.readFileSync(apiJsPath, 'utf8'), 'src/routes/api.js', state);
     scanRouteFile(path.join(ROUTES_DIR, 'index.js'), state);
     return {
         version: SNAPSHOT_VERSION,
