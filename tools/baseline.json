@@ -1,0 +1,1192 @@
+{
+  "id": "baseline-20261021-1430",
+  "version": 1,
+  "generatedAt": "2026-10-21T06:30:44.221Z",
+  "environment": {
+    "node": "v20.18.0",
+    "platform": "win32",
+    "constraints": [
+      "执行沙箱禁止 127.0.0.1 回环连接: 依赖本地 HTTP 服务器(app.listen + got 回环请求)的测试套件在本环境必然失败",
+      "npm run build 整体失败源于前端 vue-tsc 29 个既有类型错误(MaintenanceView/ScrapeView/SyncView), 属重构范围外的存量问题; 后端 tsc 单独成功",
+      "测试状态等价性判定标准: 通过用例集合不缩小 且 失败用例集合不扩大(同样的 32 个环境性失败)"
+    ]
+  },
+  "tests": {
+    "suites": {
+      "total": 29,
+      "passed": 23,
+      "failed": 6
+    },
+    "cases": {
+      "total": 289,
+      "passed": 257,
+      "failed": 32
+    },
+    "passingCaseIds": [
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 1. 配置解析与开关控制 (Configuration & isEnabled) 兼容性：可通过 openai 历史别名透明映射并向下兼容",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 2. 网络代理支持 (Proxy Integration) 当开启 AI 代理服务时，ProxyUtil 应为 ai 与 openai 服务返回代理",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 2. 网络代理支持 (Proxy Integration) 当未开启 AI 代理服务时，ProxyUtil 应返回 undefined",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 3. 连通性测试 (testConnection) 当未填写 API Key 时返回友好错误提示",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 3. 连通性测试 (testConnection) 当未填写 Base URL 时返回友好错误提示",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 3. 连通性测试 (testConnection) 成功响应时正确解析延迟与模型返回值",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 3. 连通性测试 (testConnection) 网络异常或鉴权失败时正确捕获并返回错误信息",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 4. 媒体信息深度解析 (parseMediaInfo) 文本为空时快速校验拦截",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 4. 媒体信息深度解析 (parseMediaInfo) 成功解析复杂防封推文与技术规格（兼容 markdown 代码块格式）",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 4. 媒体信息深度解析 (parseMediaInfo) 当 AI 返回非标准非 JSON 字符串时安全兜底，不崩溃",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 5. cleanTitle 智能纠偏 当 AI 禁用时直接返回原片名",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 5. cleanTitle 智能纠偏 当 AI 启用时通过大模型返回纯净中文官方片名",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 clusterTvSeasonGroups 剧集季组聚类 应根据包含 {tmdb-xxx} 标签的目录树与文件名正确聚类剧集与季",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 clusterTvSeasonGroups 剧集季组聚类 普通无 {tmdb-xxx} 标签但包含第X季或S01E01格式应正确聚合",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 clusterTvSeasonGroups 剧集季组聚类 深层目录结构下应自底向上逆向提取真实剧名，绝不误识别为媒体库或分类目录",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 inspectGroupsWithTmdb 缺集算法联动与分析 本地缺失第 3 集时应准确判定缺集与生成缺失清单",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 inspectGroupsWithTmdb 缺集算法联动与分析 buildShowGroups: 应将同部剧的不同季聚类到唯一的 ShowGroup 下",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 inspectGroupsWithTmdb 缺集算法联动与分析 本地集数与官方集数完全吻合时应判定 complete",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 resolvePathToCatalogId 目录路径逐级解析 根目录或常规ID直接返回",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 resolvePathToCatalogId 目录路径逐级解析 多层路径逐级调用 findFolderByName 匹配",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 resolvePathToCatalogId 目录路径逐级解析 遇到不存在的目录层级返回 null",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 过滤选项与单剧修正 excludeUnreleased 应过滤未播出的分集",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 过滤选项与单剧修正 ignoreSeasonZero 为 true 时应自动跳过第 0 季特别篇",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 discoverSeriesDirectories 剧集主目录自顶向下定界 当根目录直接是单部剧时（包含 Season 目录或视频），应直接定界为单部剧",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 discoverSeriesDirectories 剧集主目录自顶向下定界 当包含二级分类目录时（如 /tv -> 欧美剧 -> 剧集），应准确定界所有子剧集",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 scanSeriesVideoFiles 单剧全量穿透测试 应只深入指定剧集目录递归获取所有视频文件并正确推导季",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 TMDB 手动校准持久化与巡检流水线同步 saveTmdbOverride 应正确持久化并支持各种路径格式精准读取",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 TMDB 手动校准持久化与巡检流水线同步 inspectSingleSeries 应优先锁定手动校准的 TMDB ID，杜绝被错误自动搜索覆盖",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 1. 频道用户名规范化与 HTML 解析 normalizeChannelUsername: 兼容各种格式链接与用户名",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 1. 频道用户名规范化与 HTML 解析 parseTelegramHtml: 正确解析消息卡片、文本、链接及时间",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 2. 139 网盘分享链接与密码嗅探 sniff139Links: 支持 URL 内嵌密码与文本正则提取码",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 2. 139 网盘分享链接与密码嗅探 sniff139Links: 完美兼容 HTML 实体(&nbsp;)与各种非常规密码格式（彻底杜绝 9188 提取码非法错误）",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 2. 139 网盘分享链接与密码嗅探 Cloud139Utils.extractFromShareText: 准确区分纯 URL 与首行为 URL 的多行分享文本",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 3. 前置文本字面黑名单与关键词过滤 filterPostText: 命中文本黑名单时前置拦截（0 网络请求）",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 3. 前置文本字面黑名单与关键词过滤 filterPostText: 包含关键词过滤",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 4. 干扰字符清洗与广告/推广说明过滤 cleanInterferenceChars: 彻底清洗防审查干扰字符",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 4. 干扰字符清洗与广告/推广说明过滤 isAdOrPromoFile: 智能识别广告、教程与推广说明垃圾",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 5. 点分洗版规范与反无脑标 BluRay 仲裁 假 ISO 或无 UDF 原盘结构：剥除虚高 BluRay 标签，防止破坏洗版",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 5. 点分洗版规范与反无脑标 BluRay 仲裁 真蓝光原盘 (UDF 2.50 BDMV)：准许标准输出 BluRay 标签",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 6. 二级分类智能推导与双重黑名单熔断裁决 inferSecondaryCategory: 正确将 TMDB 候选分流至国产剧/日韩剧/动漫等",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 6. 二级分类智能推导与双重黑名单熔断裁决 分类黑名单熔断：若推文未写国产剧但识别出二级分类为国产剧，立即触发熔断",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 7. 整理规则：小文件过滤与忽略关键词 minFileSize 过滤判定：低于阈值的文件应被判定过滤",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 7. 整理规则：小文件过滤与忽略关键词 ignoreKeywords 过滤判定：文件名包含指定关键词时被忽略",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 8. 分类策略：儿童/演唱会/非地区分类与年份目录 classifyChildren 开启时优先归入儿童分类",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 8. 分类策略：儿童/演唱会/非地区分类与年份目录 classifyConcerts 开启时优先归入演唱会分类",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 8. 分类策略：儿童/演唱会/非地区分类与年份目录 classifyRegion 为 false 时直接归入剧集或电影根分类",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 9. 洗版策略：8 级动态序列比较与帧率提取 inferTechnicalTags: 正确提取 60fps 与 120fps 帧率及等级",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 9. 洗版策略：8 级动态序列比较与帧率提取 8 级优先级序列：自定义分辨率优先高于发布组",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 9. 洗版策略：8 级动态序列比较与帧率提取 音频规格与色深比较：TrueHD Atmos 优于 DDP Atmos, 10bit 优于 8bit",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 10. 多版本策略：杜比视界与非杜比视界多版本并存豁免 shouldCoexistDolby: 开启 keepDolbyMultiVersion 时，DV 与普通 SDR/HDR 准予共存豁免",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 11. 有声书与纯音频/非影视资源智能识别与前置拦截 isAudioBookOrNonVideoText: 准确识别演播主播、超长集数、评书名录及特征词",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 11. 有声书与纯音频/非影视资源智能识别与前置拦截 filterPostText: ignoreAudiobooks 默认开启时，0 网络开销前置拦截有声书推文",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 11. 有声书与纯音频/非影视资源智能识别与前置拦截 isAudioBookOrNonVideoShare: 目录层级与纯音频文件嗅探拦截",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 12. 剧集连载更新年与首播年解耦、续集代数剥离与国漫外语剧隔离 probeAndValidateTmdbPreFlight: 智能解耦更新年与首播年，杜绝副标题衍生剧与外语剧抢占主剧",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 1. TMDB 自定义反代地址与专属代理支持 ProxyUtil: 当配置了 tmdb.proxy 时优先返回专属代理",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 1. TMDB 自定义反代地址与专属代理支持 ProxyUtil: 当未配置 tmdb.proxy 时跟随全局代理分流策略",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 1. TMDB 自定义反代地址与专属代理支持 TMDBService: constructor 支持自定义 apiBaseUrl 并自动剥除末尾斜杠",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 2. 整理功能前置门禁：TMDB API 与频道监控均需配置完毕 未配置 TMDB API 时，拦截整理并明确提示",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 2. 整理功能前置门禁：TMDB API 与频道监控均需配置完毕 未配置暂存目录时，拦截整理并明确提示",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 2. 整理功能前置门禁：TMDB API 与频道监控均需配置完毕 未配置监控频道时，拦截整理并明确提示",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 2. 整理功能前置门禁：TMDB API 与频道监控均需配置完毕 当 TMDB API 与 频道监控 均配置完整时，准许放行触发整理",
+      "__tests__/tmdb.prerequisites.test.js :: TMDB 全局设置与整理功能门禁校验测试套件 2. 整理功能前置门禁：TMDB API 与频道监控均需配置完毕 organizeStagingFolder 在前置配置缺失时自动阻断，不抛出异常并返回 unconfigured",
+      "__tests__/mediaScrapeService.test.js :: MediaScrapeService 影视刮削编排与规范整理 (子模块 4-3) planRule (严格识别与安全规划) 目录互斥失败时拒绝执行",
+      "__tests__/mediaScrapeService.test.js :: MediaScrapeService 影视刮削编排与规范整理 (子模块 4-3) planRule (严格识别与安全规划) Tier A 硬证据命中自动放行，存疑文件保持 pending_review",
+      "__tests__/mediaScrapeService.test.js :: MediaScrapeService 影视刮削编排与规范整理 (子模块 4-3) executePlan (WAL 事务落盘与搬移) 执行整理：写前日志、建立层级、搬移改名并标记完成",
+      "__tests__/taskNamingService.test.js :: TaskNamingService parseMediaFileName 应提取剧集与媒体信息",
+      "__tests__/taskNamingService.test.js :: TaskNamingService parseMediaFileName 仅集号（无季号）应推断第1季",
+      "__tests__/taskNamingService.test.js :: TaskNamingService parseMediaFileName 中文第N集应识别为剧集",
+      "__tests__/taskNamingService.test.js :: TaskNamingService parseMediaFileName 中文第N话应识别为剧集",
+      "__tests__/taskNamingService.test.js :: TaskNamingService parseMediaFileName 带年份提取",
+      "__tests__/taskNamingService.test.js :: TaskNamingService parseMediaFileName Part 模式提取",
+      "__tests__/taskNamingService.test.js :: TaskNamingService parseMediaFileName 无任何匹配时 title 回退到文件名",
+      "__tests__/taskNamingService.test.js :: TaskNamingService renderJinjaTemplate 成功与失败分支",
+      "__tests__/taskNamingService.test.js :: TaskNamingService sanitizeFileName 与 generateFileName",
+      "__tests__/taskNamingService.test.js :: TaskNamingService generateFileName season/episode 缺失时使用默认值",
+      "__tests__/taskNamingService.test.js :: TaskNamingService generateFileName {sn}/{en} 数字格式",
+      "__tests__/taskNamingService.test.js :: TaskNamingService RecognitionEngine 强化与自然语法边界 (模块 2-2) parseChineseNumber 纯函数支持 0~999 阿拉伯与中文数字",
+      "__tests__/taskNamingService.test.js :: TaskNamingService RecognitionEngine 强化与自然语法边界 (模块 2-2) 多季复合命名显式识别与季推断标记对齐",
+      "__tests__/taskNamingService.test.js :: TaskNamingService RecognitionEngine 强化与自然语法边界 (模块 2-2) 铁律 6：汉语自然语法边界防护，绝不误伤片名中的数字与汉字",
+      "__tests__/taskNamingService.test.js :: TaskNamingService RecognitionEngine 强化与自然语法边界 (模块 2-2) 技术规格推断：DTS:X、Opus 与 IMAX Enhanced 识别",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) clusterFiles: 应正确聚合多集媒体并提取标题与季号",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) clusterFiles: 同名但不同 TMDB ID 或不同年份的剧集（如凡人修仙传 2020 动漫 vs 2025 真人剧）必须严格隔离分组",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) buildPreview: 《仙逆》160/161/162 三集应分别规划为 E160/E161/E162，绝不误触洗版置换或删除",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) execute: 驱动执行时应执行批量移动、重命名并逆序修剪空源目录",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) execute: 整理完成后应自底向上逆序修剪被搬空的源目录",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) execute: 目标库已有同集旧版(1080P)且新版(4K)质量更优时，应触发洗版置换并将旧版移入回收站",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) execute: 目标库已有同集更高画质(4K)且新入库为较低规格(720P)时，应触发洗版保护跳过新入库",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) execute: 目标库已有完全同名文件时，应淘汰暂存区重复副本移入回收站",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) clusterFiles: 139网盘转存时间戳目录 (如 璀璨之城_20261014_100005) 应精准剥离时间戳并聚类出纯净片名",
+      "__tests__/tmdb.organize.service.test.js :: TmdbOrganizeService 核心引擎对齐测试 (继承自 139 助手 2.8.x) buildPreview: 应支持官方单集标题 (episodeTitle) 规范点分注入与 2160p 规格对齐",
+      "__tests__/cloud139TaskProcessor.test.js :: cloud139TaskProcessor regression catalogMap 为普通对象时不应触发 object is not iterable",
+      "__tests__/cloud139TaskProcessor.test.js :: cloud139TaskProcessor regression 根目录磁盘列取失败时应降级DB去重，且fileId规范化后可命中",
+      "__tests__/cloud139TaskProcessor.test.js :: cloud139TaskProcessor regression 根目录转存记录偏差时应触发DB补记",
+      "__tests__/cloud139TaskProcessor.test.js :: cloud139TaskProcessor regression 根目录无新文件时应将processing任务恢复为pending",
+      "__tests__/cloud139TaskProcessor.test.js :: cloud139TaskProcessor regression 认证失败时应暂停账号并保持任务pending不重试",
+      "__tests__/scheduler.maintenance.test.js :: SchedulerService 资产治理与定时维护调度 (模块 3-2) validateTaskScheduleSettings 未配置时返回默认 dedupCron",
+      "__tests__/scheduler.maintenance.test.js :: SchedulerService 资产治理与定时维护调度 (模块 3-2) validateTaskScheduleSettings 5位 Cron 表达式自动标准化为6位",
+      "__tests__/scheduler.maintenance.test.js :: SchedulerService 资产治理与定时维护调度 (模块 3-2) validateTaskScheduleSettings 非法 Cron 抛错拦截",
+      "__tests__/scheduler.maintenance.test.js :: SchedulerService 资产治理与定时维护调度 (模块 3-2) applySystemJobs (多版本资产去重调度注册与执行) 未启用 enableDedupCron 时，不注册定时任务",
+      "__tests__/scheduler.maintenance.test.js :: SchedulerService 资产治理与定时维护调度 (模块 3-2) applySystemJobs (多版本资产去重调度注册与执行) 启用 enableDedupCron 时，成功注册定时任务",
+      "__tests__/scheduler.maintenance.test.js :: SchedulerService 资产治理与定时维护调度 (模块 3-2) applySystemJobs (多版本资产去重调度注册与执行) 执行定时任务：扫描、自动移入回收站并发送通知闭环",
+      "__tests__/strmService.organized.test.js :: StrmService 工业级 STRM 生成测试套件 (ttd 技术规范) direct302 模式：应按整理后结构生成 .strm 并写入原生 302 直链",
+      "__tests__/strmService.organized.test.js :: StrmService 工业级 STRM 生成测试套件 (ttd 技术规范) custom 模式：应使用 AList / WebDAV 挂载前缀拼接完整播放路径",
+      "__tests__/strmService.organized.test.js :: StrmService 工业级 STRM 生成测试套件 (ttd 技术规范) 已存在且 overwrite=false 时应跳过写入",
+      "__tests__/strmService.organized.test.js :: StrmService 工业级 STRM 生成测试套件 (ttd 技术规范) 非媒体文件（如 .nfo, .txt）应安全跳过",
+      "__tests__/webhookService.test.js :: WebhookService 静态工具与核心算法 generateToken 应生成 32 位 Hex 字符串",
+      "__tests__/webhookService.test.js :: WebhookService 静态工具与核心算法 verifyToken: 空预期返回 true，匹配返回 true，不匹配返回 false",
+      "__tests__/webhookService.test.js :: WebhookService 静态工具与核心算法 mapEmbyPathToCloudPath: 正确剥离挂载前缀与 .strm 后缀",
+      "__tests__/webhookService.test.js :: WebhookService 静态工具与核心算法 isProtectedPath: 根目录与白名单保护",
+      "__tests__/webhookService.test.js :: WebhookService 静态工具与核心算法 parseEmbyPayload: 自适应 JSON 对象与 multipart data 字符串",
+      "__tests__/webhookService.test.js :: WebhookService 出站通知 (Outbound Webhook) 未启用或无 URL 时应跳过",
+      "__tests__/webhookService.test.js :: WebhookService 出站通知 (Outbound Webhook) 启用时应正确组装 SmartStrm 格式并发送请求",
+      "__tests__/webhookService.test.js :: WebhookService 出站通知 (Outbound Webhook) 防抖机制：短时间内重复调用同一任务路径应跳过",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) 未启用入站 Webhook 时应返回 403",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) Token 错误时应返回 401",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) 连通性测试事件 system.notificationtest 应返回 200",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) 删除受保护白名单路径时应熔断并返回 403",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) 有效删除事件且匹配任务时应触发同步删除",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) 目录穿越恶意路径应被拦截",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) 搜索关键词过短时应避免模糊误删",
+      "__tests__/webhookService.test.js :: WebhookService 入站通知 (Inbound Webhook) 单集文件删除应精准匹配转存记录并移入回收站",
+      "__tests__/task.autoRename.integration.test.js :: TaskService.autoRename integration Season 2 + 第X集 全流程：应补全剧名并将推断季号改为 S02",
+      "__tests__/task.autoRename.integration.test.js :: TaskService.autoRename integration 第2季 / S02 等常见季命名应正确识别季号并补全",
+      "__tests__/task.autoRename.integration.test.js :: TaskService.autoRename integration 仅有 Season 2/S02 且无剧名时，不应把季标识当作剧名补全",
+      "__tests__/task.autoRename.integration.test.js :: TaskService.autoRename integration 缺少关键剧集信息（如中文大写数字集号）时，不应触发剧名补全",
+      "__tests__/telegramBot.maintenance.test.js :: TelegramBotService 资产治理与交互式运维命令闭环 (模块 3-1) handleScanDedup (多版本资产去重巡检) 未发现多版本冗余资产时输出健康提示",
+      "__tests__/telegramBot.maintenance.test.js :: TelegramBotService 资产治理与交互式运维命令闭环 (模块 3-1) handleScanDedup (多版本资产去重巡检) 发现多版本资产时输出报告并提供内嵌清理按钮",
+      "__tests__/telegramBot.maintenance.test.js :: TelegramBotService 资产治理与交互式运维命令闭环 (模块 3-1) handleCleanDedup (多版本资产一键清理) 消费上一轮 _lastDedupPlan 执行清理并输出释放报告",
+      "__tests__/telegramBot.maintenance.test.js :: TelegramBotService 资产治理与交互式运维命令闭环 (模块 3-1) handleScanBanned (违规巡检携带内嵌清理按钮) 发现违规文件时携带 m_cb 立即清理按钮",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) MediaDriveAdapter 目录互斥隔离防错校验 空输入校验失败",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) MediaDriveAdapter 目录互斥隔离防错校验 源目录与目标目录相同一票熔断",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) MediaDriveAdapter 目录互斥隔离防错校验 源路径与目标路径完全相同一票熔断",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) MediaDriveAdapter 目录互斥隔离防错校验 目标目录为源目录的子目录一票熔断",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) MediaDriveAdapter 目录互斥隔离防错校验 合法独立的源与目标目录校验通过",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) Cloud139DriveAdapter 驱动调用与映射 listAll 正确映射统一文件与目录格式",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) Cloud139DriveAdapter 驱动调用与映射 ensureDir 幂等创建目录：不存在时创建",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) Cloud139DriveAdapter 驱动调用与映射 ensureDir 幂等创建目录：已存在时直接复用 ID",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) Cloud139DriveAdapter 驱动调用与映射 rename 与 batchMove 透传底层接口",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) OpenListDriveAdapter 驱动调用与映射 listAll 正确拼装完整路径",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) OpenListDriveAdapter 驱动调用与映射 batchMove 聚合相同源目录的批量搬移",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) ScrapeJournalService WAL 操作日志与 LIFO 原子撤回 createBatch 与 recordOperations 写前记录",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) ScrapeJournalService WAL 操作日志与 LIFO 原子撤回 revertRecord: 逆向 LIFO 先还原名再跨目录搬回源目录",
+      "__tests__/scrapeJournal.adapter.test.js :: 影视刮削驱动抽象与 WAL 逆向撤回引擎 (子模块 4-2) ScrapeJournalService WAL 操作日志与 LIFO 原子撤回 saveBinding 与 findBinding 终身自愈记忆持久化",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine 标签提取与基础工具 extractTmdbIdTag: 从文件名与路径提取 TMDB ID",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine 标签提取与基础工具 extractSequelNum: 准确提取数字、罗马数字与中文代数",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine 标签提取与基础工具 extractConcertDate: 准确提取演出公演日期",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine 标签提取与基础工具 getAliases: 通用经典与热门动漫别名矩阵",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine.scoreTmdbCandidate 打分器机制 标题完全匹配与年份契合获得高分",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine.scoreTmdbCandidate 打分器机制 续集代数冲突一票否决 (-500)",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine.scoreTmdbCandidate 打分器机制 年份相差超过 1 年一票否决 (-500)",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine.chooseTmdbCandidate 严格择优与 Translations 证据链 别名矩阵直接命中放行",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine.chooseTmdbCandidate 严格择优与 Translations 证据链 跨地区 Translations 官方证据链复核通过 (港/台/陆多译本对照)",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) RecognitionEngine.chooseTmdbCandidate 严格择优与 Translations 证据链 无年份同名多年份作品熔断拦截 (防止盲目猜选)",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) TMDBService.getTranslations 接口解析与缓存机制 getTranslations 正确解析多区域语言并缓存",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) TMDB 满血对齐增强特性（ID 直查、整季、五级降级防漏链） TMDBService.parseTmdbLookupQuery: 准确解析各种显式 TMDB ID 与纯数字",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) TMDB 满血对齐增强特性（ID 直查、整季、五级降级防漏链） RecognitionEngine.toTraditional: 正确实现简繁对偶互转",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) TMDB 满血对齐增强特性（ID 直查、整季、五级降级防漏链） searchCandidates: 纯数字或显式 ID 直查穿透",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) TMDB 满血对齐增强特性（ID 直查、整季、五级降级防漏链） searchCandidates: 停用词/修饰词安全过滤返回空",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) TMDB 满血对齐增强特性（ID 直查、整季、五级降级防漏链） searchCandidates: 五级降级链（年份剥离、类型交叉与简繁对偶重试）",
+      "__tests__/tmdb.translations.test.js :: TMDB 官方多区域 Translations 证据链与跨地区对照识别 (子模块 4-1) TMDB 满血对齐增强特性（ID 直查、整季、五级降级防漏链） getSeasonDetails: 成功获取整季剧集列表并缓存",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) buildMediaAssetKey (资产指纹提取) 非视频后缀或无效输入返回 null",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) buildMediaAssetKey (资产指纹提取) 剧集准确提取标准化季集指纹 (SxxEyy)",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) buildMediaAssetKey (资产指纹提取) 电影提取年份指纹或 movie 兜底指纹",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) analyzeDuplicates (聚类与 5 级策略智能择优) 全为单版本文件时，duplicateGroups 为空",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) analyzeDuplicates (聚类与 5 级策略智能择优) 同剧同集多版本：根据 Remux + 分辨率策略精准推选 Keeper",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) analyzeDuplicates (聚类与 5 级策略智能择优) 电影多版本：发布组优先级策略优选指定压制组",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) executePrune (安全清理闭环与白名单拦截) dryRun 为 true 时不调用网盘删除接口",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) executePrune (安全清理闭环与白名单拦截) 受保护白名单路径中的淘汰文件必须被拦截跳过",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) executePrune (安全清理闭环与白名单拦截) 正常清理成功时同步清理 TransferredFile 记录",
+      "__tests__/assetDeduplicationService.test.js :: AssetDeduplicationService (0 刮削影视资产多版本去重与择优) executePrune (安全清理闭环与白名单拦截) 网盘删除接口失败时正确记录 failedCount",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 1. 标准化归一化函数测试 (normalize functions) normalizeResolution: 4K/2160p/1080p/720p/480p 与隔行扫描 (严禁返回未归一化的 4K)",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 1. 标准化归一化函数测试 (normalize functions) normalizeVideoCodec: H.265 / H.264 / AV1 / VP9",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 1. 标准化归一化函数测试 (normalize functions) normalizeAudioCodec: DDP Atmos 5.1 / TrueHD Atmos 7.1 / DTS-HD MA / AAC",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 1. 标准化归一化函数测试 (normalize functions) normalizeDynamicRange: DV / HDR10+ / HDR10 / HLG / SDR",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 2. 真实样本防回归断言 (幻视任务 DoVi & 4K 归一化 & WEB-DL 去重 & 声道保全) DoVi 规范识别为 DV，DDP 5.1 Atmos / DDP.Atmos.5.1 保留声道并统一规范为 DDP Atmos 5.1 (文件名点分 DDP.Atmos.5.1)",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 2. 真实样本防回归断言 (幻视任务 DoVi & 4K 归一化 & WEB-DL 去重 & 声道保全) 02 4K.国&粤.mp4 规范归一化为 2160p，绝不输出裸 4K",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 3. 原生与分组探测 (probeGroupFiles & Memory Cache) probeGroupFiles: 逐集独立嗅探，各集保持自身真实规格，失败集绝不被同组代表污染",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 3. 原生与分组探测 (probeGroupFiles & Memory Cache) probeFile: 内存缓存命中",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 4. 洗版仲裁与探针数据联动 (Quality Washing Integration) 真实探针元数据胜过虚假文件名：720p 伪装 4K 在洗版中被真实 1080p 淘汰",
+      "__tests__/mediaProbeService.test.js :: MediaProbeService 139直链原生Range媒体探针测试套件 (零外部依赖 & 100% 对齐 139 助手) 4. 洗版仲裁与探针数据联动 (Quality Washing Integration) 杜比视界洗版豁免：DV 版本与 SDR 版本并存豁免",
+      "__tests__/taskErrorService.test.js :: TaskErrorService recordError: 仓库不存在时直接返回",
+      "__tests__/taskErrorService.test.js :: TaskErrorService recordError: 正常保存错误记录",
+      "__tests__/taskErrorService.test.js :: TaskErrorService recordError: 保存失败时吞掉异常",
+      "__tests__/taskErrorService.test.js :: TaskErrorService recordError: AUTH_FAILED 通知24小时内去重",
+      "__tests__/taskErrorService.test.js :: TaskErrorService getTaskErrors: 仓库不存在返回空数组",
+      "__tests__/taskErrorService.test.js :: TaskErrorService getTaskErrors: 带过滤条件查询",
+      "__tests__/taskErrorService.test.js :: TaskErrorService getTaskErrors: 查询失败返回空数组",
+      "__tests__/taskErrorService.test.js :: TaskErrorService getLastError: 无记录返回 null，有记录返回首项",
+      "__tests__/taskErrorService.test.js :: TaskErrorService getErrorStats: 正常统计与异常分支",
+      "__tests__/taskErrorService.test.js :: TaskErrorService shouldRetry: 支持记录对象与 Error 对象",
+      "__tests__/taskErrorService.test.js :: TaskErrorService getRetryDelay: 覆盖映射、回退与指数退避",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: 空错误返回 UNKNOWN_ERROR",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: apiCode 匹配",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: 认证失败 apiCode 匹配 AUTH_FAILED",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: http status 匹配",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: 401/403 状态码映射 AUTH_FAILED",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: message pattern 匹配 NETWORK_ERROR",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: legacy fatal 兼容分支",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier classify: 默认未知错误分支",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier enhance: 应写入增强字段",
+      "__tests__/errorClassifier.test.js :: ErrorClassifier createClassifiedError: 应继承关键字段并合并 context",
+      "__tests__/cloud139.listAllDiskFiles.test.js :: Cloud139Service listAllDiskFiles 分页游标重复时应安全终止并返回已收集文件",
+      "__tests__/cloud139.listAllDiskFiles.test.js :: Cloud139Service listAllDiskFiles 连续重复页达到阈值时应终止翻页",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector Inspector 6层违规判定探针 合法正常文件应返回 null",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector Inspector 6层违规判定探针 层级1: 命中黑名单哈希应定性为违规",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector Inspector 6层违规判定探针 层级2: 缩略图被替换为 hw-warning 等警告占位图应定性为违规",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector Inspector 6层违规判定探针 层级3: 审核结论字段 auditResult=3 或 \"3\" 应定性为违规",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector Inspector 6层违规判定探针 层级4: 审核文本包含违规、屏蔽等关键词应定性为违规",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector Inspector 6层违规判定探针 层级5: 服务端布尔封禁标记 isBanned=true 应定性为违规",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector Inspector 6层违规判定探针 层级6: 深度递归属性包含警告 URL 兜底命中",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 scanBannedFiles: 递归扫描并准确定位违规文件",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 scanBannedFiles (scope): 视频模式仅扫描视频，全类型模式扫描所有格式",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 scanBannedFiles (excludePaths & ignoredIds): 自动跳过隔离区目录与白名单项",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 verifyIdsGone: 复查已删除与残留文件",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 cleanBannedFiles: 分批清理并正确返回释放容量",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 sweepEmptyFolders: 安全白名单保护与后序纯空目录修剪",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 isCompanionFile: 准确识别同基名伴生文件与字幕",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 ensureFolderPath: 目录存在时复用，不存在时自动创建",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 cleanBannedFiles (quarantine): 支持隔离模式移动文件",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 cleanBannedFiles (cascadeCompanion): 自动级联清理同基名伴生文件",
+      "__tests__/cloudMaintenanceService.test.js :: CloudMaintenanceService & Inspector CloudMaintenanceService 业务操作 cleanBannedFiles (tombstones): 自动从文件名及路径解析剧集墓碑记录",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.detectAndLocateMediaStream 边界情况：reader 返回空或小于4字节时应返回 null",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.detectAndLocateMediaStream 假 ISO 识别：MKV 伪装",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.detectAndLocateMediaStream 假 ISO 识别：MP4 伪装",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.detectAndLocateMediaStream 假 ISO 识别：TS 流分段伪装",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.detectAndLocateMediaStream 非 ISO 后缀输入时：直接作为常规媒体流返回",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.detectAndLocateMediaStream 真 UDF 2.50 蓝光 ISO 结构定位 .m2ts 主流",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.detectAndLocateMediaStream reader 异常时安全捕获并返回 null，不抛出异常",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.createHttpRangeReader size <= 0 时直接返回空 Buffer",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment IsoProbeService.createHttpRangeReader 正常 Range 读取：正确构造 HTTP 请求头",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment RecognitionEngine 与 streamMeta 融合对齐 假 ISO 元数据融合：应继承 realExt 与 container",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment RecognitionEngine 与 streamMeta 融合对齐 蓝光原盘元数据融合：应继承 isBluRay 与 M2TS container",
+      "__tests__/isoProbeService.test.js :: IsoProbeService & RecognitionEngine Stream Alignment RecognitionEngine 与 streamMeta 融合对齐 DVD 原盘元数据融合：应继承 isDvd、VOB container 与 480p 默认分辨率",
+      "__tests__/organizeProtectionService.test.js :: OrganizeProtectionService 熔断与冷却保护测试套件 新文件未达到重试上限时不应触发冷却",
+      "__tests__/organizeProtectionService.test.js :: OrganizeProtectionService 熔断与冷却保护测试套件 连续未识别达到 3 次时应触发熔断进入冷却保护期",
+      "__tests__/organizeProtectionService.test.js :: OrganizeProtectionService 熔断与冷却保护测试套件 手动强制整理 (force: true) 应忽略冷却保护",
+      "__tests__/organizeProtectionService.test.js :: OrganizeProtectionService 熔断与冷却保护测试套件 文件成功整理归档后应调用 markResolved 清除冷却追踪",
+      "__tests__/organizeProtectionService.test.js :: OrganizeProtectionService 熔断与冷却保护测试套件 clearAll 应重置全部追踪条目",
+      "__tests__/checkpointManager.test.js :: CheckpointManager createCheckpoint 应按默认值创建",
+      "__tests__/checkpointManager.test.js :: CheckpointManager saveCheckpoint 成功时应更新任务字段并保存",
+      "__tests__/checkpointManager.test.js :: CheckpointManager saveCheckpoint 失败时不抛错",
+      "__tests__/checkpointManager.test.js :: CheckpointManager loadCheckpoint 对空/非法/版本不兼容返回 null",
+      "__tests__/checkpointManager.test.js :: CheckpointManager loadCheckpoint 成功返回对象",
+      "__tests__/checkpointManager.test.js :: CheckpointManager clearCheckpoint 成功与失败分支",
+      "__tests__/checkpointManager.test.js :: CheckpointManager isFolderProcessed 与 updateProgress",
+      "__tests__/checkpointManager.test.js :: CheckpointManager shouldResume 覆盖状态、时间与有效性分支",
+      "__tests__/checkpointManager.test.js :: CheckpointManager getProgressPercentage 计算进度并处理边界",
+      "__tests__/pansouService.test.js :: PansouService extractMobileLinks: 边界输入与去重",
+      "__tests__/pansouService.test.js :: PansouService extractMobileLinks: 解析 merged_by_type 与 results 结构并过滤非移动云盘",
+      "__tests__/pansouService.test.js :: PansouService search139Resources: 正常请求与 Header 携带 API Key",
+      "__tests__/pansouService.test.js :: PansouService search139Resources: 网络异常时安全降级返回空数组",
+      "__tests__/taskParserService.test.js :: TaskParserService extractCloud139ShareText / parseCloud139ShareLink 代理方法",
+      "__tests__/taskParserService.test.js :: TaskParserService extractCloud139ShareText 返回 null 时传播 null",
+      "__tests__/taskParserService.test.js :: TaskParserService buildCloud139ShareFolders: 空结果应报错",
+      "__tests__/taskParserService.test.js :: TaskParserService buildCloud139ShareFolders: 单子目录提升与普通目录",
+      "__tests__/taskParserService.test.js :: TaskParserService buildCloud139ShareFolders: 根目录有文件但无子目录时返回根节点",
+      "__tests__/taskParserService.test.js :: TaskParserService buildCloud139ShareFolders: listShareDir 抛出异常时应向上传播"
+    ],
+    "failingCaseIds": [
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 1. 配置解析与开关控制 (Configuration & isEnabled) 当 ai.enable 为 false 时 isEnabled 应返回 false",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 1. 配置解析与开关控制 (Configuration & isEnabled) 当 ai.enable 为 true 但无 apiKey 时 isEnabled 应返回 false",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 1. 配置解析与开关控制 (Configuration & isEnabled) 当 ai.enable 为 true 且具备 apiKey 时 isEnabled 应返回 true",
+      "__tests__/aiService.test.js :: AI 智能识别与深度纠偏服务 (AIService) 测试套件 4. 媒体信息深度解析 (parseMediaInfo) 服务禁用时快速拦截",
+      "__tests__/episodeInspectionService.test.js :: EpisodeInspectionService 剧集缺集检测服务测试套件 过滤选项与单剧修正 onlyEnded 完结过滤与多季/常青综艺判定模型",
+      "__tests__/channel.monitor.test.js :: TgChannelMonitorService — Telegram 频道监控与媒体库整理测试套件 12. 剧集连载更新年与首播年解耦、续集代数剥离与国漫外语剧隔离 extractMediaInfoFromPost: 完美提取连载季数、代数数字并剥离纯净片名",
+      "__tests__/api.channel.test.js :: Telegram 频道监控 REST API 端点 GET /api/channel/global-config: 应正确返回全局频道配置包含 ignoreAudiobooks 字段",
+      "__tests__/api.channel.test.js :: Telegram 频道监控 REST API 端点 POST /api/channel/global-config: 保存配置时不应因 ignoreAudiobooks 抛出 ReferenceError",
+      "__tests__/api.channel.test.js :: Telegram 频道监控 REST API 端点 POST /api/channel/global-config: 当 payload 未显式提供 ignoreAudiobooks 时安全回退",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) GET /api/scrape/overview (归档全景大盘统计) 应该成功返回归档指标与最近媒体记录",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) POST /api/scrape/sandbox-preview (0 物理写入内存沙箱推演) 缺少 fileName 应返回 400",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) POST /api/scrape/sandbox-preview (0 物理写入内存沙箱推演) 有效文件名应计算标准点分物理新名称与目标层级",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) POST /api/scrape/manual-organize (手动整理与物理归档) 缺少必填字段应拒绝 (400)",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) POST /api/scrape/manual-organize (手动整理与物理归档) 源目录与目标目录相同一票熔断 (400)",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) POST /api/scrape/manual-organize (手动整理与物理归档) 参数合法应成功写入 WAL 并移动重命名",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) 139 网盘穿梭机文件管理接口 GET /api/cloud139/files 应列出目录及解析规格",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) 139 网盘穿梭机文件管理接口 POST /api/cloud139/rename 应重命名文件",
+      "__tests__/scrapeSandbox.test.js :: 全自动归档大盘与手动整理沙箱 REST API (子模块 4 & 5) 139 网盘穿梭机文件管理接口 POST /api/cloud139/trash 应移入回收站",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET & POST /api/scrape/rules (规则查询与互斥校验) GET /api/scrape/rules 应返回默认配置",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET & POST /api/scrape/rules (规则查询与互斥校验) POST /api/scrape/rules: 缺少规则名称应拒绝 (400)",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET & POST /api/scrape/rules (规则查询与互斥校验) POST /api/scrape/rules: 源目录与目标目录相同一票熔断 (400)",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET & POST /api/scrape/rules (规则查询与互斥校验) POST /api/scrape/rules: 目标目录位于源目录内部一票熔断 (400)",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET & POST /api/scrape/rules (规则查询与互斥校验) POST /api/scrape/rules: 合法配置应成功更新 ConfigService (200)",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) POST /api/scrape/plan & /api/scrape/apply (规划预演与执行) POST /api/scrape/plan: 缺少 rule 且未命中 ruleId 时返回 400",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) POST /api/scrape/plan & /api/scrape/apply (规划预演与执行) POST /api/scrape/plan: 有效规则调用 MediaScrapeService.planRule",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) POST /api/scrape/plan & /api/scrape/apply (规划预演与执行) POST /api/scrape/apply: 执行有效整理计划",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET /api/scrape/journal & POST /api/scrape/revert/* (流水账与撤回) GET /api/scrape/journal: 返回批次与流水账列表",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET /api/scrape/journal & POST /api/scrape/revert/* (流水账与撤回) POST /api/scrape/revert/:batchId: 触发整批撤回",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) GET /api/scrape/journal & POST /api/scrape/revert/* (流水账与撤回) POST /api/scrape/record/revert/:recordId: 触发单条记录撤回",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) 待处理箱与纠偏记忆 /api/scrape/inbox & binding/resolve GET /api/scrape/inbox: 查询 pending_review 待办记录",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) 待处理箱与纠偏记忆 /api/scrape/inbox & binding/resolve POST /api/scrape/binding/resolve: 持久化自愈记忆",
+      "__tests__/api.scrape.test.js :: 影视刮削 REST API 端点 (子模块 4-4) 待处理箱与纠偏记忆 /api/scrape/inbox & binding/resolve POST /api/scrape/search-candidates: 检索 TMDB 候选"
+    ],
+    "failingSuitesNote": "失败套件: aiService / api.channel / api.scrape / channel.monitor / episodeInspectionService / scrapeSandbox (均依赖本地回环 HTTP)"
+  },
+  "coverage": {
+    "statements": 93.77,
+    "branches": 82.97,
+    "functions": 100,
+    "lines": 95.18,
+    "collectCoverageFromNote": "当前 jest.config.js collectCoverageFrom 仅覆盖 5 个 service 文件, P1 任务 3.4 将扩展统计范围"
+  },
+  "build": {
+    "npmRunBuild": {
+      "runsMs": [
+        46048,
+        45394,
+        44452
+      ],
+      "medianMs": 45394,
+      "status": "fail-existing",
+      "note": "前端 vue-tsc 既有 29 个类型错误导致整体失败(重构范围外); 后端部分验证关口为 npx tsc"
+    },
+    "backendTsc": {
+      "status": "pass",
+      "durationMs": 19622
+    }
+  },
+  "testTiming": {
+    "runsMs": [
+      124512,
+      128469,
+      129671
+    ],
+    "medianMs": 128469,
+    "stableResult": "3 次运行均为 257 passed / 32 failed (环境性失败稳定复现)"
+  },
+  "endpointSnapshot": {
+    "version": 1,
+    "generatedAt": "2026-10-21T05:57:50.447Z",
+    "lineLimit": 1500,
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "domain": "auth",
+        "sourceFile": "src/routes/auth.js",
+        "order": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "domain": "auth",
+        "sourceFile": "src/routes/auth.js",
+        "order": 2
+      },
+      {
+        "method": "GET",
+        "path": "/logout",
+        "domain": "auth",
+        "sourceFile": "src/routes/auth.js",
+        "order": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/auth/session",
+        "domain": "auth",
+        "sourceFile": "src/routes/auth.js",
+        "order": 4
+      },
+      {
+        "method": "GET",
+        "path": "/api/auth/wall-posters",
+        "domain": "auth",
+        "sourceFile": "src/routes/auth.js",
+        "order": 5
+      },
+      {
+        "method": "GET",
+        "path": "/api/accounts",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api.js",
+        "order": 6
+      },
+      {
+        "method": "POST",
+        "path": "/api/accounts",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api.js",
+        "order": 7
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/accounts/recycle",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api.js",
+        "order": 8
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/accounts/:id",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api.js",
+        "order": 9
+      },
+      {
+        "method": "PUT",
+        "path": "/api/accounts/:id/alias",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api.js",
+        "order": 10
+      },
+      {
+        "method": "PUT",
+        "path": "/api/accounts/:id/default",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api.js",
+        "order": 11
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/accounts/:id/default",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api.js",
+        "order": 12
+      },
+      {
+        "method": "GET",
+        "path": "/api/tasks",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 13
+      },
+      {
+        "method": "POST",
+        "path": "/api/tasks",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 14
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/tasks/batch",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 15
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/tasks/files",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 16
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/tasks/:id",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 17
+      },
+      {
+        "method": "PUT",
+        "path": "/api/tasks/:id",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 18
+      },
+      {
+        "method": "POST",
+        "path": "/api/tasks/:id/execute",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 19
+      },
+      {
+        "method": "GET",
+        "path": "/api/folders/:accountId",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 20
+      },
+      {
+        "method": "GET",
+        "path": "/api/accounts/:id/files",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 21
+      },
+      {
+        "method": "POST",
+        "path": "/api/folders/mkdir",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 22
+      },
+      {
+        "method": "GET",
+        "path": "/api/share/folders/:accountId",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 23
+      },
+      {
+        "method": "GET",
+        "path": "/api/folder/files",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 24
+      },
+      {
+        "method": "POST",
+        "path": "/api/files/rename",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 25
+      },
+      {
+        "method": "POST",
+        "path": "/api/jinja2/preview",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 26
+      },
+      {
+        "method": "POST",
+        "path": "/api/tasks/executeAll",
+        "domain": "tasks",
+        "sourceFile": "src/routes/api.js",
+        "order": 27
+      },
+      {
+        "method": "GET",
+        "path": "/api/health",
+        "domain": "system",
+        "sourceFile": "src/routes/api.js",
+        "order": 28
+      },
+      {
+        "method": "GET",
+        "path": "/api/settings",
+        "domain": "settings",
+        "sourceFile": "src/routes/api.js",
+        "order": 29
+      },
+      {
+        "method": "POST",
+        "path": "/api/settings",
+        "domain": "settings",
+        "sourceFile": "src/routes/api.js",
+        "order": 30
+      },
+      {
+        "method": "POST",
+        "path": "/api/settings/test-proxy",
+        "domain": "settings",
+        "sourceFile": "src/routes/api.js",
+        "order": 31
+      },
+      {
+        "method": "POST",
+        "path": "/api/settings/test-telegram",
+        "domain": "settings",
+        "sourceFile": "src/routes/api.js",
+        "order": 32
+      },
+      {
+        "method": "POST",
+        "path": "/api/settings/test-tmdb",
+        "domain": "settings",
+        "sourceFile": "src/routes/api.js",
+        "order": 33
+      },
+      {
+        "method": "POST",
+        "path": "/api/settings/media",
+        "domain": "settings",
+        "sourceFile": "src/routes/api.js",
+        "order": 34
+      },
+      {
+        "method": "GET",
+        "path": "/api/version",
+        "domain": "system",
+        "sourceFile": "src/routes/api.js",
+        "order": 35
+      },
+      {
+        "method": "GET",
+        "path": "/api/system/version",
+        "domain": "system",
+        "sourceFile": "src/routes/api.js",
+        "order": 36
+      },
+      {
+        "method": "GET",
+        "path": "/api/system/capabilities",
+        "domain": "system",
+        "sourceFile": "src/routes/api.js",
+        "order": 37
+      },
+      {
+        "method": "GET",
+        "path": "/api/system/scheduler/status",
+        "domain": "system",
+        "sourceFile": "src/routes/api.js",
+        "order": 38
+      },
+      {
+        "method": "POST",
+        "path": "/api/share/parse",
+        "domain": "favorites",
+        "sourceFile": "src/routes/api.js",
+        "order": 39
+      },
+      {
+        "method": "POST",
+        "path": "/api/saveFavorites",
+        "domain": "favorites",
+        "sourceFile": "src/routes/api.js",
+        "order": 40
+      },
+      {
+        "method": "GET",
+        "path": "/api/favorites/:accountId",
+        "domain": "favorites",
+        "sourceFile": "src/routes/api.js",
+        "order": 41
+      },
+      {
+        "method": "POST",
+        "path": "/api/favorites/add",
+        "domain": "favorites",
+        "sourceFile": "src/routes/api.js",
+        "order": 42
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/favorites/:accountId/:folderId",
+        "domain": "favorites",
+        "sourceFile": "src/routes/api.js",
+        "order": 43
+      },
+      {
+        "method": "POST",
+        "path": "/api/custom-push/test",
+        "domain": "settings",
+        "sourceFile": "src/routes/api.js",
+        "order": 44
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/banned/scan",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 45
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/banned/clean",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 46
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/empty/sweep",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 47
+      },
+      {
+        "method": "GET",
+        "path": "/api/maintenance/jobs",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 48
+      },
+      {
+        "method": "GET",
+        "path": "/api/maintenance/jobs/:id",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 49
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/maintenance/jobs",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 50
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/maintenance/jobs/:id",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 51
+      },
+      {
+        "method": "GET",
+        "path": "/api/maintenance/episodes/missing/status",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 52
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/episodes/missing/scan",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 53
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/episodes/missing/search-tmdb",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 54
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/episodes/missing/match-tmdb",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 55
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/episodes/missing/recheck",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 56
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/episodes/missing/clear",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 57
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/episodes/missing/remove-show",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 58
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/episodes/missing/delete-targets",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 59
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/assets/dedup/scan",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 60
+      },
+      {
+        "method": "POST",
+        "path": "/api/maintenance/assets/dedup/prune",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 61
+      },
+      {
+        "method": "POST",
+        "path": "/api/webhook/emby",
+        "domain": "webhook",
+        "sourceFile": "src/routes/api.js",
+        "order": 62
+      },
+      {
+        "method": "POST",
+        "path": "/api/webhook/test-outbound",
+        "domain": "webhook",
+        "sourceFile": "src/routes/api.js",
+        "order": 63
+      },
+      {
+        "method": "GET",
+        "path": "/api/scrape/rules",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 64
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/rules",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 65
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/plan",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 66
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/apply",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 67
+      },
+      {
+        "method": "GET",
+        "path": "/api/scrape/journal",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 68
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/revert/:batchId",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 69
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/record/revert/:recordId",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 70
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/binding/resolve",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 71
+      },
+      {
+        "method": "GET",
+        "path": "/api/scrape/inbox",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 72
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/search-candidates",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 73
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/run-scheduled",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 74
+      },
+      {
+        "method": "GET",
+        "path": "/api/scrape/overview",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 75
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/scan",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 76
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/preview",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 77
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/probe",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 78
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/execute",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 79
+      },
+      {
+        "method": "GET",
+        "path": "/api/tmdb-organize/history",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 80
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/tmdb-organize/history/:id",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 81
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/history/batch-delete",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 82
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/history/clear-protected",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 83
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/rollback",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 84
+      },
+      {
+        "method": "GET",
+        "path": "/api/strm/stream/:fileId/:filename?",
+        "domain": "strm",
+        "sourceFile": "src/routes/api.js",
+        "order": 85
+      },
+      {
+        "method": "GET",
+        "path": "/api/strm/stream",
+        "domain": "strm",
+        "sourceFile": "src/routes/api.js",
+        "order": 86
+      },
+      {
+        "method": "POST",
+        "path": "/api/strm/generate-organized",
+        "domain": "strm",
+        "sourceFile": "src/routes/api.js",
+        "order": 87
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/sandbox-preview",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 88
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/manual-organize",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 89
+      },
+      {
+        "method": "GET",
+        "path": "/api/cloud139/files",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 90
+      },
+      {
+        "method": "POST",
+        "path": "/api/cloud139/rename",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 91
+      },
+      {
+        "method": "POST",
+        "path": "/api/cloud139/trash",
+        "domain": "files",
+        "sourceFile": "src/routes/api.js",
+        "order": 92
+      },
+      {
+        "method": "GET",
+        "path": "/api/channel-monitors",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 93
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel-monitors",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 94
+      },
+      {
+        "method": "PUT",
+        "path": "/api/channel-monitors/:id",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 95
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/channel-monitors/:id",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 96
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel-monitors/:id/scan",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 97
+      },
+      {
+        "method": "GET",
+        "path": "/api/channel-monitors/history",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 98
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel-monitors/history/:id/retry",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 99
+      },
+      {
+        "method": "GET",
+        "path": "/api/channel/global-config",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 100
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel/global-config",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 101
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel/sync-now",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 102
+      },
+      {
+        "method": "GET",
+        "path": "/api/channel/organize-prerequisites",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 103
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel/organize-now",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 104
+      },
+      {
+        "method": "POST",
+        "path": "/api/ai/test",
+        "domain": "ai",
+        "sourceFile": "src/routes/api.js",
+        "order": 105
+      },
+      {
+        "method": "POST",
+        "path": "/api/ai/parse",
+        "domain": "ai",
+        "sourceFile": "src/routes/api.js",
+        "order": 106
+      },
+      {
+        "method": "GET",
+        "path": "/api/sync/config",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 107
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/config",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 108
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/pan123/test",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 109
+      },
+      {
+        "method": "GET",
+        "path": "/api/sync/pan123/folders",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 110
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/pan123/mkdir",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 111
+      },
+      {
+        "method": "GET",
+        "path": "/api/sync/pan123/tasks",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 112
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/pan123/tasks/delete",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 113
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/cross-account/scan",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 114
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/cross-account/execute",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 115
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/rapid-links/export",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 116
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/rapid-links/import",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 117
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/offline/push",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 118
+      },
+      {
+        "method": "GET",
+        "path": "*",
+        "domain": "spa",
+        "sourceFile": "src/routes/index.js",
+        "order": 119
+      }
+    ]
+  }
+}
