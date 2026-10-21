@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "baselineId": "baseline-20261021-1430",
+  "lineLimit": 1500,
+  "splitStatusEnum": ["待保障", "保障中", "拆分中", "已完成", "已回滚"],
+  "executionOrder": "P2 路由模块化(api.js) -> P4 服务拆分(按行数升序: TgChannelMonitor -> EpisodeInspection -> TmdbOrganize -> RecognitionEngine)",
+  "targets": [
+    {
+      "filePath": "src/routes/api.js",
+      "currentLines": 3601,
+      "responsibilitySummary": "路由域: 112 个 API 端点单体注册入口, 含顶层工具函数与 8 项 deps 依赖注入",
+      "splitStatus": "待保障",
+      "capabilityDomain": "routing",
+      "subModules": [
+        "src/routes/api/accounts.js",
+        "src/routes/api/tasks.js",
+        "src/routes/api/files.js",
+        "src/routes/api/favorites.js",
+        "src/routes/api/settings.js",
+        "src/routes/api/system.js",
+        "src/routes/api/webhook.js",
+        "src/routes/api/maintenance.js",
+        "src/routes/api/scrape.js",
+        "src/routes/api/tmdbOrganize.js",
+        "src/routes/api/strm.js",
+        "src/routes/api/channel.js",
+        "src/routes/api/sync.js",
+        "src/routes/api/ai.js"
+      ],
+      "facadeAfterSplit": "src/routes/api.js 收敛为纯注册入口门面(约 60 行), registerApiRoutes(app, deps) 签名冻结",
+      "verification": "端点快照比对(tools/snapshot-endpoints.js --compare tools/baseline.json)差异为零"
+    },
+    {
+      "filePath": "src/services/channel/TgChannelMonitorService.js",
+      "currentLines": 1634,
+      "responsibilitySummary": "频道监控域: TG 频道帖子拉取/目录解析/前置门禁(含三级 AI 策略)/转存执行与扫描编排",
+      "splitStatus": "待保障",
+      "capabilityDomain": "channel",
+      "subModules": [
+        "src/services/channel/ChannelPostFetcher.js",
+        "src/services/channel/ChannelFolderResolver.js",
+        "src/services/channel/PreFlightValidator.js",
+        "src/services/channel/ChannelIngestionExecutor.js"
+      ],
+      "facadeAfterSplit": "原文件收敛为扫描编排器(约 500 行), 实例导出形态不变",
+      "verification": "channel.monitor.test.js 零改动通过; structure-metrics 确认 ≤1500 行且无新增循环依赖"
+    },
+    {
+      "filePath": "src/services/EpisodeInspectionService.js",
+      "currentLines": 2015,
+      "responsibilitySummary": "巡检域: TMDB 覆盖记录存取与缺集扫描匹配, 静态类 + 两个 data/ 文件缓存",
+      "splitStatus": "待保障",
+      "capabilityDomain": "episode-inspection",
+      "subModules": [
+        "src/services/episode-inspection/TmdbOverridesStore.js",
+        "src/services/episode-inspection/MissingEpisodeScanner.js"
+      ],
+      "facadeAfterSplit": "原文件收敛为静态门面(约 120 行), 类引用导出形态不变, 异常原样透传",
+      "verification": "episodeInspectionService.test.js 零改动通过; ≤1500 行且无循环依赖"
+    },
+    {
+      "filePath": "src/services/TmdbOrganizeService.js",
+      "currentLines": 3558,
+      "responsibilitySummary": "刮削整理域: 翻译获取/目录扫描/季数据加载/分组刮削/剧集匹配/整理执行/回滚, 8 个公开静态方法",
+      "splitStatus": "待保障",
+      "capabilityDomain": "tmdb-organize",
+      "subModules": [
+        "src/services/tmdb-organize/TranslationProvider.js",
+        "src/services/tmdb-organize/DirectoryScanner.js",
+        "src/services/tmdb-organize/SeasonDataLoader.js",
+        "src/services/tmdb-organize/GroupScraper.js",
+        "src/services/tmdb-organize/EpisodeMatcher.js",
+        "src/services/tmdb-organize/OrganizeExecutor.js",
+        "src/services/tmdb-organize/RollbackService.js"
+      ],
+      "facadeAfterSplit": "原文件收敛为静态门面(约 150 行), 懒加载工厂解耦模式(getCloudMaintenanceService/getScrapeJournalService)保持",
+      "verification": "tmdb.organize.service.test.js 零改动通过; ≤1500 行且无循环依赖"
+    },
+    {
+      "filePath": "src/services/RecognitionEngine.js",
+      "currentLines": 3800,
+      "responsibilitySummary": "识别引擎域: 国家码注册/标题分析/token 清洗/集数季解析(中文数字与上下集映射)/TMDB 候选评分/规范命名渲染/目录分类",
+      "splitStatus": "待保障",
+      "capabilityDomain": "recognition",
+      "subModules": [
+        "src/services/recognition/CountryRegistry.js",
+        "src/services/recognition/TitleAnalyzer.js",
+        "src/services/recognition/EpisodeNumberParser.js",
+        "src/services/recognition/TmdbCandidateScorer.js",
+        "src/services/recognition/NamingTemplateRenderer.js",
+        "src/services/recognition/DirectoryClassifier.js"
+      ],
+      "facadeAfterSplit": "原文件收敛为编排门面(约 200 行), 类引用导出形态不变, 静态与实例成员全部经委托保持可用",
+      "verification": "recognition.engine.test.js 与 channel.monitor.test.js 静态方法断言零改动通过; ≤1500 行且无循环依赖"
+    }
+  ]
+}
