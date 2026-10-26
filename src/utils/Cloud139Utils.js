@@ -30,7 +30,10 @@ class Cloud139Utils {
             throw new Error('无效的分享链接');
         }
 
-        const trimmed = input.trim();
+        let trimmed = input.trim();
+        if (trimmed.startsWith('/')) {
+            trimmed = `caiyun.139.com${trimmed}`;
+        }
 
         // 纯 linkID（无 "/" 且只含字母数字）
         if (/^[a-zA-Z0-9_-]{4,32}$/.test(trimmed) && !trimmed.includes('/')) {
@@ -47,7 +50,7 @@ class Cloud139Utils {
             throw new Error(`无法解析链接: ${trimmed}`);
         }
 
-        if (!url.hostname.endsWith('139.com')) {
+        if (!url.hostname.endsWith('139.com') && !url.hostname.includes('10086.cn')) {
             throw new Error(`不是有效的 139 网盘链接（域名不匹配）: ${url.hostname}`);
         }
 
@@ -62,7 +65,16 @@ class Cloud139Utils {
             }
         }
 
-        // 3. Hash 路径格式：#/w/i/{linkID} 或 #/w/r/{linkID}
+        // 3. 常规 pathname 路径格式：/w/i/{linkID} 或 /m/i/{linkID} 或 /w/r/{linkID}
+        if (!linkID && url.pathname) {
+            const pathParts = url.pathname.split(/[/?]/).filter(Boolean);
+            const candidate = pathParts[pathParts.length - 1];
+            if (candidate && /^[a-zA-Z0-9_-]{4,32}$/.test(candidate) && pathParts.some(p => ['w', 'm', 'i', 'r'].includes(p))) {
+                linkID = candidate;
+            }
+        }
+
+        // 4. Hash 路径格式：#/w/i/{linkID} 或 #/w/r/{linkID}
         if (!linkID && url.hash) {
             // 先尝试 hash 中的 query 参数：#/detail?linkID=xxx
             const hashQuery = url.hash.includes('?') ? url.hash.slice(url.hash.indexOf('?')) : '';
@@ -89,6 +101,24 @@ class Cloud139Utils {
     }
 
     /**
+     * 规范化 HTML 实体与特殊空白字符（如 &nbsp;、全角空格、零宽字符等）
+     * @param {string} str
+     * @returns {string}
+     */
+    static normalizeEntitiesAndSpaces(str) {
+        if (!str || typeof str !== 'string') return '';
+        return str
+            .replace(/&(?:nbsp|#160|ensp|emsp|thinsp);/gi, ' ')
+            .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+            .replace(/[\u200B\u200C\u200D\uFEFF]/g, '')
+            .replace(/&amp;/gi, '&')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&#39;/gi, "'")
+            .replace(/&quot;/gi, '"');
+    }
+
+    /**
      * 从分享文本（可能含多余说明文字）中提取纯 URL 和提取码
      * 支持移动云盘 APP 分享文本格式：
      *   "我用中国移动云盘给你分享的文件："xxx" 链接: https://yun.139.com/... 提取码: xxxx /*xxx:/ ..."
@@ -98,18 +128,45 @@ class Cloud139Utils {
      */
     static extractFromShareText(text) {
         if (!text || typeof text !== 'string') return null;
-        // 已经是纯 URL 则直接返回
-        if (/^https?:\/\/(?:yun|caiyun)\.139\.com\//i.test(text.trim())) {
-            return { url: text.trim(), passwd: '' };
+        const normalized = Cloud139Utils.normalizeEntitiesAndSpaces(text).trim();
+
+        // 严格仅在整段文本为单一纯 URL（无其他说明、空格或换行）时直接返回
+        if (/^https?:\/\/(?:yun|caiyun)\.139\.com\/[^\s]+$/i.test(normalized)) {
+            let urlPasswd = '';
+            try {
+                const parsed = Cloud139Utils.parseShareLink(normalized);
+                urlPasswd = parsed.passwd || '';
+            } catch (_) {}
+            return { url: normalized, passwd: urlPasswd };
         }
+
         // 从文本中提取 yun.139.com / caiyun.139.com URL
-        const urlMatch = text.match(/https?:\/\/(?:yun|caiyun)\.139\.com[^\s]*/i);
+        const urlMatch = normalized.match(/https?:\/\/(?:yun|caiyun)\.139\.com\/[^\s<>"'`]+/i);
         if (!urlMatch) return null;
         const url = urlMatch[0];
-        // 提取提取码（/*xxx:/ 不是提取码，忽略它；只匹配"提取码"关键字后的4~8位字母数字）
+
+        // 提取提取码（支持“提取码/密码/访问码/pwd/code”，支持中英文冒号或直接空格，支持括号包裹）
         let passwd = '';
-        const pwdMatch = text.match(/提取码[：:]\s*([a-zA-Z0-9]{4,8})/);
-        if (pwdMatch) passwd = pwdMatch[1];
+        const pwdPatterns = [
+            /(?:提取码|密码|访问码|pwd|code)[：:\s]+([a-zA-Z0-9]{4,8})/i,
+            /[（(](?:提取码|密码|访问码|pwd|code)[：:\s]*([a-zA-Z0-9]{4,8})[）)]/i
+        ];
+        for (const pattern of pwdPatterns) {
+            const pwdMatch = normalized.match(pattern);
+            if (pwdMatch) {
+                passwd = pwdMatch[1];
+                break;
+            }
+        }
+
+        // 若正文中未显式匹配到密码，尝试解析 URL 本身 query 中的 passwd
+        if (!passwd) {
+            try {
+                const parsed = Cloud139Utils.parseShareLink(url);
+                if (parsed.passwd) passwd = parsed.passwd;
+            } catch (_) {}
+        }
+
         return { url, passwd };
     }
 

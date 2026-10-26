@@ -323,11 +323,25 @@ class ScrapeService {
     }
 
     async _parseMediaInfo(parsedPath) {
-        // return MediaTypeDetector.detect({
-        //     filename: parsedPath.strmFile,
-        //     dirPath: parsedPath.seasonDir
-        // });
-        return {}
+        const { RecognitionEngine } = require('./RecognitionEngine');
+        const filename = parsedPath.strmFile || '';
+        const parsed = RecognitionEngine.parseMediaFilename(filename);
+        const folderTitle = RecognitionEngine.cleanAnimeFolderName(parsedPath.showName || '');
+
+        return {
+            name: folderTitle || parsed.title,
+            title: folderTitle || parsed.title,
+            year: parsed.year,
+            season: parsed.season,
+            episode: parsed.episode,
+            type: parsed.mediaType,
+            season_episode: parsed.season_episode,
+            videoFormat: parsed.videoFormat,
+            mediaSource: parsed.mediaSource,
+            videoCodec: parsed.videoCodec,
+            audioCodec: parsed.audioCodec,
+            releaseGroup: parsed.releaseGroup
+        };
     }
 
     async _fetchTMDBInfo(mediaInfo, currentEpisodes) {

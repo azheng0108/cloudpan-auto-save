@@ -8,31 +8,49 @@ class TaskStorageService {
     }
 
     async deleteTask(taskId, deleteCloud) {
-        const task = await this.taskService.getTaskById(taskId);
-        if (!task) throw new Error('任务不存在');
+        const id = Number(taskId);
+        const task = await this.taskService.getTaskById(id);
+        if (!task) return;
+
+        // 尝试从网盘中删除文件（资产删除尽力而为，网盘异常或Token失效不应阻断本地任务记录的清除）
         if (!task.enableSystemProxy && deleteCloud) {
-            const account = await this.taskService.accountRepo.findOneBy({ id: task.accountId });
-            if (!account) throw new Error('账号不存在');
-            if (account.accountType === 'cloud139') {
-                const cloud139 = Cloud139Service.getInstance(account);
-                await this.deleteCloudFile139(cloud139, await this.getRootFolder(task), 1);
+            try {
+                const account = await this.taskService.accountRepo.findOneBy({ id: task.accountId });
+                if (account && account.accountType === 'cloud139') {
+                    const cloud139 = Cloud139Service.getInstance(account);
+                    const rootFolder = await this.getRootFolder(task);
+                    if (rootFolder) {
+                        await this.deleteCloudFile139(cloud139, rootFolder, 1);
+                    }
+                }
+            } catch (cloudErr) {
+                logTaskEvent(`⚠️ [139] 同步删除网盘文件异常 (账号Token失效或网盘受限): ${cloudErr.message}，继续清理本地任务记录`);
             }
         }
+
         if (task.enableCron) {
-            SchedulerService.removeTaskJob(task.id);
+            try {
+                SchedulerService.removeTaskJob(task.id);
+            } catch (_) {}
         }
         if (this.taskService.transferredFileRepo) {
-            await this.taskService.transferredFileRepo.delete({ taskId: task.id });
+            try {
+                await this.taskService.transferredFileRepo.delete({ taskId: task.id });
+            } catch (_) {}
         }
+        const targetId = task.id;
+        const targetName = task.resourceName;
         await this.taskService.taskRepo.remove(task);
+        logTaskEvent(`[任务删除] 本地任务记录已成功清除: taskId=${targetId}, resourceName=${targetName}`);
     }
 
     async deleteTasks(taskIds, deleteCloud) {
+        if (!Array.isArray(taskIds) || taskIds.length === 0) return;
         for (const taskId of taskIds) {
             try {
-                await this.deleteTask(taskId, deleteCloud);
-            } catch (_) {
-                // keep behavior: ignore single delete failures in batch
+                await this.deleteTask(Number(taskId), deleteCloud);
+            } catch (err) {
+                logTaskEvent(`[批量删除] 删除任务 [${taskId}] 失败: ${err.message}`);
             }
         }
     }

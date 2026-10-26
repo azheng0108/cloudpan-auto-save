@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
-const logFile = path.join(__dirname, 'data', 'logs', 'app.log');
+const logFile = path.join(__dirname, '..', 'data', 'logs', 'app.log');
 
 if (!fs.existsSync(logFile)) {
     console.log('❌ 日志文件不存在:', logFile);

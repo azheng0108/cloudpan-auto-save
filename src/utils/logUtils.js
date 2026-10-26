@@ -4,8 +4,8 @@ const logger = require('./logger');
 // 存储所有的 SSE 客户端
 const clients = new Set();
 const LOG_FILE = 'data/logs/app.log';
-const MAX_LOG_SIZE = 1024 * 100;   // 100KB：历史日志读取窗口 / 轮转后保留量
-const MAX_LOG_FILE_SIZE = 512 * 1024; // 512KB：触发自动轮转的阈值
+const MAX_LOG_SIZE = 500 * 1024;   // 500KB：历史日志读取窗口 / 轮转后保留量 (~5000行)
+const MAX_LOG_FILE_SIZE = 5 * 1024 * 1024; // 5MB：触发自动轮转的阈值
 
 // 日志轮转锁，避免并发重写
 let _rotating = false;
@@ -31,14 +31,80 @@ async function rotateLogs() {
         if (firstNewline >= 0) content = content.slice(firstNewline + 1);
         await fs.writeFile(LOG_FILE, content);
     } catch (e) {
-        logger.error('日志轮转失败', { error: e.message });
+        // 轮转降级保护
     } finally {
         _rotating = false;
     }
 }
 
-// 初始化 SSE
+/**
+ * 统一接收来自 Winston 记录器的所有日志事件（覆盖所有模块、所有级别的全局日志）
+ * 写入本地 app.log 并实时通过 SSE 推送给前端全局系统日志面板
+ */
+function broadcastWinstonLog(info) {
+    if (!info) return;
+    if (process.env.NODE_ENV === 'test') return;
+
+    try {
+        const { level, message, stack, timestamp, ...meta } = info;
+        let logText = typeof message === 'object' ? JSON.stringify(message) : String(message || '');
+        if (stack) {
+            logText += `\n${stack}`;
+        }
+        const metaKeys = Object.keys(meta);
+        if (metaKeys.length > 0) {
+            try {
+                logText += ` ${JSON.stringify(meta)}`;
+            } catch (_) {}
+        }
+
+        const upperLevel = String(level || 'info').toUpperCase();
+        if (upperLevel === 'DEBUG' && !logText.includes('[DEBUG]')) {
+            logText = `[DEBUG] ${logText}`;
+        } else if (upperLevel === 'WARN' && !logText.includes('[WARN]')) {
+            logText = `[WARN] ${logText}`;
+        } else if (upperLevel === 'ERROR' && !logText.includes('[ERROR]')) {
+            logText = `[ERROR] ${logText}`;
+        }
+
+        if (!/^\[\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(logText)) {
+            const timeStr = new Date().toLocaleString('zh-CN', { hour12: false });
+            logText = `[${timeStr}] ${logText}`;
+        }
+
+        // 异步追加写入本地 app.log 文件
+        fs.appendFile(LOG_FILE, logText + '\n').catch(() => {});
+
+        // 异步检查并执行日志轮转
+        rotateLogs().catch(() => {});
+
+        // 实时推送给 SSE 客户端
+        const payload = `data: ${JSON.stringify({ type: 'log', message: logText })}\n\n`;
+        clients.forEach(client => {
+            try {
+                client.write(payload);
+            } catch (_) {}
+        });
+    } catch (_) {
+        // 静默保护
+    }
+}
+
+global._onWinstonLog = broadcastWinstonLog;
+
+// 初始化 SSE 与日志下载
 const initSSE = (app) => {
+    app.get('/api/logs/download', async (req, res) => {
+        try {
+            const content = await fs.readFile(LOG_FILE);
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="cloudpan-app-${Date.now()}.log"`);
+            res.send(content);
+        } catch (error) {
+            res.status(404).send('暂无可用系统日志');
+        }
+    });
+
     app.get('/api/logs/events', async (req, res) => {
         res.writeHead(200, {
             'Content-Type': 'text/event-stream',
@@ -98,34 +164,19 @@ const sendHistoryLogs = async (res) => {
         res.write(`data: ${JSON.stringify({type: 'history', logs: []})}\n\n`);
     }
 };
- // 记录任务日志
- const logTaskEvent = async (message = null) => {
+// 兼容既有 logTaskEvent 调用，无缝转为 logger.info 并经由全局广播通道推送
+const logTaskEvent = async (message = null) => {
     if (!message) {
         return;
     }
-    // 获取当前时间
-    const currentTime = new Date();
-    // 构建日志消息
-    let logMessage = `[${currentTime.toLocaleString()}] ${message}`;
-    logger.info(logMessage);
-
-    try {
-        await fs.appendFile(LOG_FILE, logMessage + '\n');
-
-        // 写入后异步检查是否需要轮转，不阻塞当前调用
-        rotateLogs().catch(e => logger.error('rotateLogs error', { error: e.message }));
-
-        // 向所有连接的客户端发送日志
-        clients.forEach(client => {
-            client.write(`data: ${JSON.stringify({type: 'log', message: logMessage})}\n\n`);
-        });
-    } catch (error) {
-        logger.error('写入日志失败', { error: error.message, stack: error.stack });
-    }
-}
+    logger.info(message);
+};
 
 // 添加发送AI消息的函数
 const sendAIMessage = (message) => {
+    if (process.env.NODE_ENV === 'test') {
+        return;
+    }
     clients.forEach(client => {
         client.write(`data: ${JSON.stringify({type: 'aimessage', message})}\n\n`);
     });

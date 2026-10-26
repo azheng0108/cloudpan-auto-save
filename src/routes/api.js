@@ -2873,7 +2873,14 @@ const registerApiRoutes = (app, deps) => {
                     baseUrl: String(ai.baseUrl || 'http://127.0.0.1:8045/v1').trim(),
                     apiKey: String(ai.apiKey || '').trim(),
                     model: String(ai.model || 'gemini-3.8-flash-tiered').trim(),
-                    mode: ai.mode === 'always' ? 'always' : 'fallback'
+                    mode: ai.mode === 'always' ? 'always' : 'fallback',
+                    // 移动 AI 兜底配置（与主 AI 配置共存；未随请求提交时保留存量值）
+                    mobileFallback: (ai.mobileFallback !== undefined) ? {
+                        enable: ai.mobileFallback.enable !== undefined ? Boolean(ai.mobileFallback.enable) : true,
+                        networkSearch: ai.mobileFallback.networkSearch !== undefined ? Boolean(ai.mobileFallback.networkSearch) : true,
+                        proactiveRenew: Boolean(ai.mobileFallback.proactiveRenew),
+                        timeoutMs: Number(ai.mobileFallback.timeoutMs) > 0 ? Number(ai.mobileFallback.timeoutMs) : 60000
+                    } : ((current.ai && current.ai.mobileFallback) || { enable: true, networkSearch: true, proactiveRenew: false, timeoutMs: 60000 })
                 } : (current.ai || {
                     enable: false,
                     baseUrl: 'http://127.0.0.1:8045/v1',
@@ -3002,9 +3009,20 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // 测试 AI (OpenAI / DeepSeek / 豆包 / Ollama 等兼容接口) 连通性
+    // 测试 AI (OpenAI / DeepSeek / 豆包 / Ollama 等兼容接口) 连通性；mode=mobile 时测试移动 AI（灵犀）兜底通道
     app.post('/api/ai/test', async (req, res) => {
         try {
+            const { mode, accountId } = req.body || {};
+            if (mode === 'mobile') {
+                const MobileAiClient = require('../services/MobileAiClient');
+                const result = await MobileAiClient.testConnection(accountId || null);
+                if (result.success) {
+                    res.json({ success: true, data: result });
+                } else {
+                    res.status(400).json({ success: false, error: result.error, data: result });
+                }
+                return;
+            }
             const aiService = require('../services/ai');
             const result = await aiService.testConnection(req.body);
             if (result.success) {
@@ -3027,7 +3045,7 @@ const registerApiRoutes = (app, deps) => {
             const aiService = require('../services/ai');
             const result = await aiService.parseMediaInfo(text, context || {}, config || null);
             if (result.success) {
-                res.json({ success: true, data: result.data, fromCache: result.fromCache });
+                res.json({ success: true, data: { ...result.data, fromCache: Boolean(result.fromCache) }, fromCache: result.fromCache });
             } else {
                 res.status(400).json({ success: false, error: result.error });
             }

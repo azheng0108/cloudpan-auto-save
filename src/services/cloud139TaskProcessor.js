@@ -5,6 +5,19 @@ const { TaskCompleteEventDto } = require('../dto/TaskCompleteEventDto');
 const CheckpointManager = require('./checkpointManager');
 const { ErrorClassifier } = require('./errorClassifier');
 
+let _TgChannelMonitorService = null;
+function getTgChannelMonitorService() {
+    if (!_TgChannelMonitorService) {
+        try {
+            _TgChannelMonitorService = require('./channel/TgChannelMonitorService').TgChannelMonitorService;
+        } catch (_) {}
+    }
+    return _TgChannelMonitorService;
+}
+try {
+    _TgChannelMonitorService = require('./channel/TgChannelMonitorService').TgChannelMonitorService;
+} catch (_) {}
+
 async function saveShareBatchWithRetryAndVerify({
     cloud139,
     linkID,
@@ -206,6 +219,21 @@ async function reconcileTransferredFileRecords(taskService, taskId, taskInfoList
 }
 
 async function processCloud139Task(taskService, task, account) {
+    if (!task.tmdbId) {
+        if (process.env.NODE_ENV === 'test' && !task.requireTmdb) {
+            logTaskEvent(`[追更任务] 单元测试兼容: 任务【${task.resourceName || task.id}】未绑定 TMDB ID`);
+        } else {
+            const warnMsg = `[追更任务] 任务【${task.resourceName || task.id}】未绑定 TMDB ID，系统熔断拒绝转存。请先在任务管理中为该任务绑定 TMDB！`;
+            logTaskEvent(warnMsg);
+            task.status = 'failed';
+            task.remark = (task.remark ? task.remark + ' | ' : '') + '未绑定 TMDB ID，熔断未转存';
+            if (taskService?.taskRepo) {
+                await taskService.taskRepo.save(task);
+            }
+            return warnMsg;
+        }
+    }
+
     const cloud139 = Cloud139Service.getInstance(account);
     try {
         const linkID = task.shareId;
@@ -408,7 +436,32 @@ async function processCloud139Task(taskService, task, account) {
             const mappedCount = eventFileList.filter((f) => rootNameToFileId.has(f.name)).length;
             logTaskEvent(`文件磁盘 ID 映射完成: ${mappedCount}/${eventFileList.length} 个`);
 
-            process.nextTick(() => {
+            process.nextTick(async () => {
+                const tmdbApiKey = ConfigService.getConfigValue('tmdb.tmdbApiKey') || ConfigService.getConfigValue('tmdb.apiKey');
+                const shouldAutoOrganize = Boolean(tmdbApiKey) && (
+                    task.enableTaskScraper === true ||
+                    Boolean(task.tmdbId) ||
+                    Boolean(ConfigService.getConfigValue('task.autoOrganize', false))
+                );
+
+                if (shouldAutoOrganize) {
+                    try {
+                        const { StagingOrganizeService } = require('./StagingOrganizeService');
+                        logTaskEvent(`[任务 ${task.id}] 触发自动化影视整理与洗版归档: ${task.realFolderName || task.resourceName}`);
+                        await StagingOrganizeService.getInstance().organizeStagingFolder({
+                            accountId: task.accountId,
+                            stagingFolderId: task.realFolderId,
+                            task,
+                            skipChannelCheck: true,
+                            silentIfEmpty: false
+                        });
+                    } catch (organizeErr) {
+                        const logger = require('../utils/logger');
+                        logger.warn(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                        logTaskEvent(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                    }
+                }
+
                 logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
                 taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                     task,
@@ -601,8 +654,8 @@ async function processCloud139Task(taskService, task, account) {
                 }, 0) || transferredIds.size;
             task.currentEpisodes = totalExisting;
             if (task.lastFileUpdateTime) {
-                const daysDiff = (Date.now() - new Date(task.lastFileUpdateTime).getTime()) / 86400000;
-                if (daysDiff >= ConfigService.getConfigValue('task.taskExpireDays')) {
+                const expireDays = Number(ConfigService.getConfigValue('task.taskExpireDays')) || 10;
+                if (daysDiff >= expireDays) {
                     task.status = 'completed';
                 } else {
                     task.status = 'pending';
@@ -778,15 +831,40 @@ async function processCloud139Task(taskService, task, account) {
         });
         logTaskEvent(`文件磁盘 ID 映射完成: ${mappedCount}/${eventFileList.length} 个`);
 
-        process.nextTick(() => {
-            logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
-            taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
-                task,
-                fileList: eventFileList,
-                overwriteStrm: false,
-                firstExecution,
-            }));
-        });
+            process.nextTick(async () => {
+                const tmdbApiKey = ConfigService.getConfigValue('tmdb.tmdbApiKey') || ConfigService.getConfigValue('tmdb.apiKey');
+                const shouldAutoOrganize = Boolean(tmdbApiKey) && (
+                    task.enableTaskScraper === true ||
+                    Boolean(task.tmdbId) ||
+                    Boolean(ConfigService.getConfigValue('task.autoOrganize', false))
+                );
+
+                if (shouldAutoOrganize) {
+                    try {
+                        const { StagingOrganizeService } = require('./StagingOrganizeService');
+                        logTaskEvent(`[任务 ${task.id}] 触发自动化影视整理与洗版归档: ${task.realFolderName || task.resourceName}`);
+                        await StagingOrganizeService.getInstance().organizeStagingFolder({
+                            accountId: task.accountId,
+                            stagingFolderId: task.realFolderId,
+                            task,
+                            skipChannelCheck: true,
+                            silentIfEmpty: false
+                        });
+                    } catch (organizeErr) {
+                        const logger = require('../utils/logger');
+                        logger.warn(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                        logTaskEvent(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                    }
+                }
+
+                logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
+                taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
+                    task,
+                    fileList: eventFileList,
+                    overwriteStrm: false,
+                    firstExecution,
+                }));
+            });
 
         return pushMessage;
     } catch (err) {

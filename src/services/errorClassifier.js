@@ -15,6 +15,7 @@ const ERROR_TYPES = {
         fatal: true,
         retryable: false,
         apiCodes: ['200000727'], // 外链不存在/被取消
+        patterns: ['外链不存在', '分享已被取消', '分享链接已被删除', '分享已失效', '该分享不存在', '分享不存在'],
         description: '分享链接已被删除或取消'
     },
     LINK_EXPIRED: {
@@ -23,6 +24,7 @@ const ERROR_TYPES = {
         fatal: true,
         retryable: false,
         apiCodes: ['200000401'],
+        patterns: ['分享链接已过期', '链接已过期', '分享已过期'],
         description: '分享链接已过期'
     },
     LINK_LIMIT_EXCEEDED: {
@@ -31,6 +33,7 @@ const ERROR_TYPES = {
         fatal: true,
         retryable: false,
         apiCodes: ['200000402'],
+        patterns: ['访问次数超限', '已达到访问次数上限'],
         description: '分享链接已达到访问次数上限'
     },
 

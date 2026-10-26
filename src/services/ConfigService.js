@@ -10,7 +10,7 @@ class ConfigService {
     this._config = {
       configVersion: 3, // 配置版本号：用于未来迁移管理
         task: {
-          taskExpireDays: 3,
+          taskExpireDays: 10,
           taskCheckCron: '0 19-23 * * *',
           retryTaskCron: '*/10 * * * *',
         cloud139Concurrency: 3,
@@ -48,7 +48,9 @@ class ConfigService {
         password: '',
         services: {
           telegram: true,
-          cloud139: false
+          cloud139: false,
+          pan123: false,
+          ai: false
         }
       },
       bark: {
@@ -83,24 +85,149 @@ class ConfigService {
         apiKey: '',
         strmMountPath: ''  // OpenList STRM 驱动的虚拟目录挂载前缀（留空表示不启用 STRM 虚拟路径）
       },
-      // Emby 媒体库通知配置
+      // Emby 媒体库直连通知配置 (配合 OpenList 原生 STRM 或本地 STRM)
       emby: {
         enable: false,
         serverUrl: '',
         apiKey: '',
-        libraryPath: ''
+        libraryPath: '',
+        notifyDebounceMs: 2000
       },
-      // 本地 STRM 文件生成配置
+      // 媒体服务器与 Webhook 联动配置 (SmartStrm / Emby / 通用)
+      webhook: {
+        outboundEnable: false,
+        outboundUrl: '',
+        outboundToken: '',
+        outboundFormat: 'smartstrm', // 'smartstrm' | 'universal'
+        outboundDebounceMs: 2000,
+        inboundEnable: false,
+        inboundToken: '', // 若为空，初始化时自动生成 16 字节随机 hex
+        embyMountPrefix: '',
+        syncDeleteCloud: true,
+        syncDeleteTask: true,
+        protectedPaths: ['/', '/媒体库', '/media', '/strm', '/公共目录']
+      },
+      // 本地 STRM 文件生成配置 (兼容 ttd 302 原生直链与 AList/WebDAV 模式)
       strm: {
         enable: false,
+        outputDir: '',
+        streamMode: 'direct302',
         localStrmPrefix: '',
-        cloudStrmPrefix: ''
+        cloudStrmPrefix: '',
+        stripRootTargetDir: true
       },
       // TMDB 刮削 / NFO 生成配置
       tmdb: {
         tmdbApiKey: '',
+        apiBaseUrl: 'https://api.themoviedb.org/3',
+        proxy: '',
         movieRenameFormat: '',
         tvRenameFormat: ''
+      },
+      // 云盘影视刮削（识别 + 规范整理）配置：默认全部保守
+      scrape: {
+        enabled: false,          // 是否开启定时自动整理巡检
+        cron: '0 4 * * *',       // 默认每天凌晨4点 (0 4 * * *)
+        autoApply: false,        // false=仅生成计划待确认；true=扫描后自动应用高置信条目
+        minScore: 280,           // 严格择优的最低得分
+        maxOpsPerBatch: 200,     // 单批变更超过该值时必须显式 confirmLarge 才能应用
+        includeTaskDirs: false,  // 是否允许刮削追更任务所在目录
+        maxDepth: 6,             // 递归扫描的最大目录深度
+        rules: []                // 用户配置的源目录与目标目录整理规则
+      },
+      // 存储维护与违规自愈配置
+      maintenance: {
+        enableBannedScanCron: false,
+        bannedScanCron: '0 3 * * 0',
+        autoCleanBanned: false,
+        enableSweepEmptyCron: false,
+        sweepEmptyCron: '0 4 * * 0',
+        enableDedupCron: false,
+        dedupCron: '0 5 * * 0',
+        autoPruneDedup: false,
+        notifyOnMaintenance: true,
+      },
+      // 盘搜集成配置 (PanSou 官方 API)
+      pansou: {
+        baseUrl: 'http://127.0.0.1:8888',
+        apiKey: '',
+        timeout: 10000
+      },
+      // 资源覆盖与择优策略
+      policy: {
+        enableReleaseGroupPriority: true,
+        releaseGroups: ['HiveWeb', 'ADWeb', 'HHWEB'],
+        preferRemux: true,
+        preferHighResolution: true,
+        preferDolby: true,
+        conflictMode: 1
+      },
+      // Telegram 频道自动监控转存与整理配置 (全局集中控制中心)
+      channelMonitor: {
+        enabled: true,
+        cron: '*/5 * * * *',           // 默认每5分钟轮询一次频道
+        channels: [],                  // 集中监控频道池列表 ['https://t.me/xxx', ...]
+        defaultTargetFolderId: '/',    // 默认保存目录ID
+        defaultTargetFolderName: '/',  // 默认保存目录名称
+        dispatchRules: [],             // 二次分流规则组 [{ keyword: '4K', folderId: 'xxx', folderName: '/4K' }]
+        whitelistRegex: '',            // 聚合白名单大正则
+        blacklistKeywords: [],         // 黑名单标签列表 ['国产剧', '短剧']
+        visualCards: [],               // TMDB 可视化监控卡片列表
+        stagingFolderId: '',           // 全局默认暂存区ID，为空则自动创建「/暂存区/频道转存」
+        stagingFolderName: '/暂存区/频道转存', // 全局默认暂存区名称
+        autoOrganize: true,            // 默认转存后自动整理入库
+        autoWash: true,                // 默认开启洗版
+        minFileSize: 50,               // 小文件过滤阈值 (MB)，低于此大小的文件被跳过并清理
+        ignoreKeywords: '',            // 忽略关键词（逗号分隔，如 sample, trailer, 广告）
+        ignoreAudiobooks: true,        // 过滤有声书与纯音频（自动拦截广播剧、评书、听书、相声等非影视资源）
+        classifyChildren: false,       // 分类策略：添加儿童节目分类
+        classifyConcerts: true,        // 分类策略：添加演唱会分类
+        classifyRegion: true,          // 分类策略：按地区二次分类 (华语/欧美/日韩)
+        classifyYear: false,           // 分类策略：按年份三次分类
+        washPriorityOrder: [           // 洗版策略：8 项自定义优先级序列
+          'releaseGroup',
+          'resourceType',
+          'videoFormat',
+          'dynamicRange',
+          'colorDepth',
+          'audioCodec',
+          'frameRate',
+          'fileSize'
+        ],
+        keepDolbyMultiVersion: false,  // 多版本策略：保留杜比视界+非杜比多版本并存
+        notifyOnOrganize: true,        // 整理入库通知
+        enableRename: true,            // 启用 TMDB 结构化点分规范重命名
+        enableMediaInfo: true,         // 启用媒体流物理探针完善命名
+        includeEpisodeTitle: true,     // 启用剧集/分集官方标题注入（关闭时仅保留季集编号如 S01E08）
+        linkStrm: false,               // 联动生成 STRM
+        notifyOnStrm: false,           // STRM 明细通知
+        sweepEmptyFolders: true,       // 整理完成后自底向上修剪暂存区空目录
+        filterKeywords: '',            // 全局包含关键词（逗号分隔）
+        excludeKeywords: '',           // 全局排除关键词（逗号分隔，如：国产剧,韩剧）
+        maxPostsPerCheck: 10,          // 每次轮询抓取单频道最新消息数量
+        requestTimeout: 10000,         // 抓取请求超时时间(ms)
+        maxUnrecognizedRetries: 3,     // 未识别/无法匹配条目最大重试次数，达到后进入冷却
+        unrecognizedCooldownHours: 24  // 达到未识别重试上限后的保护冷却时间 (小时)，冷却期内自动整理跳过
+      },
+      // AI 智能辅助识别与处理配置 (兼容 OpenAI / DeepSeek / 豆包 / Ollama 等标准接口)
+      ai: {
+        enable: false,
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: '',
+        model: 'gpt-4o-mini',
+        temperature: 0.1,
+        maxTokens: 2000,
+        mode: 'fallback'               // 'fallback' (智能兜底) | 'always' (全量复核)
+      },
+      // 媒体硬元数据嗅探探针配置 (139 网盘直链原生 Range 探针引擎)
+      mediaProbe: {
+        enable: true,
+        timeoutMs: 15000,
+        maxWindows: 3
+      },
+      // 入库后处理全局总开关 (包含自动重命名/STRM/NFO/OpenList/Emby/Webhook，默认关闭)
+      postProcess: {
+        enable: false
       },
       customPush: [] // 自定义推送
     };
@@ -142,9 +269,16 @@ class ConfigService {
           needSave = true;
         }
 
+        // v3 -> v4: 初始化 Webhook 入站随机密钥
+        if (!this._config.webhook?.inboundToken) {
+          if (!this._config.webhook) this._config.webhook = {};
+          this._config.webhook.inboundToken = require('crypto').randomBytes(16).toString('hex');
+          needSave = true;
+        }
+
         // 更新配置版本号
-        if (!this._config.configVersion || this._config.configVersion < 3) {
-          this._config.configVersion = 3;
+        if (!this._config.configVersion || this._config.configVersion < 4) {
+          this._config.configVersion = 4;
           needSave = true;
         }
         
@@ -175,6 +309,9 @@ class ConfigService {
 
 
   _saveConfig() {
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
     try {
       fs.writeFileSync(this._configFile, JSON.stringify(this._config, null, 2));
     } catch (error) {
@@ -216,13 +353,30 @@ class ConfigService {
         hasApiKey: Boolean(config.emby.apiKey),
         libraryPath: config.emby.libraryPath || ''
       } : undefined,
+      pansou: config?.pansou ? {
+        baseUrl: config.pansou.baseUrl || '',
+        hasApiKey: Boolean(config.pansou.apiKey),
+        timeout: config.pansou.timeout || 10000
+      } : undefined,
     });
     this._config = this._deepMerge(this._config, config);
     this._saveConfig();
   }
 
   getConfigValue(key, defaultValue = null) {
-    const keys = key.split('.');
+    let lookupKey = key;
+    if (lookupKey === 'openai' && !this._config.openai && this._config.ai) {
+      return this._config.ai;
+    }
+    if (lookupKey === 'ai' && (!this._config.ai || !this._config.ai.enable) && this._config.openai?.enable) {
+      return this._config.openai;
+    }
+    if (lookupKey.startsWith('openai.') && !this._config.openai && this._config.ai) {
+      lookupKey = 'ai.' + lookupKey.slice(7);
+    } else if (lookupKey.startsWith('ai.') && (!this._config.ai || !this._config.ai.enable) && this._config.openai?.enable) {
+      lookupKey = 'openai.' + lookupKey.slice(3);
+    }
+    const keys = lookupKey.split('.');
     let value = this._config;
     for (const k of keys) {
       value = value?.[k];

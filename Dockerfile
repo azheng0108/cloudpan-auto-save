@@ -6,9 +6,10 @@ WORKDIR /home
 
 # 先复制依赖清单，充分利用 Docker 层缓存
 COPY package.json yarn.lock ./
+COPY frontend/package.json frontend/package-lock.json ./frontend/
 
 # 安装全部依赖（含 devDependencies，编译 TypeScript 需要）
-RUN yarn install --ignore-engines
+RUN yarn install --ignore-engines && cd frontend && npm ci
 
 # 复制源码并编译
 COPY . .
@@ -42,8 +43,8 @@ WORKDIR /home
 
 ARG APP_VERSION=dev
 
-# 安装系统运行时包、设置时区、创建持久化目录 — 合并为单层
-RUN apk add --no-cache ca-certificates tzdata && \
+# 安装系统运行时包、设置时区、安装 su-exec 降权工具、创建持久化目录并内置 ffmpeg 媒体探针
+RUN apk add --no-cache ca-certificates tzdata su-exec ffmpeg && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     mkdir -p /home/data /home/strm && \
@@ -54,8 +55,11 @@ RUN apk add --no-cache ca-certificates tzdata && \
 COPY --from=builder /home/node_modules ./node_modules
 COPY --from=builder /home/dist ./dist
 # 兜底：显式复制前端静态资源，防止 login.html 等页面缺失
-COPY --from=builder /home/src/public ./dist/public
 COPY --from=builder /home/package.json ./
+
+# 引入容器权限自愈入口脚本
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV TZ=Asia/Shanghai
 ENV NODE_ENV=production
@@ -64,8 +68,7 @@ ENV APP_VERSION=${APP_VERSION}
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 
-USER node
-
 VOLUME ["/home/data", "/home/strm"]
 EXPOSE 3000
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["npm", "run", "start:prod"]
