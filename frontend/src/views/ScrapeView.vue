@@ -38,6 +38,7 @@ import {
   Play,
   Plus,
   SlidersHorizontal,
+  ArrowRight,
   FolderOpen,
   HelpCircle,
   Sliders,
@@ -1146,6 +1147,26 @@ function openManualOrganize(presetPath?: string) {
   switchTab('manual');
 }
 
+// 快捷填入默认路径
+function fillDefaultStagingDir() {
+  if (strategyConfig.value.stagingFolderName) {
+    manualOrganizeConfig.value.sourceDirPath = strategyConfig.value.stagingFolderName;
+    manualOrganizeConfig.value.sourceDirId = strategyConfig.value.stagingFolderId || '/';
+    ElMessage.success(`已填入默认暂存目录: ${strategyConfig.value.stagingFolderName}`);
+  } else {
+    ElMessage.info('尚未设置默认暂存目录');
+  }
+}
+
+function fillDefaultTargetDir() {
+  if (strategyConfig.value.defaultTargetFolderName) {
+    manualOrganizeConfig.value.targetDirPath = strategyConfig.value.defaultTargetFolderName;
+    ElMessage.success(`已填入默认媒体库路径: ${strategyConfig.value.defaultTargetFolderName}`);
+  } else {
+    ElMessage.info('尚未设置默认媒体库路径');
+  }
+}
+
 // 触发沙箱预览推演 (0 物理写入)
 async function triggerPreview() {
   if (!selectedAccountId.value) {
@@ -1595,7 +1616,7 @@ onUnmounted(() => {
             class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap"
           >
             <Sparkles class="w-3.5 h-3.5" />
-            <span>手动双栏整理</span>
+            <span>手动整理入库</span>
           </button>
 
           <button
@@ -2011,10 +2032,10 @@ onUnmounted(() => {
           </div>
           <div>
             <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">
-              手动双栏整理
+              手动整理入库
             </h3>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              0 物理写入实时推演 · TMDB 刮削与点分规范重命名 · 原位入库确认安全隔离
+              安全预览模式：先预览影视识别与点分规范重命名效果，核对无误后再一键确认入库（零误操作风险）
             </p>
           </div>
         </div>
@@ -2028,6 +2049,24 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- 三步操作指引 -->
+      <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div class="flex items-center gap-2">
+          <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold flex items-center justify-center text-[11px]">1</span>
+          <span class="font-medium text-slate-700 dark:text-slate-200">选定待整理源目录与目标媒体库</span>
+        </div>
+        <ArrowRight class="w-3.5 h-3.5 text-slate-400 hidden sm:block shrink-0" />
+        <div class="flex items-center gap-2">
+          <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold flex items-center justify-center text-[11px]">2</span>
+          <span class="font-medium text-slate-700 dark:text-slate-200">点击「扫描并预览效果」</span>
+        </div>
+        <ArrowRight class="w-3.5 h-3.5 text-slate-400 hidden sm:block shrink-0" />
+        <div class="flex items-center gap-2">
+          <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold flex items-center justify-center text-[11px]">3</span>
+          <span class="font-medium text-slate-700 dark:text-slate-200">检查清单并点击「确认执行入库」</span>
+        </div>
+      </div>
+
       <!-- 双分栏网格 -->
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <!-- 左分栏：控制参数 (占 5 格) -->
@@ -2035,14 +2074,14 @@ onUnmounted(() => {
           <div class="settings-card space-y-3.5">
             <div class="flex items-center gap-2 pb-2.5 border-b border-gray-100 dark:border-gray-800">
               <SlidersHorizontal class="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">推演控制参数</h4>
+              <h4 class="text-xs font-bold text-gray-900 dark:text-white">整理参数设置</h4>
             </div>
 
             <!-- 待整理源目录 -->
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="block text-xs font-semibold text-gray-700 dark:text-slate-300">待整理源目录</label>
-                <span class="text-[11px] text-amber-600 dark:text-amber-400 font-medium">源影视暂存</span>
+                <button type="button" @click="fillDefaultStagingDir" class="text-[11px] text-amber-600 hover:text-amber-700 dark:text-amber-400 font-medium cursor-pointer transition-colors" title="快速填入配置中的默认暂存目录">⚡ 填入默认暂存区</button>
               </div>
               <div class="flex gap-2">
                 <input
@@ -2066,7 +2105,7 @@ onUnmounted(() => {
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="block text-xs font-semibold text-gray-700 dark:text-slate-300">媒体库目的路径</label>
-                <span class="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">归档目标根路径</span>
+                <button type="button" @click="fillDefaultTargetDir" class="text-[11px] text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-medium cursor-pointer transition-colors" title="快速填入配置中的默认媒体库路径">⚡ 填入默认媒体库</button>
               </div>
               <div class="flex gap-2">
                 <input
@@ -2155,7 +2194,7 @@ onUnmounted(() => {
               >
                 <RotateCw v-if="scanning || previewing" class="w-3.5 h-3.5 animate-spin" />
                 <Eye v-else class="w-3.5 h-3.5" />
-                <span>{{ scanning ? '扫描中...' : (previewing ? '推演中...' : '开始推演比对') }}</span>
+                <span>{{ scanning ? '扫描中...' : (previewing ? '正在识别与比对...' : '扫描并预览效果') }}</span>
               </button>
 
               <!-- 原位执行确认胶囊 (零弹窗规范) -->
@@ -2185,7 +2224,7 @@ onUnmounted(() => {
               >
                 <RotateCw v-if="executing" class="w-3.5 h-3.5 animate-spin" />
                 <Play v-else class="w-3.5 h-3.5" />
-                <span>执行入库</span>
+                <span>确认执行入库</span>
               </button>
             </div>
           </div>
@@ -2197,7 +2236,7 @@ onUnmounted(() => {
             <div class="flex items-center justify-between pb-2.5 border-b border-gray-100 dark:border-gray-800">
               <span class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
                 <Sparkles class="w-3.5 h-3.5 text-indigo-500" />
-                <span>推演比对结果</span>
+                <span>整理预览清单</span>
               </span>
               <div v-if="previewDone" class="flex items-center gap-1 text-[10px] font-mono font-semibold">
                 <span class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">总数: {{ previewSummary.total }}</span>
@@ -2248,9 +2287,9 @@ onUnmounted(() => {
             <!-- 空态引导 -->
             <div v-if="!previewDone && !scanning && !previewing" class="p-16 text-center border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-xl">
               <Sparkles class="w-10 h-10 mx-auto mb-3 text-indigo-400 opacity-60 animate-bounce" />
-              <h4 class="text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">未执行推演比对</h4>
+              <h4 class="text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">尚未开始预览</h4>
               <p class="text-xs text-gray-400 max-w-sm mx-auto">
-                在左侧选定待整理源目录与目的媒体库后，点击「开始推演比对」即可在 0 物理写入状态下实时查看识别与规范点分命名比对
+                👈 请在左侧选定待整理目录与目标媒体库，点击「扫描并预览效果」，系统将在安全预览状态下提前生成识别与重命名清单
               </p>
             </div>
 
@@ -2262,7 +2301,7 @@ onUnmounted(() => {
                   {{ scanning ? '正在扫描 139 网盘源目录...' : '正在联机 TMDB 刮削并规范点分重命名...' }}
                 </h4>
                 <p class="text-[11px] text-gray-400">
-                  此过程仅在内存中推演，绝对不改变云盘任何文件
+                  安全预览阶段仅在内存中分析与匹配，绝对不会改动云盘中的任何文件
                 </p>
               </div>
             </div>
