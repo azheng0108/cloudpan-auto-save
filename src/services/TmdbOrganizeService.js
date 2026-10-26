@@ -6,6 +6,7 @@
  */
 
 const { RecognitionEngine } = require('./RecognitionEngine');
+const ConfigService = require('./ConfigService');
 const logger = require('../utils/logger');
 const { logTaskEvent } = require('../utils/logUtils');
 
@@ -1524,9 +1525,15 @@ const TaskManager = {
                 }
             }
 
+            const channelCfg1527 = ConfigService.getConfigValue('channelMonitor') || {};
+            const washPriorityOrder1527 = channelCfg1527.washPriorityOrder
+                || ConfigService.getConfigValue('washPriorityOrder')
+                || [];
+
             const washPolicy = {
                 autoWash,
                 keepDolbyMultiVersion,
+                washPriorityOrder: washPriorityOrder1527,
                 enableReleaseGroupPriority: true,
                 preferRemux: true,
                 preferHighResolution: true,
@@ -3209,14 +3216,24 @@ const TaskManager = {
                 }
 
                 // 洗版策略与云盘目标目录现有文件画质仲裁
+                const channelCfg3212 = ConfigService.getConfigValue('channelMonitor') || {};
+                const washPriorityOrder3212 = modeConfig?.washPolicy?.washPriorityOrder
+                    || channelCfg3212.washPriorityOrder
+                    || ConfigService.getConfigValue('washPriorityOrder')
+                    || [];
+
                 const washPolicy = modeConfig?.washPolicy || {
                     autoWash: true,
                     keepDolbyMultiVersion: Boolean(options?.keepDolbyMultiVersion || snapshot?.settings?.keepDolbyMultiVersion),
+                    washPriorityOrder: washPriorityOrder3212,
                     enableReleaseGroupPriority: true,
                     preferRemux: true,
                     preferHighResolution: true,
                     preferDolby: true
                 };
+                if (!washPolicy.washPriorityOrder || !washPolicy.washPriorityOrder.length) {
+                    washPolicy.washPriorityOrder = washPriorityOrder3212;
+                }
 
                 const cloud = modeConfig?.cloud139 || modeConfig;
                 let existingDiskFiles = [];
