@@ -2859,6 +2859,21 @@ class RecognitionEngine {
             tags.dynamicRange = 'SDR';
         }
 
+        // 统一前后端与画质仲裁对齐兼容字段
+        tags.resolution = tags.videoFormat;
+        tags.resRank = tags.resolutionRank;
+        tags.hdr = tags.dynamicRange;
+        tags.drRank = (function(dr) {
+            const s = String(dr || '').toUpperCase();
+            if (s.includes('DV+HDR') || s.includes('DOVI+HDR')) return 6;
+            if (s.includes('DV') || s.includes('DOVI') || s.includes('DOLBY')) return 5;
+            if (s.includes('HDR10+')) return 4;
+            if (s.includes('HDR10') || s.includes('HDR')) return 3;
+            if (s.includes('HLG')) return 2;
+            return 1;
+        })(tags.dynamicRange);
+        tags.fpsRank = tags.frameRateRank;
+
         return tags;
     }
 
@@ -3260,19 +3275,28 @@ class RecognitionEngine {
      * ⑧ 文件大小 (fileSize): 大文件优先 / 小文件优先
      */
     static compareCandidates(a, b, policy = {}) {
+        let storedOrder = [];
+        try {
+            const ConfigService = require('./ConfigService');
+            storedOrder = ConfigService.getConfigValue('channelMonitor.washPriorityOrder')
+                || ConfigService.getConfigValue('washPriorityOrder')
+                || [];
+        } catch (_) {}
+
+        // 权威画质基石排序：分辨率与动态范围绝对优先于常规介质标注
         const defaultOrder = [
-            'releaseGroup',
-            'resourceType',
             'videoFormat',
             'dynamicRange',
+            'resourceType',
+            'frameRate',
             'colorDepth',
             'audioCodec',
-            'frameRate',
-            'fileSize'
+            'fileSize',
+            'releaseGroup'
         ];
         const priorityOrder = Array.isArray(policy.washPriorityOrder) && policy.washPriorityOrder.length > 0
             ? policy.washPriorityOrder
-            : defaultOrder;
+            : (Array.isArray(storedOrder) && storedOrder.length > 0 ? storedOrder : defaultOrder);
 
         // 辅助评分映射
         const getResourceTypeScore = (cand) => {
@@ -3283,7 +3307,8 @@ class RecognitionEngine {
             if (/WEBRIP/i.test(cand.resourceType || cand.mediaSource || '')) return 3;
             if (/HDTV/i.test(cand.resourceType || cand.mediaSource || '')) return 2;
             if (/DVD/i.test(cand.resourceType || cand.mediaSource || '')) return 1;
-            return 0;
+            // 现代影视视频如果未标注介质，默认等同于常规数字网络版 (3)，绝不能当成 0 分被盲目淘汰！
+            return 3;
         };
 
         const getDynamicRangeScore = (cand) => {
