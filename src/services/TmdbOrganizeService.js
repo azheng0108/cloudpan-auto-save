@@ -1586,9 +1586,10 @@ const TaskManager = {
                             sec.targetPath = `${sec.targetFolderPath}/${sec.newName}`.replace(/\/+/g, '/');
                         } else {
                             sec.conflictDiscard = true;
-                            sec.conflictAction = `多版本洗版：同批次已保留最佳画质版本【${best.oldName}】，次选版本淘汰移入回收站`;
                             const bestTags = RecognitionEngine.inferTechnicalTags(best.newName || best.oldName, best.fileSize, best._probedMeta || best.file?._probedMeta);
                             const secTags = RecognitionEngine.inferTechnicalTags(sec.newName || sec.oldName, sec.fileSize, sec._probedMeta || sec.file?._probedMeta);
+                            const decisiveRes = RecognitionEngine.compareCandidatesDecisive(bestTags, secTags, washPolicy);
+                            sec.conflictAction = `多版本洗版：同批次已保留最佳画质版本【${best.oldName}】（在【${decisiveRes.decisiveLabel}】胜出: ${decisiveRes.decisiveDetail}），次选版本淘汰移入回收站`;
                             sec.washDetails = {
                                 type: "skipped",
                                 incomingName: sec.newName || sec.oldName,
@@ -1597,7 +1598,11 @@ const TaskManager = {
                                 existingName: best.newName || best.oldName,
                                 existingSize: best.fileSize || 0,
                                 existingTags: bestTags,
-                                cmp: 1
+                                cmp: 1,
+                                decisiveCriterion: decisiveRes.decisiveCriterion,
+                                decisiveLabel: decisiveRes.decisiveLabel,
+                                decisiveDetail: decisiveRes.decisiveDetail,
+                                winner: 'existing'
                             };
                         }
                     }
@@ -3219,21 +3224,30 @@ const TaskManager = {
 
                 // 洗版策略与云盘目标目录现有文件画质仲裁
                 const channelCfg3212 = ConfigService.getConfigValue('channelMonitor') || {};
-                const washPriorityOrder3212 = modeConfig?.washPolicy?.washPriorityOrder
+                const rawPolicy3212 = (typeof modeConfig?.washPolicy === 'object' && modeConfig?.washPolicy !== null)
+                    ? modeConfig.washPolicy
+                    : {};
+                const washStrategyStr3212 = typeof modeConfig?.washPolicy === 'string'
+                    ? modeConfig.washPolicy
+                    : (rawPolicy3212.strategy || rawPolicy3212.washStrategy || 'qualityFirst');
+
+                const washPriorityOrder3212 = rawPolicy3212.washPriorityOrder
                     || channelCfg3212.washPriorityOrder
                     || ConfigService.getConfigValue('washPriorityOrder')
                     || [];
 
-                const washPolicy = modeConfig?.washPolicy || {
-                    autoWash: true,
-                    keepDolbyMultiVersion: Boolean(options?.keepDolbyMultiVersion || snapshot?.settings?.keepDolbyMultiVersion),
+                const washPolicy = {
+                    autoWash: rawPolicy3212.autoWash !== false,
+                    washStrategy: washStrategyStr3212,
+                    keepDolbyMultiVersion: Boolean(rawPolicy3212.keepDolbyMultiVersion || options?.keepDolbyMultiVersion || snapshot?.settings?.keepDolbyMultiVersion),
                     washPriorityOrder: washPriorityOrder3212,
-                    enableReleaseGroupPriority: true,
-                    preferRemux: true,
-                    preferHighResolution: true,
-                    preferDolby: true
+                    enableReleaseGroupPriority: rawPolicy3212.enableReleaseGroupPriority !== false,
+                    preferRemux: rawPolicy3212.preferRemux !== false,
+                    preferHighResolution: rawPolicy3212.preferHighResolution !== false,
+                    preferDolby: rawPolicy3212.preferDolby !== false,
+                    ...rawPolicy3212
                 };
-                if (!washPolicy.washPriorityOrder || !washPolicy.washPriorityOrder.length) {
+                if (!Array.isArray(washPolicy.washPriorityOrder) || !washPolicy.washPriorityOrder.length) {
                     washPolicy.washPriorityOrder = washPriorityOrder3212;
                 }
 
@@ -3275,15 +3289,16 @@ const TaskManager = {
                         for (const matchedExisting of matchingExisting) {
                             const incomingTags = RecognitionEngine.inferTechnicalTags(task.newName, task.fileSize, task._probedMeta || task.file?._probedMeta);
                             const existingTags = RecognitionEngine.inferTechnicalTags(matchedExisting.name, matchedExisting.size);
-                            const cmp = RecognitionEngine.compareCandidates(incomingTags, existingTags, washPolicy);
+                            const decisiveRes = RecognitionEngine.compareCandidatesDecisive(incomingTags, existingTags, washPolicy);
+                            const cmp = decisiveRes.cmp;
 
-                            Logger.info(`[TMDB整理-画质比对] 进场文件【${task.oldName}】(${incomingTags.resolution || '未知分辨率'}, ${incomingTags.codec || '未知编码'}, ${incomingTags.hdr || 'SDR'}) vs 目标库已有【${matchedExisting.name}】(${existingTags.resolution || '未知分辨率'}, ${existingTags.codec || '未知编码'}, ${existingTags.hdr || 'SDR'}) => 仲裁判定: ${cmp < 0 ? '进场版本更优 (洗版置换)' : cmp > 0 ? '已有版本更优 (淘汰暂存副本)' : '同画质'}`);
+                            Logger.info(`[TMDB整理-画质比对] 进场文件【${task.oldName}】(${incomingTags.resolution || '未知分辨率'}, ${incomingTags.codec || '未知编码'}, ${incomingTags.hdr || 'SDR'}) vs 目标库已有【${matchedExisting.name}】(${existingTags.resolution || '未知分辨率'}, ${existingTags.codec || '未知编码'}, ${existingTags.hdr || 'SDR'}) => 仲裁判定: ${cmp < 0 ? '进场版本更优 (洗版置换)' : cmp > 0 ? '已有版本更优 (淘汰暂存副本)' : '同画质'} [决胜: ${decisiveRes.decisiveLabel} - ${decisiveRes.decisiveDetail}]`);
 
                             if (cmp < 0 || (cmp === 0 && /(?:\s*-\s*(?:\d+(?:\.\d+)?(?:GB|MB|G|M)|4K|1080P|v\d+))\./i.test(matchedExisting.name))) {
                                 // 新版本质量更优，或旧版带有历史消歧脏后缀 -> 标记洗版置换，延后淘汰（严禁提前删除！只有在新文件成功重命名和移动后才淘汰旧版）
                                 task.pendingWashReplaces = task.pendingWashReplaces || [];
                                 task.pendingWashReplaces.push({ fileId: matchedExisting.fileId, name: matchedExisting.name });
-                                task.washAction = `洗版置换：新版本画质更优，旧版本【${matchedExisting.name}】将在新版入库成功后移入回收站`;
+                                task.washAction = `洗版置换：新进场版本在【${decisiveRes.decisiveLabel}】上胜出（${decisiveRes.decisiveDetail}），旧版本【${matchedExisting.name}】将在新版入库成功后移入回收站`;
                                 task.decisionReason = task.washAction;
                                 task.washDetails = {
                                     type: "upgrade",
@@ -3293,13 +3308,17 @@ const TaskManager = {
                                     existingName: matchedExisting.name,
                                     existingSize: matchedExisting.size || 0,
                                     existingTags,
-                                    cmp
+                                    cmp,
+                                    decisiveCriterion: decisiveRes.decisiveCriterion,
+                                    decisiveLabel: decisiveRes.decisiveLabel,
+                                    decisiveDetail: decisiveRes.decisiveDetail,
+                                    winner: 'incoming'
                                 };
-                                Logger.info(`[TMDB整理-洗版置换规划] 进场文件 (${task.newName}) 优于目标库旧版本 (${matchedExisting.name})，已标记待入库就绪后延后淘汰`);
+                                Logger.info(`[TMDB整理-洗版置换规划] 进场文件 (${task.newName}) 在【${decisiveRes.decisiveLabel}】胜出 (${decisiveRes.decisiveDetail})，优于目标库旧版本 (${matchedExisting.name})，已标记待入库就绪后延后淘汰`);
                             } else if (cmp > 0) {
                                 // 目标库中已有更高质量版本 -> 淘汰暂存区次级副本，移入 139 回收站
                                 task.conflictDiscard = true;
-                                task.conflictAction = `目标媒体库中已有更高画质版本【${matchedExisting.name}】，暂存区次级副本【${task.oldName}】清理移入回收站`;
+                                task.conflictAction = `洗版拦截：目标媒体库已有版本在【${decisiveRes.decisiveLabel}】上更优（${decisiveRes.decisiveDetail}），暂存区次选副本【${task.oldName}】清理移入回收站`;
                                 task.decisionReason = task.conflictAction;
                                 task.washDetails = {
                                     type: "skipped",
@@ -3309,7 +3328,11 @@ const TaskManager = {
                                     existingName: matchedExisting.name,
                                     existingSize: matchedExisting.size || 0,
                                     existingTags,
-                                    cmp
+                                    cmp,
+                                    decisiveCriterion: decisiveRes.decisiveCriterion,
+                                    decisiveLabel: decisiveRes.decisiveLabel,
+                                    decisiveDetail: decisiveRes.decisiveDetail,
+                                    winner: 'existing'
                                 };
                                 try {
                                     await DriveAPI.batchDelete([task.fileId], modeConfig);

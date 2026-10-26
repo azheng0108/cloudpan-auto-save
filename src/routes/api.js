@@ -3025,13 +3025,13 @@ const registerApiRoutes = (app, deps) => {
                     classifyRegion: config.classifyRegion ?? true,
                     classifyYear: config.classifyYear ?? false,
                     washPriorityOrder: Array.isArray(config.washPriorityOrder) && config.washPriorityOrder.length ? config.washPriorityOrder : [
-                        'releaseGroup',
-                        'resourceType',
                         'videoFormat',
                         'dynamicRange',
+                        'resourceType',
+                        'releaseGroup',
+                        'frameRate',
                         'colorDepth',
                         'audioCodec',
-                        'frameRate',
                         'fileSize'
                     ],
                     keepDolbyMultiVersion: config.keepDolbyMultiVersion ?? false,
@@ -3148,13 +3148,13 @@ const registerApiRoutes = (app, deps) => {
                 classifyRegion: Boolean(classifyRegion),
                 classifyYear: Boolean(classifyYear),
                 washPriorityOrder: Array.isArray(washPriorityOrder) && washPriorityOrder.length ? washPriorityOrder : (current.washPriorityOrder || [
-                    'releaseGroup',
-                    'resourceType',
                     'videoFormat',
                     'dynamicRange',
+                    'resourceType',
+                    'releaseGroup',
+                    'frameRate',
                     'colorDepth',
                     'audioCodec',
-                    'frameRate',
                     'fileSize'
                 ]),
                 keepDolbyMultiVersion: Boolean(keepDolbyMultiVersion),
