@@ -1,5 +1,4 @@
 const express = require('express');
-const fs = require('fs').promises;
 const path = require('path');
 const ConfigService = require('../services/ConfigService');
 
@@ -10,7 +9,7 @@ const authenticateSession = (req, res, next) => {
         return next();
     }
 
-    if (req.session.authenticated) {
+    if (req.session && req.session.authenticated) {
         return next();
     }
 
@@ -20,33 +19,7 @@ const authenticateSession = (req, res, next) => {
     res.redirect('/login');
 };
 
-const renderHtmlWithVersion = async (res, filePath, assetVersion) => {
-    let html = await fs.readFile(filePath, 'utf8');
-    html = html.replace(/__ASSET_VERSION__/g, String(assetVersion || 'dev'));
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
-};
-
 const registerAuthRoutes = (app, publicDir, assetVersion) => {
-    app.get('/', async (req, res) => {
-        if (!req.session.authenticated) {
-            return res.redirect('/login');
-        }
-        try {
-            await renderHtmlWithVersion(res, path.join(publicDir, 'index.html'), assetVersion);
-        } catch (error) {
-            res.status(500).send('页面加载失败');
-        }
-    });
-
-    app.get('/login', async (req, res) => {
-        try {
-            await renderHtmlWithVersion(res, path.join(publicDir, 'login.html'), assetVersion);
-        } catch (error) {
-            res.status(500).send('页面加载失败');
-        }
-    });
-
     app.post('/api/auth/login', (req, res) => {
         const { username, password } = req.body;
         if (
@@ -60,27 +33,76 @@ const registerAuthRoutes = (app, publicDir, assetVersion) => {
         res.json({ success: false, error: '用户名或密码错误' });
     });
 
+    app.post('/api/auth/logout', (req, res) => {
+        if (req.session) {
+            req.session.destroy(() => {
+                res.clearCookie('connect.sid');
+                res.json({ success: true });
+            });
+        } else {
+            res.json({ success: true });
+        }
+    });
+
+    app.get('/logout', (req, res) => {
+        if (req.session) {
+            req.session.destroy(() => {
+                res.clearCookie('connect.sid');
+                res.redirect('/login');
+            });
+        } else {
+            res.redirect('/login');
+        }
+    });
+
+    app.get('/api/auth/session', (req, res) => {
+        res.json({
+            success: true,
+            authenticated: Boolean(req.session && req.session.authenticated),
+            username: req.session ? req.session.username : null,
+        });
+    });
+
+    app.get('/api/auth/wall-posters', async (req, res) => {
+        try {
+            const { TMDBService } = require('../services/tmdb');
+            const tmdb = new TMDBService();
+            const posters = await tmdb.getTrendingWallPosters();
+            res.json({ success: true, data: posters || [] });
+        } catch (_) {
+            res.json({ success: true, data: [] });
+        }
+    });
+
+    // 静态资源与免鉴权接口放行
     app.use((req, res, next) => {
         if (
             req.path === '/' ||
             req.path === '/login' ||
+            req.path === '/logout' ||
             req.path === '/api/health' ||
             req.path === '/api/auth/login' ||
-            req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico|svg|webmanifest)$/)
+            req.path === '/api/auth/logout' ||
+            req.path === '/api/auth/session' ||
+            req.path === '/api/auth/wall-posters' ||
+            req.path === '/api/webhook/emby' ||
+            req.path.startsWith('/api/strm/stream') ||
+            req.path.startsWith('/assets/') ||
+            req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico|svg|webmanifest|woff2?|ttf|map)$/i)
         ) {
             return next();
         }
         authenticateSession(req, res, next);
     });
 
-    // 认证检查后再提供静态资源，避免直接访问 /index.html 绕过会话校验。
+    // 托管前端静态资源
     app.use(express.static(publicDir, {
         index: false,
-        etag: false,
-        lastModified: false,
-        maxAge: 0,
+        etag: true,
+        lastModified: true,
+        maxAge: '1d',
         setHeaders: (res, filePath) => {
-            if (/\.(js|css|html)$/i.test(filePath)) {
+            if (/\.(html)$/i.test(filePath)) {
                 res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
                 res.setHeader('Pragma', 'no-cache');
                 res.setHeader('Expires', '0');

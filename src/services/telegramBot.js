@@ -241,6 +241,46 @@ class TelegramBotService {
             await this.showFolderTree(chatId);
         });
 
+        // 违规文件全盘巡检命令
+        this.bot.onText(/\/scan_banned$/, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!this._checkChatId(chatId)) return;
+            if (!this._checkUserId(chatId)) return;
+            await this.handleScanBanned(chatId);
+        });
+
+        // 违规文件一键清理命令
+        this.bot.onText(/\/clean_banned$/, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!this._checkChatId(chatId)) return;
+            if (!this._checkUserId(chatId)) return;
+            await this.handleCleanBanned(chatId);
+        });
+
+        // 空文件夹修剪命令
+        this.bot.onText(/\/(?:clean_empty|sweep_empty)$/, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!this._checkChatId(chatId)) return;
+            if (!this._checkUserId(chatId)) return;
+            await this.handleSweepEmpty(chatId);
+        });
+
+        // 多版本资产去重巡检命令
+        this.bot.onText(/\/(?:dedup|dedup_scan)$/, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!this._checkChatId(chatId)) return;
+            if (!this._checkUserId(chatId)) return;
+            await this.handleScanDedup(chatId);
+        });
+
+        // 多版本资产去重一键清理命令
+        this.bot.onText(/\/dedup_clean$/, async (msg) => {
+            const chatId = msg.chat.id;
+            if (!this._checkChatId(chatId)) return;
+            if (!this._checkUserId(chatId)) return;
+            await this.handleCleanDedup(chatId);
+        });
+
         // 执行任务
         this.bot.onText(/^\/execute_(\d+)$/, async (msg, match) => {
             const chatId = msg.chat.id;
@@ -390,6 +430,12 @@ class TelegramBotService {
                             accountId: this.currentAccountId
                         });
                         await this.showCommonFolders(chatId, messageId);
+                        break;
+                    case 'm_cb': // 一键清理违规文件
+                        await this.handleCleanBanned(chatId);
+                        break;
+                    case 'm_dc': // 一键清理冗余多版本
+                        await this.handleCleanDedup(chatId);
                         break;
                 }
             } catch (error) {
@@ -1079,6 +1125,193 @@ class TelegramBotService {
                 await this.bot.sendMessage(chatId, '长时间未搜索，已自动退出搜索模式');
             }
         }, 3 * 60 * 1000);  // 3分钟
+    }
+
+    async handleScanBanned(chatId) {
+        if (!await this._ensureAccountType(chatId, 'cloud139')) return;
+        const msg = await this.bot.sendMessage(chatId, '🔍 正在启动 139 全局违规失效文件巡检，请稍候...');
+        try {
+            const { Cloud139Service } = require('./cloud139');
+            const { CloudMaintenanceService } = require('./CloudMaintenanceService');
+            const cloud139 = Cloud139Service.getInstance(this.currentAccount);
+            const res = await CloudMaintenanceService.scanBannedFiles(cloud139, { rootCatalogId: '/' });
+            
+            const sizeMB = (res.totalBannedSize / (1024 * 1024)).toFixed(2);
+            let text = `🛡 **139 云盘违规死链巡检报告**\n\n` +
+                       `• 已扫描目录: ${res.scannedFolders} 个\n` +
+                       `• 已检测文件: ${res.totalFiles} 个\n` +
+                       `• 发现违规死链: ${res.bannedFiles.length} 项\n` +
+                       `• 占用网盘空间: ${sizeMB} MB\n\n`;
+
+            if (res.bannedFiles.length === 0) {
+                text += `🎉 恭喜！当前网盘环境非常健康，未发现任何违规死链文件。`;
+                await this.bot.editMessageText(text, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' });
+            } else {
+                this._lastBannedFiles = res.bannedFiles;
+                text += `⚠️ 违规文件抽样:\n`;
+                res.bannedFiles.slice(0, 5).forEach((f, idx) => {
+                    text += `${idx + 1}. \`${f.path}\`\n   └ 定性: ${f.reason}\n`;
+                });
+                if (res.bannedFiles.length > 5) {
+                    text += `... 等共 ${res.bannedFiles.length} 项\n\n`;
+                }
+                text += `可点击下方按钮或发送 /clean_banned 立即一键清理违规文件。`;
+                await this.bot.editMessageText(text, {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '🗑 立即清理违规文件', callback_data: JSON.stringify({ t: 'm_cb' }) }
+                        ]]
+                    }
+                });
+            }
+        } catch (err) {
+            logger.error('违规文件巡检失败', { error: err.message, stack: err.stack });
+            await this.bot.editMessageText(`❌ 巡检失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+        }
+    }
+
+    async handleCleanBanned(chatId) {
+        if (!await this._ensureAccountType(chatId, 'cloud139')) return;
+        const msg = await this.bot.sendMessage(chatId, '🗑 正在准备清理违规文件...');
+        try {
+            const { Cloud139Service } = require('./cloud139');
+            const { CloudMaintenanceService } = require('./CloudMaintenanceService');
+            const cloud139 = Cloud139Service.getInstance(this.currentAccount);
+            let targets = this._lastBannedFiles;
+            if (!targets || targets.length === 0) {
+                await this.bot.editMessageText('🔍 正在重新扫描违规文件...', { chat_id: chatId, message_id: msg.message_id });
+                const scanRes = await CloudMaintenanceService.scanBannedFiles(cloud139, { rootCatalogId: '/' });
+                targets = scanRes.bannedFiles;
+            }
+            if (targets.length === 0) {
+                await this.bot.editMessageText('✅ 当前没有需要清理的违规文件。', { chat_id: chatId, message_id: msg.message_id });
+                return;
+            }
+            const cleanRes = await CloudMaintenanceService.cleanBannedFiles(cloud139, targets);
+            const freedMB = (cleanRes.freedBytes / (1024 * 1024)).toFixed(2);
+            this._lastBannedFiles = null;
+            await this.bot.editMessageText(
+                `🎉 **违规文件清理完成**\n\n` +
+                `• 成功移入回收站: ${cleanRes.successCount} 项\n` +
+                `• 残留未清: ${cleanRes.failedCount} 项\n` +
+                `• 释放存储空间: ${freedMB} MB`,
+                { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            logger.error('违规文件清理失败', { error: err.message, stack: err.stack });
+            await this.bot.editMessageText(`❌ 清理失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+        }
+    }
+
+    async handleSweepEmpty(chatId) {
+        if (!await this._ensureAccountType(chatId, 'cloud139')) return;
+        const msg = await this.bot.sendMessage(chatId, '🧹 正在自底向上扫描并修剪空文件夹...');
+        try {
+            const { Cloud139Service } = require('./cloud139');
+            const { CloudMaintenanceService } = require('./CloudMaintenanceService');
+            const cloud139 = Cloud139Service.getInstance(this.currentAccount);
+            const res = await CloudMaintenanceService.sweepEmptyFolders(cloud139, { rootCatalogId: '/' });
+            let text = `🧹 **空文件夹清理完成**\n\n• 共修剪空目录: ${res.deletedFoldersCount} 个\n`;
+            if (res.deletedDirs.length > 0) {
+                text += `• 修剪路径抽样:\n` + res.deletedDirs.slice(0, 5).map(p => `  └ \`${p}\``).join('\n');
+            }
+            await this.bot.editMessageText(text, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' });
+        } catch (err) {
+            logger.error('空目录修剪失败', { error: err.message, stack: err.stack });
+            await this.bot.editMessageText(`❌ 修剪失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+        }
+    }
+
+    async handleScanDedup(chatId) {
+        if (!await this._ensureAccountType(chatId, 'cloud139')) return;
+        const msg = await this.bot.sendMessage(chatId, '🔍 正在启动 139 多版本影视资产去重巡检，请稍候...');
+        try {
+            const { Cloud139Service } = require('./cloud139');
+            const { AssetDeduplicationService } = require('./AssetDeduplicationService');
+            const ConfigService = require('./ConfigService');
+            const cloud139 = Cloud139Service.getInstance(this.currentAccount);
+            const files = await AssetDeduplicationService.scanCloudFiles(cloud139, { rootCatalogId: '/' });
+            const policy = ConfigService.getConfigValue('policy') || {};
+            const plan = AssetDeduplicationService.analyzeDuplicates(files, policy);
+            this._lastDedupPlan = plan;
+
+            let text = `🎬 **139 云盘多版本资产去重报告**\n\n` +
+                       `• 扫描媒体文件: ${plan.scannedFilesCount} 个\n` +
+                       `• 发现多版本资产: ${plan.duplicateGroupsCount} 组\n` +
+                       `• 冗余淘汰版本: ${plan.redundantFilesCount} 项\n` +
+                       `• 预估可释放空间: ${plan.totalFreedFormatted}\n\n`;
+
+            if (plan.duplicateGroupsCount === 0) {
+                text += `🎉 当前媒体库井井有条，未发现多版本冗余文件。`;
+                await this.bot.editMessageText(text, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' });
+            } else {
+                text += `📋 **去重方案抽样 (Keeper 优选保留)**:\n`;
+                plan.groups.slice(0, 3).forEach((g, idx) => {
+                    text += `${idx + 1}. **${g.title}** (${g.season_episode || g.assetKey})\n` +
+                            `   ├ 👑 保留: \`${g.keeper.name}\`\n` +
+                            `   └ 🗑 淘汰: ` + g.losers.map(l => `\`${l.name}\``).join(', ') + `\n`;
+                });
+                if (plan.groups.length > 3) {
+                    text += `... 等共 ${plan.groups.length} 组冗余资产\n\n`;
+                }
+                text += `点击下方按钮或发送 /dedup_clean 即可移入回收站安全清理。`;
+                await this.bot.editMessageText(text, {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '🗑 立即清理冗余版本', callback_data: JSON.stringify({ t: 'm_dc' }) }
+                        ]]
+                    }
+                });
+            }
+        } catch (err) {
+            logger.error('多版本资产去重巡检失败', { error: err.message, stack: err.stack });
+            await this.bot.editMessageText(`❌ 去重巡检失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+        }
+    }
+
+    async handleCleanDedup(chatId) {
+        if (!await this._ensureAccountType(chatId, 'cloud139')) return;
+        const msg = await this.bot.sendMessage(chatId, '🗑 正在准备执行多版本资产择优清理...');
+        try {
+            const { Cloud139Service } = require('./cloud139');
+            const { AssetDeduplicationService } = require('./AssetDeduplicationService');
+            const ConfigService = require('./ConfigService');
+            const cloud139 = Cloud139Service.getInstance(this.currentAccount);
+            let plan = this._lastDedupPlan;
+            if (!plan || !plan.groups || plan.groups.length === 0) {
+                await this.bot.editMessageText('🔍 正在重新全盘扫描多版本资产...', { chat_id: chatId, message_id: msg.message_id });
+                const files = await AssetDeduplicationService.scanCloudFiles(cloud139, { rootCatalogId: '/' });
+                const policy = ConfigService.getConfigValue('policy') || {};
+                plan = AssetDeduplicationService.analyzeDuplicates(files, policy);
+            }
+            if (!plan || plan.groups.length === 0) {
+                await this.bot.editMessageText('✅ 当前没有需要清理的冗余多版本资产。', { chat_id: chatId, message_id: msg.message_id });
+                return;
+            }
+            const transferredFileRepo = this.transferredFileRepo || null;
+            const res = await AssetDeduplicationService.executePrune(cloud139, plan, {
+                dryRun: false,
+                protectedPaths: ['/媒体库'],
+                transferredFileRepo
+            });
+            this._lastDedupPlan = null;
+            await this.bot.editMessageText(
+                `🎉 **多版本资产清理完成**\n\n` +
+                `• 成功移入回收站: ${res.successCount} 项\n` +
+                `• 失败未清: ${res.failedCount} 项\n` +
+                `• 释放存储空间: ${res.freedFormatted}`,
+                { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            logger.error('多版本资产清理失败', { error: err.message, stack: err.stack });
+            await this.bot.editMessageText(`❌ 清理失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+        }
     }
 }
 

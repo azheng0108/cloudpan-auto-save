@@ -1,12 +1,12 @@
 {
   "name": "cloudpan-auto-save",
-  "version": "2.2.90",
+  "version": "2.4.15",
   "description": "云盘自动转存系统",
   "main": "src/index.js",
   "scripts": {
     "start": "node dist/index.js",
     "start:prod": "npm run migration:run:prod && node dist/index.js",
-    "build": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});\" && tsc && node -e \"const fs=require('fs');fs.cpSync('src/public','dist/public',{recursive:true});\"",
+    "build": "tsc && npm run build:frontend && node -e \"const fs=require('fs');fs.rmSync('dist/public',{recursive:true,force:true});fs.cpSync('frontend/dist','dist/public',{recursive:true});\"",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -17,10 +17,12 @@
     "migration:create": "typeorm-ts-node-commonjs migration:create",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/index.js",
     "migration:run:prod": "node ./node_modules/typeorm/cli.js migration:run -d dist/database/index.js",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/index.js"
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/index.js",
+    "build:frontend": "npm --prefix frontend run build"
   },
   "dependencies": {
     "@netdrive-sdk/log": "1.0.0",
+    "better-sqlite3": "^9.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
@@ -29,13 +31,13 @@
     "got": "11.8.2",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
+    "mediainfo.js": "^0.3.8",
     "node-cron": "^3.0.2",
     "node-telegram-bot-api": "^0.66.0",
     "nunjucks": "^3.2.4",
     "p-limit": "^3.1.0",
     "reflect-metadata": "^0.1.13",
     "session-file-store": "^1.5.0",
-    "better-sqlite3": "^9.6.0",
     "typeorm": "^0.3.17",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"

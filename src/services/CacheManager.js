@@ -38,6 +38,9 @@ class CacheManager {
             }
         }
     }
+    clear() {
+        this.cache.clear();
+    }
     clearPrefix(prefix) {
         for (const key of this.cache.keys()) {
             if (key.startsWith(prefix)) {

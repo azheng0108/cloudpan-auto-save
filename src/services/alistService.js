@@ -200,6 +200,64 @@ const alistService = {
         throw new Error('OpenList 存储接口响应缺少 content');
     },
 
+    /**
+     * 通用 OpenList 写/读接口调用（带超时，业务码校验）。
+     * @param {string} endpoint 如 /api/fs/rename
+     * @param {object} json 请求体
+     */
+    async _apiPost(endpoint, json) {
+        const baseUrl = await this.getConfig('alist.baseUrl');
+        const apiKey = await this.getConfig('alist.apiKey');
+        if (!baseUrl) throw new Error('AList baseUrl 未配置');
+        if (!apiKey) throw new Error('AList apiKey 未配置');
+        const response = await got.post(`${String(baseUrl).replace(/\/+$/, '')}${endpoint}`, {
+            json,
+            headers: { 'Authorization': apiKey },
+            timeout: { connect: 5000, request: 30000 },
+            retry: 0,
+        }).json();
+        if (!response || typeof response !== 'object') {
+            throw new Error('AList API 返回空响应');
+        }
+        const code = response.code;
+        const message = String(response.message || '').toLowerCase();
+        const ok = code === 200 || code === 0 || code === '200' || code === '0' || message === 'success' || message === 'ok';
+        if (code !== undefined && !ok) {
+            throw new Error(`AList API 业务错误: code=${code}, message=${response.message || 'unknown'}`);
+        }
+        return response;
+    },
+
+    /** 列出目录全部条目（强制回源）。返回 content 数组：{ name, size, is_dir, ... } */
+    async listDir(path) {
+        const response = await this._apiPost('/api/fs/list', {
+            path: this._normalizePath(path) || '/',
+            page: 1,
+            per_page: 0,
+            refresh: true,
+        });
+        return Array.isArray(response?.data?.content) ? response.data.content : [];
+    },
+
+    /** 重命名（同目录内）。path 为条目完整路径。 */
+    async rename(path, newName) {
+        await this._apiPost('/api/fs/rename', { path: this._normalizePath(path), name: newName });
+    },
+
+    /** 移动条目到目标目录（保持原名）。 */
+    async move(srcDir, dstDir, names) {
+        await this._apiPost('/api/fs/move', {
+            src_dir: this._normalizePath(srcDir) || '/',
+            dst_dir: this._normalizePath(dstDir) || '/',
+            names,
+        });
+    },
+
+    /** 创建目录（已存在时 OpenList 视为成功）。 */
+    async mkdir(path) {
+        await this._apiPost('/api/fs/mkdir', { path: this._normalizePath(path) });
+    },
+
     async _requestJson(url, options) {
         const response = await got(url, {
             method: options.method,

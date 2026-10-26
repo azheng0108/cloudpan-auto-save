@@ -245,6 +245,14 @@ export class Task {
     /** 是否禁用自动命名（true = 彻底跳过，null/false = 沿用全局模板） */
     @Column('boolean', { nullable: true })
     disableRename!: boolean;
+
+    /** 链接失效自动搜盘自愈累计次数 */
+    @Column('integer', { nullable: true, default: 0 })
+    healCount!: number;
+
+    /** 任务数据来源模式：'channel'（频道监控首选） | 'manual'（手动备选） */
+    @Column('text', { nullable: true, default: 'manual' })
+    sourceMode!: string;
 }
 
 // 常用目录表
@@ -338,4 +346,383 @@ export class TaskError {
     createdAt!: Date;
 }
 
-export default { Account, Task, CommonFolder, TransferredFile, TaskError };
+// 影视刮削：批次（撤回的最大单位）
+@Entity()
+@Index(['driveType', 'accountId'])
+export class ScrapeBatch {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    /** 驱动类型：cloud139 | openlist */
+    @Column('text')
+    driveType!: string;
+
+    /** 账号 ID（OpenList 等无账号概念的驱动固定为 0） */
+    @Column('integer', { default: 0 })
+    accountId!: number;
+
+    @Column('text')
+    rootRef!: string;
+
+    @Column('text', { nullable: true })
+    rootPath!: string;
+
+    /** 触发方式：manual | schedule | task */
+    @Column('text', { default: 'manual' })
+    trigger!: string;
+
+    /** 是否整理到独立目录（false=仅原目录内改名） */
+    @Column('boolean', { default: false })
+    organize!: boolean;
+
+    @Column('text', { nullable: true })
+    targetRootRef!: string;
+
+    @Column('text', { nullable: true })
+    targetRootPath!: string;
+
+    /** planned | running | done | partial | reverted */
+    @Column('text', { default: 'planned' })
+    status!: string;
+
+    @Column('text', { nullable: true })
+    error!: string;
+
+    @CreateDateColumn()
+    createdAt!: Date;
+
+    @UpdateDateColumn()
+    updatedAt!: Date;
+}
+
+// 影视刮削：操作日志（每个文件一行，撤回依据）
+@Entity()
+@Index(['batchId'])
+@Index(['driveType', 'accountId', 'fileRef'])
+@Index(['status'])
+export class ScrapeRecord {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column('integer')
+    batchId!: number;
+
+    @Column('text')
+    driveType!: string;
+
+    @Column('integer', { default: 0 })
+    accountId!: number;
+
+    /** video | sidecar（字幕等随视频同步改名的旁挂文件） */
+    @Column('text', { default: 'video' })
+    kind!: string;
+
+    @Column('integer', { nullable: true })
+    mainRecordId!: number;
+
+    @Column('text', { nullable: true })
+    groupKey!: string;
+
+    /** 整理前的条目引用（139 为 fileId，OpenList 为完整路径） */
+    @Column('text')
+    fileRef!: string;
+
+    /** 整理后的条目引用 */
+    @Column('text', { nullable: true })
+    newRef!: string;
+
+    @Column('text')
+    oldParentRef!: string;
+
+    @Column('text', { nullable: true })
+    oldParentPath!: string;
+
+    @Column('text')
+    oldName!: string;
+
+    @Column('integer', { nullable: true })
+    size!: number;
+
+    @Column('text', { nullable: true })
+    newParentRef!: string;
+
+    @Column('text', { nullable: true })
+    newParentPath!: string;
+
+    @Column('text', { nullable: true })
+    newName!: string;
+
+    @Column('text', { nullable: true })
+    mediaType!: string;
+
+    @Column('text', { nullable: true })
+    tmdbId!: string;
+
+    @Column('integer', { nullable: true })
+    season!: number;
+
+    @Column('integer', { nullable: true })
+    episode!: number;
+
+    @Column('text', { nullable: true })
+    title!: string;
+
+    @Column('text', { nullable: true })
+    year!: string;
+
+    @Column('integer', { nullable: true })
+    confidence!: number;
+
+    /** 证据 JSON：命中规则、候选 Top3、解析结果、目标目录分段等 */
+    @Column('text', { nullable: true })
+    evidence!: string;
+
+    /** auto | tag | binding | manual */
+    @Column('text', { default: 'auto' })
+    source!: string;
+
+    /**
+     * planned | unrecognized | pending_review | ignored | applying | applied | failed
+     * | reverting | reverted | revert_failed
+     */
+    @Column('text', { default: 'planned' })
+    status!: string;
+
+    @Column('text', { nullable: true })
+    reason!: string;
+
+    @Column('text', { nullable: true })
+    error!: string;
+
+    @CreateDateColumn()
+    createdAt!: Date;
+
+    @Column('datetime', { nullable: true })
+    appliedAt!: Date;
+
+    @Column('datetime', { nullable: true })
+    revertedAt!: Date;
+}
+
+// 影视刮削：手动绑定 / 忽略（记住用户的人工决定）
+@Entity()
+@Index(['driveType', 'accountId', 'folderKey'], { unique: true })
+export class ScrapeBinding {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column('text')
+    driveType!: string;
+
+    @Column('integer', { default: 0 })
+    accountId!: number;
+
+    /** 分组键（电视剧为剧集目录引用，电影为文件引用） */
+    @Column('text')
+    folderKey!: string;
+
+    /** bind | ignore */
+    @Column('text', { default: 'bind' })
+    action!: string;
+
+    @Column('text', { nullable: true })
+    tmdbId!: string;
+
+    @Column('text', { nullable: true })
+    mediaType!: string;
+
+    @Column('integer', { nullable: true })
+    seasonOverride!: number;
+
+    @Column('integer', { default: 0 })
+    episodeOffset!: number;
+
+    @CreateDateColumn()
+    createdAt!: Date;
+}
+
+// Telegram 频道监控配置表
+@Entity('channel_monitors')
+export class ChannelMonitor {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column('text')
+    name!: string;
+
+    @Column('text')
+    channelUrl!: string;
+
+    @Column('integer')
+    accountId!: number;
+
+    @Column('text', { default: '/' })
+    targetFolderId!: string;
+
+    @Column('text', { nullable: true })
+    targetFolderName!: string;
+
+    @Column('text', { nullable: true, default: '' })
+    stagingFolderId!: string; // 频道独立暂存区目录ID，为空则继承全局默认暂存区
+
+    @Column('text', { nullable: true, default: '' })
+    stagingFolderName!: string; // 频道独立暂存区目录名称
+
+    @Column('text', { nullable: true, default: '' })
+    filterKeywords!: string;
+
+    @Column('text', { nullable: true, default: '' })
+    excludeKeywords!: string;
+
+    @Column('boolean', { default: true })
+    autoOrganize!: boolean;
+
+    @Column('boolean', { default: true })
+    autoWash!: boolean;
+
+    @Column('text', { default: 'active' })
+    status!: string; // 'active' | 'paused'
+
+    @Column('text', { nullable: true, default: '' })
+    cronExpression!: string; // 可选独立调度频率，为空则继承全局设置
+
+    @Column('text', { nullable: true, default: '' })
+    secondary_dispatch_rules!: string; // 二次分流规则组（JSON 字符串）
+
+    @Column('integer', { nullable: true, default: 0 })
+    lastMessageId!: number;
+
+    @Column('datetime', { nullable: true })
+    lastCheckedAt!: Date;
+
+    @CreateDateColumn()
+    createdAt!: Date;
+
+    @UpdateDateColumn()
+    updatedAt!: Date;
+}
+
+// 频道监控推文抓取与防重历史表
+@Entity('channel_monitor_history')
+export class ChannelMonitorHistory {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column('integer')
+    @Index()
+    channelId!: number;
+
+    @Column('text', { nullable: true })
+    channelName!: string;
+
+    @Column('integer')
+    @Index()
+    messageId!: number;
+
+    @Column('text', { nullable: true })
+    postUrl!: string;
+
+    @Column('text', { nullable: true })
+    postTitle!: string;
+
+    @Column('text', { nullable: true })
+    rawText!: string;
+
+    @Column('text', { nullable: true })
+    shareLink!: string;
+
+    @Column('text', { nullable: true })
+    accessCode!: string;
+
+    @Column('text', { default: 'pending' })
+    @Index()
+    status!: string; // 'success' | 'skipped_filter' | 'skipped_duplicate' | 'failed'
+
+    @Column('text', { nullable: true })
+    reason!: string;
+
+    @Column('integer', { default: 0 })
+    transferredCount!: number;
+
+    @Column('text', { nullable: true })
+    transferredDetails!: string; // JSON
+
+    @CreateDateColumn()
+    createdAt!: Date;
+}
+
+// 云盘维护与巡检作业流水表 (Banned inspection, empty prune, cleanup)
+@Entity('maintenance_jobs')
+export class MaintenanceJob {
+    @PrimaryGeneratedColumn()
+    id!: number;
+
+    @Column('text')
+    type!: string; // 'banned_scan' | 'banned_clean' | 'empty_prune' | 'missing_scan'
+
+    @Column('text', { default: 'manual' })
+    triggerType!: string; // 'manual' | 'cron'
+
+    @Column('text')
+    title!: string; // "手动违规死链巡检" | "定时自动巡检" | "违规死链安全处置" | "安全空目录修剪"
+
+    @Column('text', { default: 'running' })
+    @Index()
+    status!: string; // 'running' | 'completed' | 'cleaned' | 'failed'
+
+    @Column('text', { default: '' })
+    summary!: string;
+
+    @Column('integer', { default: 0 })
+    durationMs!: number;
+
+    @Column('text', { nullable: true, default: '' })
+    folderPath!: string;
+
+    @Column('integer', { default: 0 })
+    scannedFolders!: number;
+
+    @Column('integer', { default: 0 })
+    totalFiles!: number;
+
+    @Column('integer', { default: 0 })
+    bannedCount!: number;
+
+    @Column('integer', { default: 0 })
+    cleanedCount!: number;
+
+    @Column('text', { nullable: true, default: '0 B' })
+    freedFormatted!: string;
+
+    @Column('text', { nullable: true })
+    findingsJson!: string; // JSON: 违规文件清单快照
+
+    @Column('text', { nullable: true })
+    cleanedDetailsJson!: string; // JSON: 处置明细清单
+
+    @Column('text', { nullable: true })
+    error!: string;
+
+    @CreateDateColumn({
+        transformer: {
+            from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
+            to: (date: Date) => date
+        }
+    })
+    @Index()
+    createdAt!: Date;
+}
+
+export default {
+    Account,
+    Task,
+    CommonFolder,
+    TransferredFile,
+    TaskError,
+    ScrapeBatch,
+    ScrapeRecord,
+    ScrapeBinding,
+    ChannelMonitor,
+    ChannelMonitorHistory,
+    MaintenanceJob
+};

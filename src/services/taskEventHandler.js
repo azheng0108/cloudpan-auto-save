@@ -1,6 +1,7 @@
 const { logTaskEvent } = require('../utils/logUtils');
 const logger = require('../utils/logger');
 const path = require('path');
+const { webhookService } = require('./WebhookService');
 const { EmbyService } = require('./emby');
 const { StrmService } = require('./strm');
 const { ScrapeService } = require('./ScrapeService');
@@ -100,12 +101,20 @@ class TaskEventHandler {
     }
 
     async handle(taskCompleteEventDto) {
-        const task = taskCompleteEventDto.task;
+        // 全局后处理总开关：阶段性关闭后处理流程 (自动重命名/STRM/NFO/OpenList/Emby/Webhook)
+        const isPostProcessEnabled = ConfigService.getConfigValue('postProcess.enable', false)
+            || ConfigService.getConfigValue('postProcess.enabled', false);
+        if (!isPostProcessEnabled) {
+            logger.debug('[后处理] 全局后处理总开关已关闭，跳过后处理流程');
+            return;
+        }
+
+        const task = taskCompleteEventDto.task || {};
         const fileCount = Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0;
-        const resourceName = task?.resourceName || '未知';
+        const resourceName = task.resourceName || taskCompleteEventDto.taskName || '云盘整理';
         logTaskEvent(`── 后处理开始: ${resourceName}（共 ${fileCount} 个文件）──`);
-        if (taskCompleteEventDto.fileList.length === 0) {
-            logTaskEvent(`[任务 ${task?.id}] 文件列表为空，跳过后处理`);
+        if (!Array.isArray(taskCompleteEventDto.fileList) || taskCompleteEventDto.fileList.length === 0) {
+            logTaskEvent(`[任务 ${task.id || 'manual'}] 文件列表为空，跳过后处理`);
             logTaskEvent(`── 后处理完成 ──`);
             return;
         }
@@ -135,41 +144,63 @@ class TaskEventHandler {
             refreshContext = await this._handleCloudCacheRefresh(taskCompleteEventDto);
         } catch (error) {
             logger.error('OpenList 缓存刷新失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`[4] OpenList 缓存刷新失败（不阻断 Emby 通知）: ${error.message}`);
+            logTaskEvent(`[4] OpenList 缓存刷新失败（不阻断后续通知）: ${error.message}`);
         }
         try {
-            logTaskEvent('[5] Emby 通知');
-            const notifyResult = await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
-            if (notifyResult?.status === 'success') {
-                logTaskEvent(
-                    `[5] Emby 通知完成（首次执行: ${notifyResult.firstExecution ? '是' : '否'}，刷新模式: ${notifyResult.refreshMode || '未知'}）`
-                );
-            } else if (notifyResult?.status === 'skipped') {
-                logTaskEvent(`[5] Emby 通知跳过: ${notifyResult.reason || '未知'}`);
+            logTaskEvent('[5] Emby 媒体库直连刷新');
+            const embyResult = await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
+            if (embyResult?.status === 'success') {
+                logTaskEvent(`[5] Emby 媒体库刷新完成: 模式=${embyResult.refreshMode || '目录增量'}`);
+            } else if (embyResult?.status === 'skipped') {
+                logTaskEvent(`[5] Emby 媒体库刷新跳过: ${embyResult.reason || '未启用'}`);
             }
         } catch (error) {
-            logger.error('Emby 通知失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`[5] Emby 通知失败: ${error.message}`);
+            logger.error('Emby 媒体库刷新失败', { error: error.message, stack: error.stack });
+            logTaskEvent(`[5] Emby 媒体库刷新失败: ${error.message}`);
+        }
+        try {
+            logTaskEvent('[6] Webhook 入库通知 (SmartStrm / 第三方)');
+            const notifyResult = await this._handleWebhookNotify(taskCompleteEventDto, refreshContext);
+            if (notifyResult?.status === 'success') {
+                logTaskEvent(
+                    `[6] Webhook 通知完成（HTTP ${notifyResult.statusCode || 200}）`
+                );
+            } else if (notifyResult?.status === 'skipped') {
+                logTaskEvent(`[6] Webhook 通知跳过: ${notifyResult.reason || '未启用'}`);
+            }
+        } catch (error) {
+            logger.error('Webhook 出站通知失败', { error: error.message, stack: error.stack });
+            logTaskEvent(`[6] Webhook 出站通知失败: ${error.message}`);
         }
         logTaskEvent(`── 后处理完成 ──`);
     }
 
     async _handleAutoRename(taskCompleteEventDto) {
         try {
+            if (
+                taskCompleteEventDto.sourceMode === 'staging_organize' ||
+                taskCompleteEventDto.task?.enableTaskScraper === true ||
+                Boolean(taskCompleteEventDto.task?.tmdbId) ||
+                !taskCompleteEventDto.taskService
+            ) {
+                logTaskEvent('[1] 媒体文件已由 TMDB 整理归档引擎规范化处理，跳过旧版二次重命名');
+                return;
+            }
             const task = taskCompleteEventDto.task || {};
+            const fileCount = Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0;
             const hasTaskTemplate = !!(String(task.movieRenameFormat || '').trim() || String(task.tvRenameFormat || '').trim());
             const hasGlobalTemplate = !!(
                 String(ConfigService.getConfigValue('tmdb.movieRenameFormat') || '').trim() ||
                 String(ConfigService.getConfigValue('tmdb.tvRenameFormat') || '').trim()
             );
             const hasRegexRule = !!(String(task.sourceRegex || '').trim() && String(task.targetRegex || '').trim());
-            const fileCount = Array.isArray(taskCompleteEventDto.fileList) ? taskCompleteEventDto.fileList.length : 0;
             const templateLabel = task.disableRename === true ? '已禁用'
-                : hasTaskTemplate ? '任务级'
-                : hasGlobalTemplate ? '全局'
-                : '否';
+                : hasTaskTemplate ? '任务级模板'
+                : hasGlobalTemplate ? '全局模板'
+                : hasRegexRule ? '正则规则'
+                : '139规范洗版';
             logTaskEvent(
-                `[1] 自动重命名（共 ${fileCount} 个文件，命名模板: ${templateLabel}，正则规则: ${hasRegexRule ? '是' : '否'}）`
+                `[1] 自动重命名（共 ${fileCount} 个文件，命名规则: ${templateLabel}）`
             );
 
             const newFiles = await taskCompleteEventDto.taskService.autoRename(
@@ -198,12 +229,7 @@ class TaskEventHandler {
             logTaskEvent('STRM 本地生成未启用，跳过（使用外部工具生成或不使用本地 STRM）');
             return;
         }
-        const task = dto.task;
-        const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || task.account?.localStrmPrefix || '';
-        if (!localStrmPrefix) {
-            logTaskEvent(`[2] 跳过本地 STRM 生成 [任务 ${task.id}]: 未配置 strm.localStrmPrefix`);
-            return;
-        }
+        const task = dto.task || {};
         const files = Array.isArray(dto.fileList) ? dto.fileList : [];
         if (files.length === 0) {
             logTaskEvent(`[2] 跳过本地 STRM 生成 [任务 ${task.id}]: 文件列表为空`);
@@ -260,8 +286,12 @@ class TaskEventHandler {
             return;
         }
 
-        const task = dto.task;
+        const task = dto.task || {};
         const account = task.account || {};
+        if (!task.id) {
+            logTaskEvent(`未指定任务实体，跳过 OpenList 缓存刷新`);
+            return null;
+        }
         const alistNativePath = account.alistNativePath?.trim();
         const alistStrmPathRaw = account.alistStrmPath?.trim();
 
@@ -423,21 +453,31 @@ class TaskEventHandler {
     }
 
     /**
-     * 通知 Emby 刷新对应媒体库。
-     * 在 STRM 文件全部生成后调用，确保 Emby 能扫描到新文件。
+     * 通知 Emby 刷新对应媒体库 (适用于 OpenList 原生 STRM 或本地 STRM 用户)。
+     * 在 OpenList 目录缓存刷新后调用，向 Emby 发送标准轻量目录事件通知。
      * @param {TaskCompleteEventDto} dto
+     * @param {object} refreshContext
      */
     async _handleEmbyNotify(dto, refreshContext = null) {
-        // EmbyService 构造时读取 emby.enable，未启用时内部会短路返回
-        const embyService = new EmbyService(null);
-        if (!embyService.enable) {
-            const serverExists = !!ConfigService.getConfigValue('emby.serverUrl');
-            const apiKeyExists = !!ConfigService.getConfigValue('emby.apiKey');
-            logTaskEvent(`Emby 未启用，跳过通知 | enable=false | serverUrl=${serverExists} | apiKey=${apiKeyExists}`);
+        // 用户明确要求：emby自动触发流程先不要触发
+        logTaskEvent('[5] Emby 媒体库直连刷新跳过: 用户要求暂不自动触发');
+        return { status: 'skipped', reason: 'auto_trigger_paused_by_user' };
+    }
+
+    /**
+     * 通知 SmartStrm / 第三方 Webhook 服务触发媒体入库或生成 302 STRM
+     * @param {TaskCompleteEventDto} dto
+     * @param {object} refreshContext
+     */
+    async _handleWebhookNotify(dto, refreshContext = null) {
+        if (!webhookService.outboundEnable) {
             return { status: 'skipped', reason: 'disabled' };
         }
-        const task = dto.task;
+        const task = dto.task || {};
         const account = task.account || {};
+        if (!task.id) {
+            return { status: 'skipped', reason: 'no_task' };
+        }
 
         const normalizedBasePath = String(account.alistNativePath || '')
             .replace(/\\/g, '/')
@@ -450,8 +490,6 @@ class TaskEventHandler {
         const { taskSubfolder: autoSubfolder } = await this._buildNormalizedTaskSubfolder(task, account, normalizedBasePath);
         const taskSubfolder = normalizedFromRefresh || autoSubfolder;
 
-        const debounceMs = Number(ConfigService.getConfigValue('emby.notifyDebounceMs')) || 2000;
-        // 若未配置原生挂载路径，则回退到原任务路径，避免影响仅 Emby 通知场景。
         const fallbackRawPath = String(task.realFolderName || '')
             .replace(/\\/g, '/')
             .replace(/\/+/g, '/')
@@ -461,26 +499,12 @@ class TaskEventHandler {
                 ? `${normalizedBasePath}/${taskSubfolder}`.replace(/\/+/g, '/').replace(/\/+$/g, '')
                 : normalizedBasePath)
             : fallbackRawPath;
-        const debounceKey = `${task.accountId || 'unknown'}:${fullCloudPath}`;
-        const now = Date.now();
-        const lastAt = this._embyNotifyAt.get(debounceKey) || 0;
-        if (lastAt > 0 && now - lastAt < debounceMs) {
-            logTaskEvent(`Emby 通知防抖命中，跳过重复通知: key=${debounceKey}, interval=${now - lastAt}ms`);
-            return { status: 'skipped', reason: 'debounced' };
-        }
-        this._embyNotifyAt.set(debounceKey, now);
-        logTaskEvent(`Emby 通知准备执行: taskId=${task.id} | path=${fullCloudPath} | debounceMs=${debounceMs}`);
 
-        const taskForEmby = {
-            ...task,
-            realFolderName: fullCloudPath,
-        };
-
-        const result = await embyService.notify(taskForEmby, {
-            firstExecution: !!dto.firstExecution,
-            directoryPath: fullCloudPath,
+        return await webhookService.notifyTransferComplete(task, {
+            savePath: fullCloudPath,
+            subfolder: taskSubfolder,
+            files: dto.fileList || []
         });
-        return result || { status: 'skipped', reason: 'empty-result' };
     }
 
 }

@@ -1,0 +1,921 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f8fafc;
+    color: #0f172a;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+html.dark body {
+  background-color: #0b1120;
+  color: #f1f5f9;
+}
+
+/* ================= 统一按钮 ================= */
+.btn-primary {
+  background-color: #1677ff;
+  color: white;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  cursor: pointer;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.btn-primary:hover {
+  background-color: #4096ff;
+}
+
+.btn-default {
+  background-color: #fff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all 0.2s;
+  cursor: pointer;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.btn-default:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+  background-color: #f0f7ff;
+}
+html.dark .btn-default {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+html.dark .btn-default:hover {
+  color: #60a5fa;
+  border-color: #3b82f6;
+  background-color: #1e293b;
+}
+
+/* ================= 侧边栏专属导航体系 ================= */
+.sidebar-tabs {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  padding: 0 !important;
+  border-bottom: none !important;
+  background: transparent !important;
+  overflow-x: hidden !important;
+}
+
+.sidebar-accordion-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-group-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  background-color: #f8fafc;
+  border: 1px solid #f1f5f9;
+  transition: all 0.2s ease;
+  user-select: none;
+  cursor: pointer;
+}
+.sidebar-group-btn:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  border-color: #e2e8f0;
+}
+.sidebar-group-btn:active {
+  background-color: #e2e8f0;
+}
+.sidebar-group-btn > * {
+  pointer-events: none;
+}
+html.dark .sidebar-group-btn {
+  background-color: #162032;
+  color: #94a3b8;
+  border-color: #1e293b;
+}
+html.dark .sidebar-group-btn:hover {
+  background-color: #1e293b;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+.sidebar-chevron-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.04);
+  color: #64748b;
+  transition: all 0.2s ease;
+}
+html.dark .sidebar-chevron-pill {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+}
+
+.sidebar-group-chevron {
+  width: 13px;
+  height: 13px;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-group-btn.collapsed .sidebar-group-chevron {
+  transform: rotate(-90deg);
+}
+
+.sidebar-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: all 0.2s ease;
+}
+.sidebar-group-items.hidden {
+  display: none !important;
+}
+
+.sidebar-nav-item {
+  width: 100% !important;
+  min-height: 38px !important;
+  height: 38px !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  color: #4b5563 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  user-select: none !important;
+  margin-bottom: 1px !important;
+  background: transparent;
+  text-decoration: none;
+}
+.sidebar-nav-item:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+.sidebar-nav-item.active {
+  background-color: #e6f4ff !important;
+  color: #1677ff !important;
+  font-weight: 600 !important;
+}
+html.dark .sidebar-nav-item {
+  color: #94a3b8 !important;
+}
+html.dark .sidebar-nav-item:hover {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+html.dark .sidebar-nav-item.active {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+  color: #60a5fa !important;
+}
+
+/* 滚动条 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+html.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.app-viewport-container {
+  max-width: 1440px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+.settings-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: #ffffff;
+  color: #0f172a;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+@media (max-width: 640px) {
+  .settings-card {
+    padding: 14px 14px;
+    margin-bottom: 14px;
+    border-radius: 10px;
+  }
+}
+html.dark .settings-card {
+  border-color: #1e293b;
+  background: #111827;
+  color: #f1f5f9;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+.input-base {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all 0.2s;
+  outline: none;
+  box-sizing: border-box;
+  height: 38px;
+  background-color: #fff;
+  border: 1px solid #d1d5db;
+  color: #1e293b;
+}
+.input-base:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
+}
+.input-base:read-only {
+  background-color: #f8fafc;
+  color: #64748b;
+  cursor: default;
+}
+html.dark .input-base {
+  background-color: #1e293b;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+html.dark .input-base:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+html.dark .input-base:read-only {
+  background-color: #0f172a;
+  color: #64748b;
+}
+
+.form-text {
+  display: block;
+  font-size: 11.5px;
+  color: #64748b;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+html.dark .form-text {
+  color: #94a3b8;
+}
+
+/* 隐藏原生滚动条但保留可滚动性 */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+/* ==================================================================
+   统一 UI 语义样式层（P0 基线）
+   以下语义类逐属性提炼自频道监控界面（ChannelView.vue）现行视觉规格，
+   作为 TMDB 剧集缺集 / 网盘清理 / 媒体挂载三界面统一化改造的强制基线。
+   每组类附来源行号注释，便于追溯与并排比对（spec 4.4.3）。
+   ================================================================== */
+
+/* ---------- 1. 胶囊选项卡（对齐频道监控规范 ChannelView:899-924） ---------- */
+.tab-pill-group {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  background-color: #f1f5f9;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-pill-group::-webkit-scrollbar {
+  display: none;
+}
+html.dark .tab-pill-group {
+  background-color: rgba(15, 23, 42, 0.6);
+  border-color: rgba(51, 65, 85, 0.6);
+}
+
+.tab-pill {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-pill:hover {
+  color: #0f172a;
+}
+html.dark .tab-pill {
+  color: #64748b;
+}
+html.dark .tab-pill:hover {
+  color: #ffffff;
+}
+
+.tab-pill--active {
+  background-color: #ffffff;
+  color: #2563eb;
+  font-weight: 600;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+html.dark .tab-pill--active {
+  background-color: #1e293b;
+  color: #ffffff;
+}
+.tab-pill--active:hover {
+  color: #2563eb;
+}
+html.dark .tab-pill--active:hover {
+  color: #ffffff;
+}
+
+.tab-pill__badge {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 10px;
+  background-color: #dbeafe;
+  color: #1d4ed8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+html.dark .tab-pill__badge {
+  background-color: #334155;
+  color: #93c5fd;
+}
+
+/* ---------- 2. 模块卡片头（对齐频道监控规范 ChannelView:943-1000） ---------- */
+.module-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #f3f4f6;
+}
+html.dark .module-card-header {
+  border-bottom-color: #1f2937;
+}
+
+.module-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.module-icon-badge--blue { background-color: #eff6ff; color: #2563eb; }
+html.dark .module-icon-badge--blue { background-color: rgba(30, 58, 138, 0.3); color: #60a5fa; }
+.module-icon-badge--sky { background-color: #f0f9ff; color: #0284c7; }
+html.dark .module-icon-badge--sky { background-color: rgba(12, 74, 110, 0.3); color: #38bdf8; }
+.module-icon-badge--purple { background-color: #faf5ff; color: #9333ea; }
+html.dark .module-icon-badge--purple { background-color: rgba(59, 7, 100, 0.3); color: #c084fc; }
+.module-icon-badge--emerald { background-color: #ecfdf5; color: #059669; }
+html.dark .module-icon-badge--emerald { background-color: rgba(6, 78, 59, 0.3); color: #34d399; }
+.module-icon-badge--teal { background-color: #f0fdfa; color: #0d9488; }
+html.dark .module-icon-badge--teal { background-color: rgba(19, 78, 74, 0.3); color: #2dd4bf; }
+.module-icon-badge--indigo { background-color: #eef2ff; color: #4f46e5; }
+html.dark .module-icon-badge--indigo { background-color: rgba(49, 46, 129, 0.3); color: #818cf8; }
+.module-icon-badge--rose { background-color: #fff1f2; color: #e11d48; }
+html.dark .module-icon-badge--rose { background-color: rgba(136, 19, 55, 0.3); color: #fb7185; }
+.module-icon-badge--amber { background-color: #fffbeb; color: #d97706; }
+html.dark .module-icon-badge--amber { background-color: rgba(120, 53, 15, 0.3); color: #fbbf24; }
+
+.module-card-header__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.375;
+}
+html.dark .module-card-header__title {
+  color: #ffffff;
+}
+.module-card-header__subtitle {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+html.dark .module-card-header__subtitle {
+  color: #9ca3af;
+}
+
+/* ---------- 3. 状态胶囊（对齐频道监控规范 ChannelView:1776-1786，五档语义色） ---------- */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.status-pill--success { background-color: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+html.dark .status-pill--success { background-color: rgba(2, 44, 34, 0.4); color: #6ee7b7; border-color: #065f46; }
+.status-pill--danger { background-color: #fff1f2; color: #be123c; border-color: #fecdd3; }
+html.dark .status-pill--danger { background-color: rgba(76, 5, 25, 0.4); color: #fda4af; border-color: #9f1239; }
+.status-pill--warning { background-color: #fffbeb; color: #b45309; border-color: #fde68a; }
+html.dark .status-pill--warning { background-color: rgba(69, 26, 3, 0.4); color: #fcd34d; border-color: #92400e; }
+.status-pill--info { background-color: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+html.dark .status-pill--info { background-color: rgba(23, 37, 84, 0.4); color: #93c5fd; border-color: #1e40af; }
+.status-pill--neutral { background-color: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+html.dark .status-pill--neutral { background-color: #1e293b; color: #94a3b8; border-color: #334155; }
+
+/* ---------- 4. 开关行（对齐频道监控规范 ChannelView:959-967） ---------- */
+.switch-row {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background-color: rgba(249, 250, 251, 0.6);
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+html.dark .switch-row {
+  border-color: #374151;
+  background-color: rgba(31, 41, 55, 0.5);
+}
+.switch-row__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #111827;
+}
+html.dark .switch-row__title {
+  color: #ffffff;
+}
+.switch-row__desc {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+html.dark .switch-row__desc {
+  color: #9ca3af;
+}
+
+/* ---------- 5. 内联面板与原位确认胶囊（对齐频道监控规范 ChannelView:1034-1083 / 1192-1218） ---------- */
+.inline-panel {
+  padding: 16px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+}
+.inline-panel--blue { border-color: rgba(59, 130, 246, 0.5); background-color: rgba(239, 246, 255, 0.3); }
+html.dark .inline-panel--blue { background-color: rgba(23, 37, 84, 0.2); }
+.inline-panel--sky { border-color: rgba(56, 189, 248, 0.5); background-color: rgba(240, 249, 255, 0.3); }
+html.dark .inline-panel--sky { background-color: rgba(8, 47, 73, 0.2); }
+.inline-panel--purple { border-color: rgba(192, 132, 252, 0.5); background-color: rgba(250, 245, 255, 0.3); }
+html.dark .inline-panel--purple { background-color: rgba(59, 7, 100, 0.2); }
+.inline-panel--emerald { border-color: rgba(52, 211, 153, 0.5); background-color: rgba(236, 253, 245, 0.3); }
+html.dark .inline-panel--emerald { background-color: rgba(2, 44, 34, 0.2); }
+.inline-panel--teal { border-color: rgba(45, 212, 191, 0.5); background-color: rgba(240, 253, 250, 0.3); }
+html.dark .inline-panel--teal { background-color: rgba(4, 47, 46, 0.2); }
+.inline-panel--indigo { border-color: rgba(129, 140, 248, 0.5); background-color: rgba(238, 242, 255, 0.3); }
+html.dark .inline-panel--indigo { background-color: rgba(30, 27, 75, 0.2); }
+.inline-panel--rose { border-color: rgba(251, 113, 133, 0.5); background-color: rgba(255, 241, 242, 0.3); }
+html.dark .inline-panel--rose { background-color: rgba(76, 5, 25, 0.2); }
+.inline-panel--amber { border-color: rgba(251, 191, 36, 0.5); background-color: rgba(255, 251, 235, 0.3); }
+html.dark .inline-panel--amber { background-color: rgba(69, 26, 3, 0.2); }
+.inline-panel--danger { border-color: rgba(244, 63, 94, 0.55); background-color: rgba(255, 241, 242, 0.45); }
+html.dark .inline-panel--danger { background-color: rgba(76, 5, 25, 0.25); }
+
+.confirm-pill-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.confirm-pill__text {
+  font-size: 11px;
+  color: #ef4444;
+  font-weight: 500;
+}
+.confirm-pill__yes {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background-color: #dc2626;
+  color: #ffffff;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.confirm-pill__yes:hover {
+  background-color: #b91c1c;
+}
+.confirm-pill__no {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.confirm-pill__no:hover {
+  background-color: #e5e7eb;
+}
+html.dark .confirm-pill__no {
+  background-color: #1f2937;
+  color: #d1d5db;
+}
+html.dark .confirm-pill__no:hover {
+  background-color: #374151;
+}
+
+/* ---------- 6. 列表工具栏、分页栏、空状态、卡片网格（对齐频道监控规范 ChannelView:1577-1648 / 1856-1876 / 1086-1091） ---------- */
+.list-toolbar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: #ffffff;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+@media (min-width: 768px) {
+  .list-toolbar {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+html.dark .list-toolbar {
+  background-color: #0f172a;
+  border-color: #1e293b;
+}
+.list-toolbar__search {
+  width: 100%;
+  padding: 6px 28px 6px 32px;
+  font-size: 12px;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.list-toolbar__search:focus {
+  border-color: #3b82f6;
+}
+.list-toolbar__search::placeholder {
+  color: #94a3b8;
+}
+html.dark .list-toolbar__search {
+  background-color: rgba(30, 41, 59, 0.8);
+  border-color: #334155;
+  color: #f1f5f9;
+}
+.list-toolbar__stats {
+  font-size: 12px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  flex-shrink: 0;
+}
+html.dark .list-toolbar__stats {
+  color: #64748b;
+}
+.list-toolbar__filters {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 12px;
+  background-color: #f1f5f9;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  font-size: 12px;
+  font-weight: 500;
+}
+html.dark .list-toolbar__filters {
+  background-color: #1e293b;
+  border-color: rgba(51, 65, 85, 0.6);
+}
+
+.page-bar {
+  padding: 14px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #64748b;
+}
+html.dark .page-bar {
+  border-top-color: #1e293b;
+}
+.page-bar__btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.page-bar__btn:hover:not(:disabled) {
+  background-color: #f8fafc;
+}
+.page-bar__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+html.dark .page-bar__btn {
+  border-color: #334155;
+}
+html.dark .page-bar__btn:hover:not(:disabled) {
+  background-color: #1e293b;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 16px;
+  border: 1px dashed #e5e7eb;
+  border-radius: 12px;
+}
+html.dark .empty-state {
+  border-color: #1f2937;
+}
+.empty-state__icon {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 8px;
+  color: #d1d5db;
+}
+html.dark .empty-state__icon {
+  color: #4b5563;
+}
+.empty-state__text {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 768px) {
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------- 7. 账号切换选择器（视觉规格提炼自 MaintenanceView:3082-3167 现行形态） ---------- */
+.account-switcher {
+  position: relative;
+}
+.account-switcher__btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background-color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+.account-switcher__btn:hover {
+  background-color: #f8fafc;
+}
+html.dark .account-switcher__btn {
+  border-color: #334155;
+  background-color: rgba(30, 41, 59, 0.9);
+}
+html.dark .account-switcher__btn:hover {
+  background-color: #334155;
+}
+.account-switcher__logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background-color: #2563eb;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.account-switcher__tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: #2563eb;
+  background-color: #eff6ff;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+html.dark .account-switcher__tag {
+  color: #60a5fa;
+  background-color: rgba(23, 37, 84, 0.6);
+}
+.account-switcher__default {
+  font-size: 9px;
+  color: #d97706;
+  font-weight: 500;
+}
+html.dark .account-switcher__default {
+  color: #fbbf24;
+}
+.account-switcher__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.dark .account-switcher__name {
+  color: #f1f5f9;
+}
+.account-switcher__chevron {
+  width: 14px;
+  height: 14px;
+  color: #94a3b8;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.account-switcher__chevron.is-open {
+  transform: rotate(180deg);
+}
+.account-switcher__dropdown {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 6px;
+  width: 256px;
+  max-width: calc(100vw - 32px);
+  border-radius: 12px;
+  background-color: #ffffff;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  padding: 6px 0;
+  z-index: 50;
+  backdrop-filter: blur(12px);
+}
+html.dark .account-switcher__dropdown {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+.account-switcher__dropdown-header {
+  padding: 6px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+html.dark .account-switcher__dropdown-header {
+  border-bottom-color: rgba(51, 65, 85, 0.6);
+}
+.account-switcher__dropdown-count {
+  font-size: 10px;
+  background-color: #f1f5f9;
+  color: #64748b;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+html.dark .account-switcher__dropdown-count {
+  background-color: #334155;
+  color: #64748b;
+}
+.account-switcher__option {
+  width: 100%;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.account-switcher__option:hover {
+  background-color: #f8fafc;
+}
+html.dark .account-switcher__option {
+  color: #e2e8f0;
+}
+html.dark .account-switcher__option:hover {
+  background-color: rgba(51, 65, 85, 0.5);
+}
+.account-switcher__option--active {
+  background-color: rgba(219, 234, 254, 0.7);
+  color: #2563eb;
+  font-weight: 700;
+}
+html.dark .account-switcher__option--active {
+  background-color: rgba(23, 37, 84, 0.4);
+  color: #60a5fa;
+}
+.account-switcher__option-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+html.dark .account-switcher__option-avatar {
+  background-color: #334155;
+}
+.account-switcher__option-avatar--active {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+.account-switcher__option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-switcher__option-phone {
+  font-size: 10px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  display: block;
+}
+.account-switcher__option-default {
+  font-size: 10px;
+  background-color: #fffbeb;
+  color: #d97706;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 400;
+}
+html.dark .account-switcher__option-default {
+  background-color: rgba(69, 26, 3, 0.6);
+  color: #fbbf24;
+}

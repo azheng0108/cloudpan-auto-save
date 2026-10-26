@@ -14,6 +14,22 @@ try {
     console.error(`日志目录初始化失败，已降级为仅控制台日志: ${error.message}`);
 }
 
+class BroadcastTransport extends winston.Transport {
+    log(info, callback) {
+        setImmediate(() => {
+            this.emit('logged', info);
+        });
+        if (typeof global._onWinstonLog === 'function') {
+            try {
+                global._onWinstonLog(info);
+            } catch (_) {
+                // ignore errors in broadcast hook
+            }
+        }
+        callback();
+    }
+}
+
 const consoleTransport = new winston.transports.Console({
     format: winston.format.combine(
         winston.format.colorize(),
@@ -31,8 +47,8 @@ const consoleTransport = new winston.transports.Console({
     ),
 });
 
-const transports = [consoleTransport];
-if (logDirAvailable) {
+const transports = [consoleTransport, new BroadcastTransport()];
+if (logDirAvailable && process.env.NODE_ENV !== 'test') {
     transports.push(new DailyRotateFile({
         filename: path.join(logDir, 'app-%DATE%.log'),
         datePattern: 'YYYY-MM-DD',
@@ -43,7 +59,7 @@ if (logDirAvailable) {
 }
 
 const logger = winston.createLogger({
-    level: process.env.LOG_LEVEL || 'info',
+    level: process.env.LOG_LEVEL || 'debug',
     format: winston.format.combine(
         winston.format.timestamp(),
         winston.format.errors({ stack: true }),

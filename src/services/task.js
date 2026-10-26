@@ -17,6 +17,7 @@ const { TaskParserService } = require('./taskParserService');
 const { TaskRetryService } = require('./taskRetryService');
 const { TaskStorageService } = require('./taskStorageService');
 const TaskErrorService = require('./taskErrorService');
+const { RecognitionEngine } = require('./RecognitionEngine');
 
 class TaskService {
     constructor(taskRepo, accountRepo, transferredFileRepo, taskErrorRepo) {
@@ -75,6 +76,9 @@ class TaskService {
             tvRenameFormat: taskDto.tvRenameFormat || '',
             isFolder: taskDto.isFolder,
             disableRename: taskDto.disableRename ?? null,
+            tmdbId: taskDto.tmdbId || null,
+            videoType: taskDto.videoType || 'tv',
+            enableTaskScraper: taskDto.enableTaskScraper ?? null,
         };
     }
 
@@ -116,6 +120,14 @@ class TaskService {
         });
         if (!targetCheck) {
             throw new Error('保存目录不存在，无法自动创建目录');
+        }
+
+        // 平铺暂存模式：直接复用目标目录，不创建嵌套目录
+        if (task.realRootFolderId === task.targetFolderId) {
+            task.realFolderId = task.targetFolderId;
+            await this.taskRepo.save(task);
+            logTaskEvent('[139] 任务目标为暂存区平铺模式，复用暂存区根目录');
+            return;
         }
 
         // 重建 realRootFolderId（如果不存在）
@@ -311,13 +323,28 @@ class TaskService {
             }
         });
         if (!task) throw new Error('任务不存在');
+        if (updates.tmdbId !== undefined && !String(updates.tmdbId).trim()) {
+            throw new Error('追更任务必须关联 TMDB ID（tmdbId 不能为空）');
+        }
 
         // 只允许更新特定字段
-        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'sourceRegex', 'targetRegex', 'movieRenameFormat', 'tvRenameFormat', 'disableRename'];
+        const allowedFields = ['resourceName', 'realFolderId', 'currentEpisodes', 'totalEpisodes', 'status','realFolderName', 'shareFolderName', 'shareFolderId', 'matchPattern','matchOperator','matchValue','remark', 'enableCron', 'cronExpression', 'sourceRegex', 'targetRegex', 'movieRenameFormat', 'tvRenameFormat', 'disableRename', 'tmdbId', 'videoType', 'enableTaskScraper', 'tmdbContent'];
         for (const field of allowedFields) {
             if (updates[field] !== undefined) {
-                task[field] = updates[field];
+                if (field === 'resourceName' && updates[field]) {
+                    task[field] = RecognitionEngine.sanitizeMediaTitle(updates[field]) || updates[field];
+                } else {
+                    task[field] = updates[field];
+                }
             }
+        }
+        if (updates.posterPath !== undefined) {
+            let contentObj = {};
+            try {
+                if (task.tmdbContent) contentObj = JSON.parse(task.tmdbContent);
+            } catch (e) {}
+            contentObj.posterPath = updates.posterPath;
+            task.tmdbContent = JSON.stringify(contentObj);
         }
         // 如果currentEpisodes和totalEpisodes为null 则设置为0
         if (task.currentEpisodes === null) {
@@ -373,42 +400,7 @@ class TaskService {
     }
 
     _parseChineseNumber(raw) {
-        if (!raw) return null;
-        const text = String(raw).trim();
-        if (!text) return null;
-        if (/^\d+$/.test(text)) return parseInt(text, 10);
-
-        const normalized = text.replace(/两/g, '二').replace(/〇/g, '零');
-        const map = {
-            零: 0,
-            一: 1,
-            二: 2,
-            三: 3,
-            四: 4,
-            五: 5,
-            六: 6,
-            七: 7,
-            八: 8,
-            九: 9,
-        };
-
-        if (normalized === '十') return 10;
-        const tenIndex = normalized.indexOf('十');
-        if (tenIndex >= 0) {
-            const left = normalized.slice(0, tenIndex);
-            const right = normalized.slice(tenIndex + 1);
-            const tens = left ? map[left] : 1;
-            const ones = right ? map[right] : 0;
-            if (Number.isInteger(tens) && Number.isInteger(ones)) {
-                return tens * 10 + ones;
-            }
-            return null;
-        }
-
-        if (normalized.length === 1 && Number.isInteger(map[normalized])) {
-            return map[normalized];
-        }
-        return null;
+        return RecognitionEngine.parseChineseNumber(raw);
     }
 
     _stripSeasonSuffix(text) {
@@ -520,6 +512,11 @@ class TaskService {
             return [];
         }
 
+        if (task?.enableTaskScraper === true || Boolean(task?.tmdbId)) {
+            logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 已启用 TMDB 工业级归档引擎，由整理引擎统一执行规范重命名与洗版`);
+            return files;
+        }
+
         // 任务级显式禁用：跳过，不回落到全局模板
         if (task?.disableRename === true) {
             logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 任务已禁用自动命名`);
@@ -535,13 +532,9 @@ class TaskService {
 
         const sourceRegex = String(task?.sourceRegex || '').trim();
         const targetRegex = String(task?.targetRegex || '');
-        const useTemplate = !!(movieTemplate || tvTemplate);
         const useRegex = !!(sourceRegex && targetRegex !== undefined);
-
-        if (!useTemplate && !useRegex) {
-            logTaskEvent(`自动重命名跳过 [任务 ${task?.id}]: 未配置重命名规则`);
-            return files;
-        }
+        const useTemplate = !useRegex && !!(movieTemplate || tvTemplate);
+        const useStandardNaming = !useRegex && !useTemplate;
 
         // 从任务/目录名中推断季号和剧名，用于补全文件名缺失的信息
         const taskSeasonHint = this._inferTaskSeasonHint(task);
@@ -561,7 +554,7 @@ class TaskService {
         let failedCount = 0;
         let regex = null;
 
-        if (!useTemplate && useRegex) {
+        if (useRegex) {
             try {
                 regex = new RegExp(sourceRegex);
             } catch (error) {
@@ -614,6 +607,21 @@ class TaskService {
                 newName = String(rendered).split('/').pop();
             } else if (regex) {
                 newName = oldName.replace(regex, targetRegex);
+            } else if (useStandardNaming) {
+                const parsed = RecognitionEngine.parseMediaFilename(oldName);
+                if (parsed.season_episode && parsed._seasonInferred && taskSeasonHint !== null) {
+                    parsed.season = String(taskSeasonHint);
+                    parsed.season_episode = `S${String(taskSeasonHint).padStart(2, '0')}E${parsed.episode.padStart(2, '0')}`;
+                }
+                const titleIsEpIndicator = !parsed.title
+                    || /^第\s*\d/.test(parsed.title)
+                    || parsed.title === parsed.season_episode;
+                if (titleIsEpIndicator && taskShowTitle) {
+                    parsed.title = taskShowTitle;
+                }
+                const ext = parsed.extension || path.extname(oldName);
+                const standard = RecognitionEngine.buildStandardTargetName(parsed, ext);
+                newName = standard.filename;
             }
 
             newName = this._sanitizeFileName(newName || '');
@@ -640,7 +648,7 @@ class TaskService {
             }
         }
 
-        const modeLabel = useTemplate ? '命名模板' : '正则替换';
+        const modeLabel = useTemplate ? '命名模板' : useRegex ? '正则替换' : '139规范洗版';
         logTaskEvent(
             `自动重命名完成 [任务 ${task?.id}]: ${modeLabel}，重命名 ${renamedCount} 个，跳过 ${skippedCount} 个，失败 ${failedCount} 个`
         );
@@ -925,12 +933,40 @@ class TaskService {
             }
         }
 
-        const linkName = rootInfo.linkName || linkID;
-        const taskName = taskDto.taskName || linkName;
+        const rawLinkName = rootInfo.linkName || linkID;
+        const linkName = RecognitionEngine.sanitizeMediaTitle(rawLinkName) || rawLinkName;
+        const rawTaskName = taskDto.taskName || taskDto.resourceName || linkName;
+        const taskName = RecognitionEngine.sanitizeMediaTitle(rawTaskName) || rawTaskName;
         const tasks = [];
         const selectedFolders = taskDto.selectedFolders || [];
         const normalizedTargetDetailPath = this._normalizeDetailPath(taskDto.targetDetailPath);
         const composedTargetFolderPath = this._joinFolderPath(taskDto.targetFolder || '', normalizedTargetDetailPath);
+
+        let tmdbContent = taskDto.tmdbContent || null;
+        let tmdbYear = '';
+        if (tmdbContent) {
+            try {
+                const parsed = JSON.parse(tmdbContent);
+                if (parsed.year) tmdbYear = String(parsed.year).trim();
+            } catch (_) {}
+        }
+        if (!tmdbYear && taskDto.year) {
+            tmdbYear = String(taskDto.year).trim();
+        }
+        if (!tmdbYear) {
+            tmdbYear = RecognitionEngine.extractYear(rawTaskName) || '';
+        }
+
+        if (!tmdbContent && (taskDto.posterPath || taskDto.tmdbId)) {
+            tmdbContent = JSON.stringify({
+                id: taskDto.tmdbId ? (Number(taskDto.tmdbId) || taskDto.tmdbId) : undefined,
+                tmdbId: taskDto.tmdbId ? (Number(taskDto.tmdbId) || taskDto.tmdbId) : undefined,
+                title: taskName,
+                year: tmdbYear || undefined,
+                posterPath: taskDto.posterPath || '',
+                mediaType: taskDto.videoType || 'tv',
+            });
+        }
 
         // 验证目标目录是否可访问；若 fileId 已失效（可能是旧格式 ID），则通过路径重新解析
         let effectiveTargetFolderId = taskDto.targetFolderId;
@@ -966,28 +1002,65 @@ class TaskService {
             logTaskEvent(`[139] 已定位详细路径: ${composedTargetFolderPath} (${effectiveTargetFolderId})`);
         }
 
-        let realRootFolderId;
-        const reuseTargetAsRoot = this._shouldReuseTargetFolder(composedTargetFolderPath, taskName);
-
-        // 在目标目录下查找或创建同名根文件夹（与 cloud189 逻辑一致）
-        if (reuseTargetAsRoot) {
-            realRootFolderId = effectiveTargetFolderId;
-            logTaskEvent(`[139] 目标目录末级与任务目录同名，复用目标目录: "${composedTargetFolderPath}" (${realRootFolderId})`);
-        } else {
-            const matchedRootId = await this._findMatchingFolder139(cloud139, effectiveTargetFolderId, taskName);
-            if (matchedRootId) {
-                realRootFolderId = matchedRootId;
-                logTaskEvent(`[139] 使用已有目录: "${taskName}" (${matchedRootId})`);
-            } else {
-                // 目标目录下无同名文件夹，自动创建
-                logTaskEvent(`[139] 目标目录下无 "${taskName}"，自动创建`);
-                const created = await cloud139.createFolderHcy(effectiveTargetFolderId, taskName);
-                if (!created?.fileId) throw new Error(`创建目录 "${taskName}" 失败`);
-                realRootFolderId = created.fileId;
-                logTaskEvent(`[139] 已创建根目录: "${taskName}" (${realRootFolderId})`);
+        // 严格遵循媒体规范：当具备 TMDB ID 时，作品主文件夹必须以 "{chineseTitle} ({year}) {tmdb-{tmdbId}}" 命名
+        let canonicalFolderName = taskName;
+        if (taskDto.tmdbId) {
+            const hasTmdbTag = /[\{\[](?:tmdb|tmdbid)[-:= ]?\d+[\}\]]/i.test(canonicalFolderName);
+            if (!hasTmdbTag) {
+                const yearPart = tmdbYear ? ` (${tmdbYear})` : '';
+                canonicalFolderName = `${taskName}${yearPart} {tmdb-${taskDto.tmdbId}}`;
             }
         }
-        const rootRealFolderName = this._joinFolderPath(composedTargetFolderPath, taskName);
+
+        let realRootFolderId;
+        let rootRealFolderName;
+
+        const cmConfig = ConfigService.getConfigValue('channelMonitor') || {};
+        const globalStagingId = cmConfig.stagingFolderId;
+        const isStagingTarget = (globalStagingId && String(globalStagingId).trim() === String(effectiveTargetFolderId).trim()) ||
+            /暂存/i.test(composedTargetFolderPath || taskDto.targetFolder || '');
+
+        if (isStagingTarget) {
+            // 终极架构支柱 1：暂存批次物理隔离与元数据附着，绝对严禁直接平铺灌入暂存区根目录！
+            // 必须在暂存区下建立规范命名的独立批次子目录：/临时存放/{chineseTitle} ({year}) {tmdb-{tmdbId}}/
+            const batchFolderName = canonicalFolderName;
+            const matchedBatchId = await this._findMatchingFolder139(cloud139, effectiveTargetFolderId, batchFolderName);
+            if (matchedBatchId) {
+                realRootFolderId = matchedBatchId;
+                logTaskEvent(`[139-暂存隔离] 使用已有批次隔离子目录: "${batchFolderName}" (${matchedBatchId})`);
+            } else {
+                logTaskEvent(`[139-暂存隔离] 创建独立批次隔离子目录: "${batchFolderName}" 在 (${effectiveTargetFolderId})`);
+                const created = await cloud139.createFolderHcy(effectiveTargetFolderId, batchFolderName);
+                if (!created?.fileId) throw new Error(`创建暂存批次隔离目录 "${batchFolderName}" 失败`);
+                realRootFolderId = created.fileId;
+                logTaskEvent(`[139-暂存隔离] 已创建独立批次隔离子目录: "${batchFolderName}" (${realRootFolderId})`);
+            }
+            rootRealFolderName = this._joinFolderPath(composedTargetFolderPath || taskDto.targetFolder || '/暂存区', batchFolderName);
+        } else {
+            const reuseTargetAsRoot = this._shouldReuseTargetFolder(composedTargetFolderPath, canonicalFolderName) ||
+                this._shouldReuseTargetFolder(composedTargetFolderPath, taskName);
+
+            // 在目标目录下查找或创建同名根文件夹（与 cloud189 逻辑一致）
+            if (reuseTargetAsRoot) {
+                realRootFolderId = effectiveTargetFolderId;
+                logTaskEvent(`[139] 目标目录末级与任务目录同名，复用目标目录: "${composedTargetFolderPath}" (${realRootFolderId})`);
+            } else {
+                const matchedRootId = await this._findMatchingFolder139(cloud139, effectiveTargetFolderId, canonicalFolderName) ||
+                    await this._findMatchingFolder139(cloud139, effectiveTargetFolderId, taskName);
+                if (matchedRootId) {
+                    realRootFolderId = matchedRootId;
+                    logTaskEvent(`[139] 使用已有目录: "${canonicalFolderName}" (${matchedRootId})`);
+                } else {
+                    // 目标目录下无同名文件夹，自动创建标准格式主目录
+                    logTaskEvent(`[139] 目标目录下无 "${canonicalFolderName}"，自动创建标准格式主目录`);
+                    const created = await cloud139.createFolderHcy(effectiveTargetFolderId, canonicalFolderName);
+                    if (!created?.fileId) throw new Error(`创建目录 "${canonicalFolderName}" 失败`);
+                    realRootFolderId = created.fileId;
+                    logTaskEvent(`[139] 已创建根目录: "${canonicalFolderName}" (${realRootFolderId})`);
+                }
+            }
+            rootRealFolderName = this._joinFolderPath(composedTargetFolderPath, canonicalFolderName);
+        }
 
         // 根目录任务（id = -1 或未选择特定子目录）
         const wantsRoot = !selectedFolders.length ||
@@ -1024,6 +1097,10 @@ class TaskService {
                 movieRenameFormat: taskDto.movieRenameFormat || '',
                 tvRenameFormat: taskDto.tvRenameFormat || '',
                 isFolder: true,
+                tmdbId: taskDto.tmdbId ? String(taskDto.tmdbId) : null,
+                videoType: taskDto.videoType || 'tv',
+                enableTaskScraper: taskDto.enableTaskScraper ?? true,
+                tmdbContent: tmdbContent,
             });
             tasks.push(await this.taskRepo.save(task));
         }
@@ -1074,6 +1151,10 @@ class TaskService {
                 movieRenameFormat: taskDto.movieRenameFormat || '',
                 tvRenameFormat: taskDto.tvRenameFormat || '',
                 isFolder: true,
+                tmdbId: taskDto.tmdbId ? String(taskDto.tmdbId) : null,
+                videoType: taskDto.videoType || 'tv',
+                enableTaskScraper: taskDto.enableTaskScraper ?? true,
+                tmdbContent: tmdbContent,
             });
             tasks.push(await this.taskRepo.save(rootFilesTask));
             logTaskEvent(`[139] 已创建根目录文件任务（仅同步直属文件，不递归子目录）`);
@@ -1087,18 +1168,22 @@ class TaskService {
             });
             const folderName = folder ? (folder.catalogName || folder.caName || String(caID)) : String(caID);
 
-            // 在 realRootFolderId 下查找或创建子目录（与 cloud189 逻辑一致）
-            const matchedSubId = await this._findMatchingFolder139(cloud139, realRootFolderId, folderName);
             let realFolderId;
-            if (matchedSubId) {
-                realFolderId = matchedSubId;
-                logTaskEvent(`[139] 使用已有子目录: "${folderName}" (${matchedSubId})`);
+            if (isStagingTarget) {
+                realFolderId = realRootFolderId;
             } else {
-                logTaskEvent(`[139] 创建子目录: "${folderName}" 在 (${realRootFolderId})`);
-                const createdSub = await cloud139.createFolderHcy(realRootFolderId, folderName);
-                if (!createdSub?.fileId) throw new Error(`创建子目录 "${folderName}" 失败`);
-                realFolderId = createdSub.fileId;
-                logTaskEvent(`[139] 已创建子目录: "${folderName}" (${realFolderId})`);
+                // 在 realRootFolderId 下查找或创建子目录（与 cloud189 逻辑一致）
+                const matchedSubId = await this._findMatchingFolder139(cloud139, realRootFolderId, folderName);
+                if (matchedSubId) {
+                    realFolderId = matchedSubId;
+                    logTaskEvent(`[139] 使用已有子目录: "${folderName}" (${matchedSubId})`);
+                } else {
+                    logTaskEvent(`[139] 创建子目录: "${folderName}" 在 (${realRootFolderId})`);
+                    const createdSub = await cloud139.createFolderHcy(realRootFolderId, folderName);
+                    if (!createdSub?.fileId) throw new Error(`创建子目录 "${folderName}" 失败`);
+                    realFolderId = createdSub.fileId;
+                    logTaskEvent(`[139] 已创建子目录: "${folderName}" (${realFolderId})`);
+                }
             }
 
             const task = this.taskRepo.create({
@@ -1110,7 +1195,7 @@ class TaskService {
                 shareMode: 0,
                 targetFolderId: effectiveTargetFolderId,
                 realFolderId: realFolderId,
-                realFolderName: this._joinFolderPath(rootRealFolderName, folderName),
+                realFolderName: isStagingTarget ? rootRealFolderName : this._joinFolderPath(rootRealFolderName, folderName),
                 realRootFolderId: realRootFolderId,
                 parentFileId: effectiveTargetFolderId,
                 resourceName: taskName,
@@ -1129,6 +1214,10 @@ class TaskService {
                 movieRenameFormat: taskDto.movieRenameFormat || '',
                 tvRenameFormat: taskDto.tvRenameFormat || '',
                 isFolder: true,
+                tmdbId: taskDto.tmdbId ? String(taskDto.tmdbId) : null,
+                videoType: taskDto.videoType || 'tv',
+                enableTaskScraper: taskDto.enableTaskScraper ?? true,
+                tmdbContent: tmdbContent,
             });
             tasks.push(await this.taskRepo.save(task));
         }

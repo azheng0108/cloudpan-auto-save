@@ -409,10 +409,10 @@ class Cloud139Service {
     }
 
     /**
-     * 获取账号容量信息（个人云盘）
+     * 获取账号容量信息（个人云盘与家庭云盘）
      * 返回与 Cloud189 兼容的格式，供 index.js 统一展示
      * 同时附带会员信息 memberInfo: { memberName, memberLevel }
-     * @returns {{ res_code: number, cloudCapacityInfo: {usedSize, totalSize}, familyCapacityInfo: {usedSize, totalSize}, memberInfo: object|null }|null}
+     * @returns {{ res_code: number, cloudCapacityInfo: {usedSize, totalSize}, familyCapacityInfo: {usedSize, totalSize}, totalCapacityInfo: {usedSize, totalSize}, memberInfo: object|null }|null}
      */
     async getUserSizeInfo() {
         try {
@@ -427,10 +427,21 @@ class Cloud139Service {
 
             const totalMB = parseInt(diskData.diskSize) || 0;
             const freeMB = parseInt(diskData.freeDiskSize) || 0;
-            const usedMB = totalMB - freeMB;
+            const usedMB = Math.max(0, totalMB - freeMB);
             const MB = 1024 * 1024;
 
-            // 3. 获取会员等级（来自 queryUserBenefits 接口）
+            // 3. 获取家庭磁盘信息（diskSize / usedSize 单位: MB）
+            let familyTotalMB = 0;
+            let familyUsedMB = 0;
+            try {
+                const familyData = await this._userNjsPost('/user/disk/getFamilyDiskInfo', { userDomainId });
+                if (familyData && familyData.diskSize) {
+                    familyTotalMB = parseInt(familyData.diskSize) || 0;
+                    familyUsedMB = parseInt(familyData.usedSize) || 0;
+                }
+            } catch (_) { /* 家庭云查询失败不影响个人云显示 */ }
+
+            // 4. 获取会员等级（来自 queryUserBenefits 接口）
             let memberInfo = null;
             try {
                 const benefitData = await this._post(
@@ -452,7 +463,14 @@ class Cloud139Service {
                     usedSize: usedMB * MB,
                     totalSize: totalMB * MB,
                 },
-                familyCapacityInfo: { usedSize: 0, totalSize: 0 },
+                familyCapacityInfo: {
+                    usedSize: familyUsedMB * MB,
+                    totalSize: familyTotalMB * MB,
+                },
+                totalCapacityInfo: {
+                    usedSize: (usedMB + familyUsedMB) * MB,
+                    totalSize: (totalMB + familyTotalMB) * MB,
+                },
                 memberInfo,
             };
         } catch (err) {
@@ -700,9 +718,19 @@ class Cloud139Service {
 
         while (Date.now() - startedAt <= timeoutMs) {
             pollCount += 1;
-            const files = await this.listAllDiskFiles(targetCatalogID).catch(() => []);
-            lastNames = new Set(files.map((f) => f.name));
-            const missing = normalized.filter((name) => !lastNames.has(name));
+            const items = await this.listDiskDirAll(targetCatalogID).catch(() => []);
+            lastNames = new Set(items.map((f) => f.name));
+            const missing = normalized.filter((name) => {
+                if (lastNames.has(name)) return false;
+                const clean = name.replace(/[丨|｜]/g, '').trim();
+                if (lastNames.has(clean)) return false;
+                for (const actual of lastNames) {
+                    if (actual.startsWith(name + '_') || actual.startsWith(clean + '_')) {
+                        return false;
+                    }
+                }
+                return true;
+            });
             if (missing.length === 0) {
                 logTaskEvent(`[139] 可见性校验通过: catalog=${targetCatalogID}, expected=${normalized.length}, polls=${pollCount}, elapsedMs=${Date.now() - startedAt}`);
                 return { allVisible: true, visibleCount: normalized.length, missing: [] };
@@ -710,7 +738,17 @@ class Cloud139Service {
             await this._sleep(intervalMs);
         }
 
-        const missing = normalized.filter((name) => !lastNames.has(name));
+        const missing = normalized.filter((name) => {
+            if (lastNames.has(name)) return false;
+            const clean = name.replace(/[丨|｜]/g, '').trim();
+            if (lastNames.has(clean)) return false;
+            for (const actual of lastNames) {
+                if (actual.startsWith(name + '_') || actual.startsWith(clean + '_')) {
+                    return false;
+                }
+            }
+            return true;
+        });
         logTaskEvent(
             `[139] 可见性校验超时: catalog=${targetCatalogID}, expected=${normalized.length}, visible=${normalized.length - missing.length}, missing=${missing.length}, polls=${pollCount}, elapsedMs=${Date.now() - startedAt}, missingSample=${missing.slice(0, 5).join('|')}`
         );
@@ -797,8 +835,11 @@ class Cloud139Service {
      */
     async deleteFiles(fileIds = []) {
         if (!fileIds.length) return true;
-        // 使用 HCY private API 路径，需要 mcloud-sign
-        const res = await this._personalKdNjsPost('/hcy/recyclebin/batchTrash', { fileIds }, '/');
+        // 使用 HCY private API 路径，需要 mcloud-sign，开启 ignoreNotFound 幂等吸收
+        const res = await this._personalKdNjsPost('/hcy/recyclebin/batchTrash', { fileIds }, '/', { ignoreNotFound: true }).catch((err) => {
+            if (err.apiCode === '04000010') return { success: true };
+            throw err;
+        });
         if (!res) return false;
         const taskId = res.taskId ?? res.taskID;
         if (!taskId) {
@@ -808,7 +849,7 @@ class Cloud139Service {
         // 轮询任务状态（最多等 10 秒）
         for (let i = 0; i < 10; i++) {
             await new Promise(resolve => setTimeout(resolve, 1000));
-            const taskRes = await this._personalKdNjsPost('/hcy/task/get', { taskId }, '/').catch(() => null);
+            const taskRes = await this._personalKdNjsPost('/hcy/task/get', { taskId }, '/', { ignoreNotFound: true }).catch(() => null);
             if (!taskRes) break;
             const status = taskRes.status ?? taskRes.taskStatus;
             if (status === 'success' || status === 2 || status === '2') return true;
@@ -1003,11 +1044,11 @@ class Cloud139Service {
      * @param {string} signCatalogID - 用于计算 sign 的目录 ID（getDisk body 的 catalogID）
      * @returns {Promise<object|null>}
      */
-    async _personalKdNjsPost(path, body, signCatalogID) {
-        return this.limit(() => this._personalKdNjsPostImpl(path, body, signCatalogID));
+    async _personalKdNjsPost(path, body, signCatalogID, options = {}) {
+        return this.limit(() => this._personalKdNjsPostImpl(path, body, signCatalogID, options));
     }
 
-    async _personalKdNjsPostImpl(path, body, signCatalogID) {
+    async _personalKdNjsPostImpl(path, body, signCatalogID, options = {}) {
         const sign = this._computeMcloudSign(signCatalogID);
         const hcyHeaders = {
             'caller': 'web',
@@ -1037,6 +1078,10 @@ class Cloud139Service {
                 headers: hcyHeaders,
             }).json();
             if (!res.success && String(res.code) !== '0000' && String(res.code) !== '0') {
+                if (String(res.code) === '04000010' && (path.includes('/recyclebin/') || options?.ignoreNotFound)) {
+                    // 目标资源在云端已不存在或已在回收站中，属于正常幂等达成，不输出报错
+                    return { success: true, code: '0000', data: { idempotent: true, note: '资源已不存在或已在回收站' } };
+                }
                 const msg = `[139] personal-kd-njs 接口错误 [${res.code}]: ${res.desc || res.message || ''}`;
                 logTaskEvent(msg);
                 const apiError = new Error(msg);
@@ -1118,6 +1163,7 @@ class Cloud139Service {
                 type: f.fileType === 'folder' || f.category === 'folder' ? 'folder' : 'file',
                 extension: (f.fileExtension || '').toLowerCase(),
                 size: f.size,
+                contentHash: f.contentHash || f.sha256 || '',
                 updatedAt: f.updatedAt,
             })),
             // 139 API 的翻页游标在 data 根节点，pageInfo 作为兼容兜底
@@ -1226,7 +1272,13 @@ class Cloud139Service {
         let lastFirstId = null; // 防死循环锁：避免分页游标失效导致无限循环
         const catalogID = parentFileId || '/';
         const targetName = (folderName || '').trim();
+        const seenCursor = new Set();
+        let pageCount = 0;
         do {
+            const cursorKey = String(cursor || '__FIRST_PAGE__');
+            if (seenCursor.has(cursorKey)) break;
+            seenCursor.add(cursorKey);
+
             const body = {
                 pageInfo: { pageSize: 100, pageCursor: cursor },
                 orderBy: 'updated_at',
@@ -1253,7 +1305,8 @@ class Cloud139Service {
 
             // 139 API 实际把 nextPageCursor 放在 data 根节点，pageInfo 仅作兼容兜底
             cursor = data.nextPageCursor ?? data.pageInfo?.nextPageCursor ?? null;
-        } while (cursor);
+            pageCount++;
+        } while (cursor && pageCount < 100);
         return null;
     }
 
@@ -1262,8 +1315,142 @@ class Cloud139Service {
      */
     async renameFile(fileId, newName) {
         const body = { fileId, name: newName };
-        const data = await this._personalKdNjsPost('/hcy/file/update', body, '/');
-        return data ? { res_code: 0, res_msg: 'success', data } : { res_code: -1, res_msg: '重命名失败' };
+        try {
+            const data = await this._personalKdNjsPost('/hcy/file/update', body, '/', { ignoreNotFound: true });
+            if (data?.idempotent || data?.notFound) {
+                logTaskEvent(`[139] 文件重命名跳过: 资源已不存在或已被清理移入回收站 (fileId=${fileId})`);
+                return { res_code: 404, res_msg: '资源不存在', notFound: true };
+            }
+            return data ? { res_code: 0, res_msg: 'success', data } : { res_code: -1, res_msg: '重命名失败' };
+        } catch (err) {
+            if (err.apiCode === '04000010') {
+                logTaskEvent(`[139] 文件重命名跳过: 资源已不存在或已被清理移入回收站 (fileId=${fileId})`);
+                return { res_code: 404, res_msg: '资源不存在', notFound: true };
+            }
+            throw err;
+        }
+    }
+
+    /**
+     * 分页列出目录下全部条目（含文件夹，不递归）。
+     * 与 listAllDiskFiles 不同：接口异常直接抛出，绝不返回被截断的列表
+     * （刮削的冲突检测依赖完整列表，宁可失败也不基于残缺数据写盘）。
+     * @param {string} parentFileId 目录 fileId，根目录传 "/"
+     * @param {object} [options={}] 请求选项，如 { ignoreNotFound: true }
+     * @returns {Promise<Array<{fileId:string,name:string,parentFileId:string,type:'folder'|'file',extension:string,size:number,updatedAt:string}>>}
+     */
+    async listDiskDirAll(parentFileId = '/', options = {}) {
+        const catalogID = parentFileId || '/';
+        const items = [];
+        const seenIds = new Set();
+        const seenCursor = new Set();
+        let cursor = null;
+        let lastFirstId = null;
+        let pageCount = 0;
+        do {
+            const cursorKey = String(cursor || '__FIRST_PAGE__');
+            if (seenCursor.has(cursorKey)) break;
+            seenCursor.add(cursorKey);
+
+            const data = await this._personalKdNjsPost('/hcy/file/list', {
+                pageInfo: { pageSize: 100, pageCursor: cursor },
+                orderBy: 'updated_at',
+                orderDirection: 'DESC',
+                parentFileId: catalogID,
+            }, catalogID, options);
+            if (!data) throw new Error(`listDiskDirAll: API 返回空数据 (catalogID=${catalogID})`);
+            if (data.idempotent || data.notFound) {
+                const notFoundErr = new Error(`目录不存在或已被清理 (catalogID=${catalogID})`);
+                notFoundErr.apiCode = '04000010';
+                notFoundErr.notFound = true;
+                throw notFoundErr;
+            }
+
+            const list = data.items ?? data.fileList ?? [];
+            if (!list.length) break;
+            const firstId = list[0].fileId || list[0].id;
+            if (firstId && firstId === lastFirstId) break;
+            lastFirstId = firstId;
+
+            for (const f of list) {
+                const fileId = f.fileId || f.id;
+                if (!fileId || seenIds.has(fileId)) continue;
+                seenIds.add(fileId);
+                items.push({
+                    ...f,
+                    fileId,
+                    name: f.name,
+                    parentFileId: f.parentFileId || catalogID,
+                    type: f.fileType === 'folder' || f.category === 'folder' ? 'folder' : 'file',
+                    extension: (f.fileExtension || '').toLowerCase(),
+                    size: Number(f.size || 0),
+                    contentHash: f.contentHash || f.sha256 || '',
+                    updatedAt: f.updatedAt,
+                });
+            }
+            cursor = data.nextPageCursor ?? data.pageInfo?.nextPageCursor ?? null;
+            pageCount += 1;
+        } while (cursor && pageCount < 1000);
+        return items;
+    }
+
+    /**
+     * 批量移动文件/目录到目标目录（HCY 新接口 /hcy/file/batchMove）。
+     * 注意：返回仅代表请求被受理，调用方应回读目标目录确认结果。
+     * @param {string[]} fileIds
+     * @param {string} toParentFileId
+     */
+    async batchMoveHcy(fileIds = [], toParentFileId = '') {
+        const ids = (Array.isArray(fileIds) ? fileIds : []).filter(Boolean);
+        if (!ids.length || !toParentFileId) {
+            throw new Error('batchMoveHcy: fileIds 与 toParentFileId 不能为空');
+        }
+        return this._personalKdNjsPost('/hcy/file/batchMove', { fileIds: ids, toParentFileId }, '/');
+    }
+
+    /**
+     * 139 PC 模式秒传文件（使用 HCY /hcy/file/create 接口）
+     * @param {object} params
+     * @param {string} params.name 文件名
+     * @param {string} params.contentHash 64位 SHA256 哈希
+     * @param {number} params.size 文件字节大小
+     * @param {string} [params.parentFileId='/'] 父目录 ID
+     * @param {Array}  [params.partInfos=null] 分片哈希信息（默认单 part）
+     * @returns {Promise<object>} 返回网盘创建响应对象
+     */
+    async createManualUploadFile({ name, contentHash, size, parentFileId = '/', partInfos = null }) {
+        const catalogID = parentFileId || '/';
+        const cleanHash = String(contentHash || '').trim().toLowerCase();
+        const pureSize = parseInt(size, 10) || 0;
+        const body = {
+            contentHash: cleanHash,
+            contentHashAlgorithm: 'SHA256',
+            contentType: 'application/octet-stream',
+            fileRenameMode: 'auto_rename',
+            name: String(name).trim(),
+            parentFileId: catalogID,
+            partInfos: partInfos || [{
+                partNumber: 1,
+                partSize: pureSize > 1000 ? 1000 : pureSize,
+                parallelHashCtx: { partOffset: 0 }
+            }],
+            size: pureSize,
+            type: 'file'
+        };
+        const data = await this._personalKdNjsPost('/hcy/file/create', body, catalogID);
+        return data;
+    }
+
+    /**
+     * 获取 139 官方 CDN 下载直链（使用 HCY /hcy/file/getDownloadUrl 接口）
+     * @param {string} fileId 文件 ID
+     * @returns {Promise<string>} 直链 URL
+     */
+    async getDownloadUrl(fileId) {
+        if (!fileId) throw new Error('getDownloadUrl: fileId 不能为空');
+        const res = await this._personalKdNjsPost('/hcy/file/getDownloadUrl', { fileId }, '/');
+        if (!res) return '';
+        return (res.cdnUrl || res.url || res.downloadUrl || '');
     }
 }
 
