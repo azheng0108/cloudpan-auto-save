@@ -1587,14 +1587,16 @@ const TaskManager = {
                         } else {
                             sec.conflictDiscard = true;
                             sec.conflictAction = `多版本洗版：同批次已保留最佳画质版本【${best.oldName}】，次选版本淘汰移入回收站`;
+                            const bestTags = RecognitionEngine.inferTechnicalTags(best.newName || best.oldName, best.fileSize, best._probedMeta || best.file?._probedMeta);
+                            const secTags = RecognitionEngine.inferTechnicalTags(sec.newName || sec.oldName, sec.fileSize, sec._probedMeta || sec.file?._probedMeta);
                             sec.washDetails = {
                                 type: "skipped",
                                 incomingName: sec.newName || sec.oldName,
                                 incomingSize: sec.fileSize || 0,
-                                incomingTags: tagsB,
+                                incomingTags: secTags,
                                 existingName: best.newName || best.oldName,
                                 existingSize: best.fileSize || 0,
-                                existingTags: tagsA,
+                                existingTags: bestTags,
                                 cmp: 1
                             };
                         }
