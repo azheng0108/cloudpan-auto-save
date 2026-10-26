@@ -158,5 +158,42 @@ export const tmdbOrganizeApi = {
   async clearProtectedRecords() {
     const res = await axios.post('/api/tmdb-organize/history/clear-protected');
     return res.data;
+  },
+
+  // 获取暂存区无法自动识别/待人工纠偏的文件清单
+  async getUnrecognizedFiles(params: { folderId?: string; accountId?: number | string } = {}) {
+    const res = await axios.get('/api/tmdb-organize/unrecognized', { params });
+    return res.data.data;
+  },
+
+  // TMDB 即时影视搜索
+  async searchTmdb(params: { query: string; mediaType?: string; year?: string }) {
+    const res = await axios.post('/api/tmdb-organize/search-tmdb', params);
+    return res.data.data;
+  },
+
+  // 人工纠偏并规范归档入库
+  async resolveUnrecognized(payload: {
+    accountId?: number | string;
+    items: Array<{
+      fileId: string;
+      name: string;
+      targetTmdbId: string;
+      targetTitle: string;
+      targetYear?: string;
+      targetMediaType?: 'tv' | 'movie';
+      targetCategory?: string;
+      targetSeason?: number;
+      targetEpisode?: number;
+      targetEpisodeTitle?: string;
+      oldPath?: string;
+      parentFolderId?: string;
+      size?: number;
+    }>;
+    targetDirPath?: string;
+    cleanEmptySourceDir?: boolean;
+  }) {
+    const res = await axios.post('/api/tmdb-organize/resolve-unrecognized', payload);
+    return res.data.data;
   }
 };
