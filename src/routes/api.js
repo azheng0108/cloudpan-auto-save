@@ -1946,26 +1946,41 @@ const registerApiRoutes = (app, deps) => {
             const allFiles = [];
 
             for (const g of groups) {
-                const isUnrecognized = !g.tmdbId || !g.title || g.isSuspicious || g.tmdbNotFound;
+                const groupHasTmdb = Boolean(g.tmdbId && String(g.tmdbId).trim());
                 for (const f of g.files || []) {
                     const parsedSe = RecognitionEngine.parseSeasonEpisode(f.name, Number(f._folderSeason || g.season || 1));
                     const tech = RecognitionEngine.inferTechnicalTags(f.name, f.size);
+                    const isTv = g.mediaType === 'tv' || parsedSe.hasEpisode;
+                    const hasMissingEpisode = isTv && (parsedSe.episode === null || parsedSe.episode === undefined);
+                    const isUnrecognized = !groupHasTmdb || !g.title || g.isSuspicious || g.tmdbNotFound || hasMissingEpisode;
+
+                    // 计算相对目录路径（剥除文件名本身）
+                    const rel = String(f.relativePath || f.name || '').replace(/\\/g, '/');
+                    const lastSlash = rel.lastIndexOf('/');
+                    const folderRelPath = lastSlash !== -1 ? rel.substring(0, lastSlash) : (f.parentFolderName || '');
+
                     const item = {
                         id: f.id || f.fileId,
                         fileId: f.fileId || f.id,
                         name: f.name,
                         size: f.size || 0,
                         relativePath: f.relativePath || f.name,
+                        folderPath: folderRelPath,
                         parentFolderId: f.parentFileId || '',
                         parentFolderName: f.parentFolderName || '',
+                        tmdbId: g.tmdbId || '',
+                        posterPath: g.posterPath || '',
                         inferredTitle: g.title || RecognitionEngine.sanitizeMediaTitle(f.name) || f.name,
                         year: g.year || '',
                         mediaType: g.mediaType || (parsedSe.hasEpisode ? 'tv' : 'movie'),
                         season: parsedSe.season || Number(f._folderSeason || g.season || 1),
                         episode: parsedSe.episode !== null ? parsedSe.episode : null,
                         isSpecial: parsedSe.isSpecial || false,
-                        issueType: !g.tmdbId ? 'unmatched_tmdb' : (parsedSe.episode === null && g.mediaType === 'tv' ? 'unknown_episode' : 'suspicious'),
-                        issueReason: !g.tmdbId ? '未在 TMDB 中匹配到影视条目' : (parsedSe.episode === null && g.mediaType === 'tv' ? '无法推导季集号' : (g.suspiciousReason || '疑似非标准影视')),
+                        isSuspicious: Boolean(g.isSuspicious),
+                        tmdbNotFound: Boolean(g.tmdbNotFound),
+                        isUnrecognized,
+                        issueType: !groupHasTmdb ? 'unmatched_tmdb' : (hasMissingEpisode ? 'unknown_episode' : (g.isSuspicious ? 'suspicious' : '')),
+                        issueReason: !groupHasTmdb ? '未在 TMDB 中匹配到影视条目' : (hasMissingEpisode ? '剧集无法推导单集编号' : (g.suspiciousReason || '疑似非标准影视')),
                         specs: {
                             resolution: tech.resolution || '',
                             dynamicRange: tech.dynamicRange || 'SDR',
