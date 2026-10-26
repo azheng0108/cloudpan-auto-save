@@ -1352,6 +1352,51 @@ const TaskManager = {
                         }
                     }
 
+                    // ★ AI 兜底探针：常规规则词均未命中 TMDB 且配置了 AI 服务时，由 AI 深度提纯片名
+                    if (!best && tmdbClient) {
+                        try {
+                            const aiService = require('./ai');
+                            const aiCfg = aiService.getEffectiveConfig();
+                            const MobileAiClient = require('./MobileAiClient');
+                            const anyAi = aiService.isEnabled(aiCfg) || Boolean(MobileAiClient.getFallbackConfig()?.enable);
+                            if (anyAi) {
+                                const repFile = (group.files || []).find(f => RecognitionEngine.isVideoFile(f.name)) || group.files[0];
+                                const rawTarget = group.title || group.folderName || (repFile ? repFile.name : '');
+                                const aiRes = await aiService.parseMediaInfo(rawTarget, {
+                                    parentFolder: group.effectiveFolderName || group.folderName || '',
+                                    fileName: repFile ? repFile.name : ''
+                                }, aiCfg);
+                                if (aiRes?.success && aiRes?.data?.title) {
+                                    const aiTitle = String(aiRes.data.title).trim();
+                                    const aiYear = String(aiRes.data.year || '').trim();
+                                    const aiMediaType = aiRes.data.mediaType || group.mediaType || 'auto';
+                                    if (aiTitle && aiTitle !== group.title) {
+                                        Logger.info(`[TMDB整理-AI兜底] 目录 "${group.title}" 常规规则未命中，经 AI 提纯重查 TMDB: 《${aiTitle}》 (${aiYear || '无年份'})`);
+                                        let aiBatch = [];
+                                        if (aiYear) {
+                                            try { aiBatch = await tmdbClient.lookup(aiTitle, aiMediaType, { year: aiYear }); } catch (_) {}
+                                        }
+                                        if (!aiBatch.length) {
+                                            try { aiBatch = await tmdbClient.lookup(aiTitle, aiMediaType, {}); } catch (_) {}
+                                        }
+                                        if (aiBatch.length > 0) {
+                                            for (const c of aiBatch) {
+                                                c._searchedQuery = aiTitle;
+                                                if (!searchResults.some(existing => String(existing.id) === String(c.id))) {
+                                                    searchResults.push(c);
+                                                }
+                                            }
+                                            const chosen = await RecognitionEngine.chooseTmdbCandidate(searchResults, group, tmdbClient);
+                                            best = chosen?.candidate || (chosen?.id ? chosen : null);
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (aiErr) {
+                            Logger.debug(`[TMDB整理-AI兜底] 尝试异常: ${aiErr.message}`);
+                        }
+                    }
+
                     if (searchResults.length > 0) {
                         group.candidateList = searchResults;
                         if (best) {
