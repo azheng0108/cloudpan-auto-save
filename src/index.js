@@ -16,7 +16,6 @@ const { initSSE, cleanupSSEConnections } = require('./utils/logUtils');
 const TelegramBotManager = require('./utils/TelegramBotManager');
 const { registerRoutes } = require('./routes');
 const path = require('path');
-const { setupCloudSaverRoutes } = require('./sdk/cloudsaver');
 const cors = require('cors');
 const logger = require('./utils/logger');
 
@@ -194,9 +193,6 @@ AppDataSource.initialize().then(async () => {
         folderCache,
     });
     initSSE(app)
-
-    // 初始化cloudsaver
-    setupCloudSaverRoutes(app);
 
     // 全局错误处理中间件（必须在路由之后）
     app.use((err, req, res, next) => {

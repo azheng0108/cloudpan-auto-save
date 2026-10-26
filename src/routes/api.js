@@ -6,7 +6,6 @@ const ConfigService = require('../services/ConfigService');
 const { SchedulerService } = require('../services/scheduler');
 const CustomPushService = require('../services/message/CustomPushService');
 const { logTaskEvent } = require('../utils/logUtils');
-const { clearCloudSaverToken } = require('../sdk/cloudsaver');
 const { AppDataSource, getChannelMonitorRepository, getChannelMonitorHistoryRepository, getAccountRepository } = require('../database');
 const { Account } = require('../entities');
 const logger = require('../utils/logger');
@@ -663,14 +662,6 @@ const registerApiRoutes = (app, deps) => {
                 tvRenameFormat: settings.tmdb.tvRenameFormat || '',
             } : undefined,
         });
-        if (
-            settings.cloudSaver?.baseUrl != ConfigService.getConfigValue('cloudSaver.baseUrl') ||
-            settings.cloudSaver?.username != ConfigService.getConfigValue('cloudSaver.username') ||
-            settings.cloudSaver?.password != ConfigService.getConfigValue('cloudSaver.password')
-        ) {
-            clearCloudSaverToken();
-            logger.debug('检测到 CloudSaver 配置变化，已清理缓存令牌');
-        }
         ConfigService.setConfig(settings);
         logger.debug('媒体设置保存完成');
         res.json({ success: true, data: null });

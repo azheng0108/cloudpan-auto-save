@@ -436,7 +436,6 @@ async function handleSave() {
       strm: rawConfig.strm || {},
       emby: rawConfig.emby || {},
       webhook: rawConfig.webhook || {},
-      alist: rawConfig.alist || {},
       telegram: {
         ...(rawConfig.telegram || {}),
         botToken: form.bot.botToken.trim(),

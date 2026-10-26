@@ -5,7 +5,6 @@ const { TaskService } = require('./task');
 const { Cloud139Service } = require('./cloud139');
 const { TMDBService } = require('./tmdb');
 const path = require('path');
-const { default: cloudSaverSDK } = require('../sdk/cloudsaver/sdk');
 const ProxyUtil = require('../utils/ProxyUtil');
 const Cloud139Utils = require('../utils/Cloud139Utils');
 const logger = require('../utils/logger');
@@ -33,14 +32,8 @@ class TelegramBotService {
         // 全局任务列表消息id
         this.globalTaskListMessageId = null;
         // 全局常用目录列表消息id
-        this.globalCommonFolderListMessageId = null;
-
-        this.cloudSaverSdk = cloudSaverSDK;
-        this.isSearchMode = false;
+        this.globalCommonFolderListMessageId = null;        this.isSearchMode = false;
         this.searchModeTimeout = null;  // 搜索模式超时计时器
-
-        this.cloudSaverSearchMap = new Map();
-
         this.tmdbService = new TMDBService();
     }
 
@@ -76,9 +69,7 @@ class TelegramBotService {
         
         // 设置命令菜单
         await this.bot.setMyCommands([
-            { command: 'help', description: '帮助信息' },
-            { command: 'search_cs', description: '搜索CloudSaver资源' },
-            { command: 'accounts', description: '账号列表' },
+            { command: 'help', description: '帮助信息' },            { command: 'accounts', description: '账号列表' },
             { command: 'tasks', description: '任务列表' },
             { command: 'execute_all', description: '执行所有任务' },
             { command: 'fl', description: '常用目录列表' },
@@ -132,7 +123,6 @@ class TelegramBotService {
                 '/tasks - 显示下载任务列表\n' +
                 '/fl - 显示常用目录列表\n' +
                 '/fs - 添加常用目录\n' +
-                '/search_cs - 搜索CloudSaver资源\n' +
                 '/cancel - 取消当前操作\n\n' +
                 '📥 创建任务：\n' +
                 '直接发送移动云盘(139)分享链接即可创建任务\n' +
@@ -143,7 +133,6 @@ class TelegramBotService {
                 '/dt_[ID] - 删除指定任务\n' +
 
                 '🔍 资源搜索：\n' +
-                '1. 输入 /search_cs 进入搜索模式\n' +
                 '2. 直接输入关键字搜索资源\n' +
                 '3. 点击搜索结果中的链接可复制\n' +
                 '4. 输入 /cancel 退出搜索模式';
@@ -336,29 +325,6 @@ class TelegramBotService {
                 reply_markup: { inline_keyboard: keyboard }
             });
         });
-
-
-
-        // 搜索CloudSaver命令
-        this.bot.onText(/\/search_cs/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return
-            if (this.isSearchMode) {
-                await this.bot.sendMessage(chatId, '当前已处于搜索模式, 请直接输入关键字搜索资源\n输入 /cancel 退出搜索模式');
-                return;
-            } 
-            if (!this._checkUserId(chatId)) return;
-            // 判断用户是否开启了CloudSaver
-            if (!this.cloudSaverSdk.enabled){
-                await this.bot.sendMessage(chatId, '未开启CloudSaver, 请先在网页端配置CloudSaver');
-                return;
-            }
-            this.isSearchMode = true;
-            // 设置3分钟超时
-            this._resetSearchModeTimeout(chatId);
-            await this.bot.sendMessage(chatId, '已进入搜索模式，请输入关键字搜索资源\n输入 /cancel 退出搜索模式\n3分钟内未搜索将自动退出搜索模式');
-        });
-
         this.bot.onText(/\/cancel/, async (msg) => {
             const chatId = msg.chat.id;
             if (!this._checkChatId(chatId)) return
@@ -1039,48 +1005,6 @@ class TelegramBotService {
         }
     }
 
-    async cloudSaverSearch(chatId, msg) {
-        const keyword = msg.text?.trim();
-        if (!keyword) return;
-        // 重置超时时间
-        this._resetSearchModeTimeout(chatId);
-        try {
-            const message = await this.bot.sendMessage(chatId, '正在搜索...');
-            const result = await this.cloudSaverSdk.search(keyword);
-            if (result.length <= 0) {
-                await this.bot.editMessageText('未找到相关资源', {
-                    chat_id: chatId,
-                    message_id: message.message_id
-                });
-                return
-            }
-            // 仅展示移动云盘(139)结果
-            const cloud139Results = result.filter(item => /(?:yun|caiyun)\.139\.com/.test(item.cloudLinks[0].link));
-
-            // 保存结果到 cloudSaverSearchMap
-            let globalIndex = 0;
-            let groupText = '';
-            if (cloud139Results.length > 0) {
-                groupText += '📱 <b>移动云盘 (139)</b>\n';
-                cloud139Results.forEach(item => {
-                    globalIndex++;
-                    this.cloudSaverSearchMap.set(globalIndex, item.cloudLinks[0].link);
-                    groupText += `${globalIndex}. 🎬 <a href="${item.cloudLinks[0].link}">${item.title}</a>\n`;
-                });
-            }
-            const results = `💡 以下资源来自 CloudSaver\n` +
-                `📝 共找到 ${result.length} 个结果，输入编号可转存\n\n` +
-                groupText;
-            await this.bot.editMessageText(`搜索结果：\n\n${results}`, {
-                chat_id: chatId,
-                message_id: message.message_id,
-                parse_mode: 'HTML'
-            });
-        } catch (error) {
-            await this.bot.sendMessage(chatId, `搜索失败: ${error.message}`);
-        }
-    }
-
     // 校验任务id
     _checkTaskId(taskId) {
         if(isNaN(taskId)) {
@@ -1120,9 +1044,7 @@ class TelegramBotService {
         // 设置新的超时计时器
         this.searchModeTimeout = setTimeout(async () => {
             if (this.isSearchMode) {
-                this.isSearchMode = false;
-                this.cloudSaverSearchMap = new Map();
-                await this.bot.sendMessage(chatId, '长时间未搜索，已自动退出搜索模式');
+                this.isSearchMode = false;                await this.bot.sendMessage(chatId, '长时间未搜索，已自动退出搜索模式');
             }
         }, 3 * 60 * 1000);  // 3分钟
     }

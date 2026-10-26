@@ -182,7 +182,8 @@ class MobileAiClient {
         const cached = this._userIdCache.get(account.id);
         if (cached) return cached;
         try {
-            const Cloud139Service = require('./cloud139');
+            const Cloud139Module = require('./cloud139');
+            const Cloud139Service = Cloud139Module.Cloud139Service || Cloud139Module;
             const cloud139 = Cloud139Service.getInstance(account);
             const userInfo = await cloud139._userNjsPost('/user/getUser', {});
             const userId = userInfo && userInfo.userDomainId ? String(userInfo.userDomainId) : null;
