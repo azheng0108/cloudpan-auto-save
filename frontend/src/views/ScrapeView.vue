@@ -1013,7 +1013,10 @@ function handleFolderSelected(folder: { id: string; name: string }) {
   if (folderPickerType.value === 'manual-source') {
     manualOrganizeConfig.value.sourceDirId = normId;
     manualOrganizeConfig.value.sourceDirPath = normName;
+    unrecognizedStagingFolderId.value = normId;
+    unrecognizedStagingPath.value = normName;
     ElMessage.success(`已选定待整理源目录: ${normName}`);
+    loadUnrecognizedFiles(normId);
   } else if (folderPickerType.value === 'manual-target') {
     manualOrganizeConfig.value.targetDirPath = normName;
     ElMessage.success(`已选定媒体库归档目录: ${normName}`);
@@ -1122,6 +1125,93 @@ const manualOrganizeConfig = ref({
   includeEpisodeTitle: true,
   enableCue: true,
   customPart: ''
+});
+
+// ================= 2. 暂存区未识别文件治理与人工纠偏工作台状态 =================
+const loadingUnrecognized = ref(false);
+const unrecognizedStagingPath = ref('');
+const unrecognizedStagingFolderId = ref('');
+const unrecognizedFiles = ref<any[]>([]);
+const allScannedFiles = ref<any[]>([]);
+const filterOnlyUnrecognized = ref(true);
+const unrecognizedSearchQuery = ref('');
+const selectedUnrecognizedIds = ref<Set<string>>(new Set());
+
+// TMDB 纠偏搜索状态
+const tmdbSearchQuery = ref('');
+const tmdbSearchMediaType = ref<'tv' | 'movie' | ''>('');
+const isSearchingTmdb = ref(false);
+const tmdbCandidates = ref<any[]>([]);
+const selectedTmdbCandidate = ref<any>(null);
+
+// 纠偏归档参数
+const targetCategory = ref('国产剧');
+const availableCategories = ['国产剧', '欧美剧', '日韩剧', '动漫', '电影', '纪录片', '综艺'];
+const targetSeason = ref(1);
+const targetEpisodeOverrides = ref<Record<string, number>>({});
+const targetEpisodeTitleOverrides = ref<Record<string, string>>({});
+const resolvingNow = ref(false);
+const cleanEmptySourceDirOnResolve = ref(true);
+
+// 过滤后的未识别文件列表
+const filteredUnrecognizedFiles = computed(() => {
+  const source = filterOnlyUnrecognized.value ? unrecognizedFiles.value : allScannedFiles.value;
+  const q = unrecognizedSearchQuery.value.trim().toLowerCase();
+  if (!q) return source;
+  return source.filter((f: any) =>
+    (f.name && f.name.toLowerCase().includes(q)) ||
+    (f.cleanTitle && f.cleanTitle.toLowerCase().includes(q))
+  );
+});
+
+// 已选中的文件完整对象清单
+const selectedFilesList = computed(() => {
+  const all = allScannedFiles.value.length > 0 ? allScannedFiles.value : unrecognizedFiles.value;
+  return all.filter((f: any) => selectedUnrecognizedIds.value.has(String(f.id)));
+});
+
+// 选定候选与季集后的重命名实时推演列表
+const previewOrganizedList = computed(() => {
+  if (!selectedTmdbCandidate.value || selectedFilesList.value.length === 0) return [];
+  const cand = selectedTmdbCandidate.value;
+  const isMovie = cand.media_type === 'movie' || (!cand.media_type && cand.title && !cand.name);
+  const title = (cand.title || cand.name || '未知影视').trim();
+  const year = cand.release_date ? cand.release_date.substring(0, 4) : (cand.first_air_date ? cand.first_air_date.substring(0, 4) : '');
+
+  return selectedFilesList.value.map((f: any) => {
+    const ext = f.name.includes('.') ? f.name.substring(f.name.lastIndexOf('.')) : '.mp4';
+    const epNum = targetEpisodeOverrides.value[String(f.id)] ?? f.episode ?? 1;
+    const epTitle = targetEpisodeTitleOverrides.value[String(f.id)] ?? f.episodeTitle ?? '';
+    const res = f.tech?.resolution || '';
+
+    let newFileName = '';
+    let targetPath = '';
+
+    if (isMovie) {
+      const yearPart = year ? `.${year}` : '';
+      const resPart = res ? `.${res}` : '';
+      newFileName = `${title}${yearPart}${resPart}${ext}`;
+      targetPath = `/${targetCategory.value}/${title}${year ? ` (${year})` : ''}/${newFileName}`;
+    } else {
+      const sStr = `S${String(targetSeason.value).padStart(2, '0')}`;
+      const eStr = `E${String(epNum).padStart(2, '0')}`;
+      const epTitlePart = epTitle ? `.${epTitle}` : '';
+      const resPart = res ? `.${res}` : '';
+      newFileName = `${title}.${sStr}${eStr}${epTitlePart}${resPart}${ext}`;
+      targetPath = `/${targetCategory.value}/${title}${year ? ` (${year})` : ''}/Season ${targetSeason.value}/${newFileName}`;
+    }
+
+    return {
+      fileId: String(f.id),
+      originalName: f.name,
+      newFileName,
+      targetPath,
+      episodeNum: epNum,
+      episodeTitle: epTitle,
+      size: f.size,
+      tech: f.tech
+    };
+  });
 });
 
 // 整理推演结果 (0 物理写入沙箱)
@@ -1330,20 +1420,193 @@ function openManualOrganize(presetPath?: string) {
   if (presetPath) {
     manualOrganizeConfig.value.sourceDirPath = presetPath;
     manualOrganizeConfig.value.sourceDirId = presetPath;
-  } else if (!manualOrganizeConfig.value.sourceDirPath || manualOrganizeConfig.value.sourceDirPath === '/') {
-    if (strategyConfig.value.stagingFolderName) {
-      manualOrganizeConfig.value.sourceDirPath = strategyConfig.value.stagingFolderName;
-      manualOrganizeConfig.value.sourceDirId = strategyConfig.value.stagingFolderId || '/';
-    }
-    if (strategyConfig.value.defaultTargetFolderName) {
-      manualOrganizeConfig.value.targetDirPath = strategyConfig.value.defaultTargetFolderName;
+  }
+  switchTab('manual');
+  loadUnrecognizedFiles(presetPath);
+}
+
+// ================= 未识别治理与人工纠偏核心业务逻辑 =================
+async function loadUnrecognizedFiles(customFolderId?: string) {
+  if (!selectedAccountId.value) {
+    ElMessage.warning('请先绑定并选择 139 移动云盘账号');
+    return;
+  }
+  loadingUnrecognized.value = true;
+  try {
+    const targetFolderId = customFolderId || strategyConfig.value.stagingFolderId || undefined;
+    const res = await tmdbOrganizeApi.getUnrecognizedFiles({
+      folderId: targetFolderId,
+      accountId: selectedAccountId.value
+    });
+    unrecognizedStagingPath.value = res.stagingFolderName || strategyConfig.value.stagingFolderName || '/暂存区';
+    unrecognizedStagingFolderId.value = res.stagingFolderId || '';
+    unrecognizedFiles.value = res.unrecognizedFiles || [];
+    allScannedFiles.value = res.allFiles || [];
+    selectedUnrecognizedIds.value.clear();
+    targetEpisodeOverrides.value = {};
+    targetEpisodeTitleOverrides.value = {};
+    selectedTmdbCandidate.value = null;
+    tmdbCandidates.value = [];
+  } catch (err: any) {
+    ElMessage.error(`加载暂存区未识别文件失败: ${err.message}`);
+  } finally {
+    loadingUnrecognized.value = false;
+  }
+}
+
+function initEpisodeNumberForFile(id: string) {
+  if (targetEpisodeOverrides.value[id] !== undefined) return;
+  const all = allScannedFiles.value.length > 0 ? allScannedFiles.value : unrecognizedFiles.value;
+  const f = all.find((item: any) => String(item.id) === id);
+  if (f) {
+    targetEpisodeOverrides.value[id] = f.episode || 1;
+    if (f.episodeTitle) {
+      targetEpisodeTitleOverrides.value[id] = f.episodeTitle;
     }
   }
-  previewDone.value = false;
-  previewTasks.value = [];
-  previewGroups.value = [];
-  inlineOrganizePanelOpen.value = true;
-  switchTab('manual');
+}
+
+function toggleSelectUnrecognized(id: string) {
+  if (selectedUnrecognizedIds.value.has(id)) {
+    selectedUnrecognizedIds.value.delete(id);
+  } else {
+    selectedUnrecognizedIds.value.add(id);
+    initEpisodeNumberForFile(id);
+  }
+}
+
+function toggleSelectAllUnrecognized() {
+  const currentList = filteredUnrecognizedFiles.value;
+  if (selectedUnrecognizedIds.value.size >= currentList.length && currentList.length > 0) {
+    selectedUnrecognizedIds.value.clear();
+  } else {
+    currentList.forEach((f: any) => {
+      selectedUnrecognizedIds.value.add(String(f.id));
+      initEpisodeNumberForFile(String(f.id));
+    });
+  }
+}
+
+function quickFillSearchFromItem(item: any) {
+  selectedUnrecognizedIds.value.clear();
+  selectedUnrecognizedIds.value.add(String(item.id));
+  initEpisodeNumberForFile(String(item.id));
+
+  const query = item.cleanTitle || item.name.replace(/\.[^/.]+$/, '').replace(/S\d+.*$/i, '').trim();
+  tmdbSearchQuery.value = query;
+  tmdbSearchMediaType.value = item.mediaType === 'movie' ? 'movie' : (item.mediaType === 'tv' ? 'tv' : '');
+  doSearchTmdb();
+}
+
+async function doSearchTmdb() {
+  const q = tmdbSearchQuery.value.trim();
+  if (!q) {
+    ElMessage.warning('请输入搜索片名或 TMDB ID');
+    return;
+  }
+  isSearchingTmdb.value = true;
+  try {
+    const results = await tmdbOrganizeApi.searchTmdb({
+      query: q,
+      mediaType: tmdbSearchMediaType.value || undefined
+    });
+    tmdbCandidates.value = results || [];
+    if (tmdbCandidates.value.length === 0) {
+      ElMessage.info('未在 TMDB 中搜索到匹配结果，请尝试更换关键词或输入精确 TMDB ID');
+    }
+  } catch (err: any) {
+    ElMessage.error(`TMDB 搜索失败: ${err.message}`);
+  } finally {
+    isSearchingTmdb.value = false;
+  }
+}
+
+function selectTmdbCandidate(cand: any) {
+  selectedTmdbCandidate.value = cand;
+  const isMovie = cand.media_type === 'movie' || (!cand.media_type && cand.title && !cand.name);
+
+  if (isMovie) {
+    targetCategory.value = '电影';
+  } else {
+    const origin = (cand.origin_country || [])[0] || '';
+    if (['CN', 'TW', 'HK'].includes(origin)) {
+      targetCategory.value = '国产剧';
+    } else if (['JP', 'KR'].includes(origin)) {
+      targetCategory.value = '日韩剧';
+    } else if (['US', 'GB', 'CA', 'AU'].includes(origin)) {
+      targetCategory.value = '欧美剧';
+    } else {
+      targetCategory.value = '国产剧';
+    }
+  }
+
+  const sorted = [...selectedFilesList.value].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  sorted.forEach((f: any, idx: number) => {
+    const fid = String(f.id);
+    if (!targetEpisodeOverrides.value[fid]) {
+      targetEpisodeOverrides.value[fid] = f.episode || (idx + 1);
+    }
+  });
+}
+
+async function executeResolveUnrecognized() {
+  if (!selectedTmdbCandidate.value) {
+    ElMessage.warning('请先在右侧搜索并选定匹配的 TMDB 影视条目！');
+    return;
+  }
+  if (selectedFilesList.value.length === 0) {
+    ElMessage.warning('请先在左侧至少勾选一个待入库的文件！');
+    return;
+  }
+
+  const cand = selectedTmdbCandidate.value;
+  const isMovie = cand.media_type === 'movie' || (!cand.media_type && cand.title && !cand.name);
+  const targetTitle = (cand.title || cand.name || '').trim();
+  const targetYear = cand.release_date ? cand.release_date.substring(0, 4) : (cand.first_air_date ? cand.first_air_date.substring(0, 4) : '');
+
+  const itemsPayload = previewOrganizedList.value.map((item: any) => {
+    const originalFile = selectedFilesList.value.find((f: any) => String(f.id) === item.fileId);
+    return {
+      fileId: item.fileId,
+      name: item.originalName,
+      targetTmdbId: String(cand.id),
+      targetTitle,
+      targetYear,
+      targetMediaType: isMovie ? ('movie' as const) : ('tv' as const),
+      targetCategory: targetCategory.value,
+      targetSeason: isMovie ? undefined : targetSeason.value,
+      targetEpisode: isMovie ? undefined : item.episodeNum,
+      targetEpisodeTitle: isMovie ? undefined : item.episodeTitle,
+      oldPath: originalFile?.path || originalFile?.name,
+      parentFolderId: originalFile?.parentFolderId,
+      size: item.size
+    };
+  });
+
+  resolvingNow.value = true;
+  try {
+    const res = await tmdbOrganizeApi.resolveUnrecognized({
+      accountId: selectedAccountId.value,
+      items: itemsPayload,
+      targetDirPath: strategyConfig.value.defaultTargetFolderName || '/媒体库',
+      cleanEmptySourceDir: cleanEmptySourceDirOnResolve.value
+    });
+
+    ElMessage.success(`🎉 纠偏成功！已规范归档入库 ${res.count || itemsPayload.length} 个视频文件！`);
+    
+    const resolvedIds = new Set(itemsPayload.map((it: any) => it.fileId));
+    unrecognizedFiles.value = unrecognizedFiles.value.filter((f: any) => !resolvedIds.has(String(f.id)));
+    allScannedFiles.value = allScannedFiles.value.filter((f: any) => !resolvedIds.has(String(f.id)));
+    selectedUnrecognizedIds.value.clear();
+    selectedTmdbCandidate.value = null;
+    tmdbCandidates.value = [];
+    
+    loadHistory();
+  } catch (err: any) {
+    ElMessage.error(`归档入库失败: ${err.message}`);
+  } finally {
+    resolvingNow.value = false;
+  }
 }
 
 // 快捷填入默认路径
@@ -1734,6 +1997,9 @@ function syncTabFromRoute() {
 
 function switchTab(tab: 'organize' | 'manual' | 'history' | 'wash' | 'wash_history') {
   activeMainTab.value = tab;
+  if (tab === 'manual' && unrecognizedFiles.value.length === 0 && !loadingUnrecognized.value) {
+    loadUnrecognizedFiles();
+  }
   if (tab === 'wash' || tab === 'wash_history') {
     router.push({ path: '/wash', query: tab === 'wash_history' ? { tab: 'history' } : undefined });
   } else {
@@ -1748,6 +2014,8 @@ watch(
     if (activeMainTab.value === 'history' || activeMainTab.value === 'wash_history') {
       currentPage.value = 1;
       loadHistory();
+    } else if (activeMainTab.value === 'manual' && unrecognizedFiles.value.length === 0 && !loadingUnrecognized.value) {
+      loadUnrecognizedFiles();
     }
   },
   { immediate: true }
@@ -1756,6 +2024,9 @@ watch(
 onMounted(async () => {
   await loadAccounts();
   await loadStrategyConfig();
+  if (activeMainTab.value === 'manual') {
+    await loadUnrecognizedFiles();
+  }
   if (activeMainTab.value !== 'history' && activeMainTab.value !== 'wash_history') {
     await loadHistory();
   }
@@ -1818,7 +2089,10 @@ onUnmounted(() => {
             class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap"
           >
             <Sparkles class="w-3.5 h-3.5" />
-            <span>手动整理入库</span>
+            <span>未识别治理 (人工纠偏)</span>
+            <span v-if="unrecognizedFiles.length > 0" class="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-mono font-bold animate-pulse">
+              {{ unrecognizedFiles.length }}
+            </span>
           </button>
 
           <button
@@ -2224,339 +2498,439 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <!-- ================= 视口: 手动双栏整理 (0 物理写入实时推演与确认入库) ================= -->
+    <!-- ================= 视口: 暂存区未识别治理与人工纠偏工作台 ================= -->
     <template v-else-if="activeMainTab === 'manual'">
-      <!-- 顶部引导卡片 -->
+      <!-- 顶部控制与指引卡片 -->
       <div class="settings-card flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
+          <div class="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
             <Sparkles class="w-5 h-5" />
           </div>
           <div>
-            <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">
-              手动整理入库
-            </h3>
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">
+                未识别内容治理与人工纠偏
+              </h3>
+              <span v-if="unrecognizedFiles.length > 0" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                {{ unrecognizedFiles.length }} 项待处理
+              </span>
+              <span v-else class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                暂存区已清空
+              </span>
+            </div>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              安全预览模式：先预览影视识别与点分规范重命名效果，核对无误后再一键确认入库（零误操作风险）
+              专注治理暂存区中自动流水线未识别、未命中 TMDB、或季集信息不全的滞留疑难视频文件。支持精准联机查片并一键规范归档入库。
             </p>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
-          <!-- 账号状态 -->
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>生效网盘: {{ accounts.find(a => a.id === selectedAccountId)?.alias || accounts.find(a => a.id === selectedAccountId)?.username || '默认 139 网盘' }}</span>
-          </span>
+        <div class="flex items-center gap-2 flex-wrap">
+          <!-- 当前扫描目录指示 -->
+          <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 max-w-[280px] truncate" :title="unrecognizedStagingPath || strategyConfig.stagingFolderName || '/暂存区'">
+            <Folder class="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span class="truncate">{{ unrecognizedStagingPath || strategyConfig.stagingFolderName || '/暂存区' }}</span>
+          </div>
+
+          <!-- 切换暂存目录按钮 -->
+          <button
+            type="button"
+            @click="openFolderPicker('manual-source')"
+            class="btn-default text-xs h-8 px-2.5 flex items-center gap-1 cursor-pointer"
+            title="选择其他目录进行未识别扫描"
+          >
+            <FolderOpen class="w-3.5 h-3.5 text-slate-500" />
+            <span>更换目录</span>
+          </button>
+
+          <!-- 刷新扫描按钮 -->
+          <button
+            type="button"
+            :disabled="loadingUnrecognized"
+            @click="loadUnrecognizedFiles(unrecognizedStagingFolderId)"
+            class="btn-default text-xs h-8 px-3 flex items-center gap-1.5 cursor-pointer text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900"
+          >
+            <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': loadingUnrecognized }" />
+            <span>{{ loadingUnrecognized ? '正在扫描...' : '刷新待办' }}</span>
+          </button>
         </div>
       </div>
 
-      <!-- 三步操作指引 -->
-      <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-        <div class="flex items-center gap-2">
-          <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold flex items-center justify-center text-[11px]">1</span>
-          <span class="font-medium text-slate-700 dark:text-slate-200">选定待整理源目录与目标媒体库</span>
-        </div>
-        <ArrowRight class="w-3.5 h-3.5 text-slate-400 hidden sm:block shrink-0" />
-        <div class="flex items-center gap-2">
-          <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold flex items-center justify-center text-[11px]">2</span>
-          <span class="font-medium text-slate-700 dark:text-slate-200">点击「扫描并预览效果」</span>
-        </div>
-        <ArrowRight class="w-3.5 h-3.5 text-slate-400 hidden sm:block shrink-0" />
-        <div class="flex items-center gap-2">
-          <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold flex items-center justify-center text-[11px]">3</span>
-          <span class="font-medium text-slate-700 dark:text-slate-200">检查清单并点击「确认执行入库」</span>
-        </div>
-      </div>
-
-      <!-- 双分栏网格 -->
+      <!-- 双分栏工作台 -->
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <!-- 左分栏：控制参数 (占 5 格) -->
-        <div class="lg:col-span-5 space-y-4">
-          <div class="settings-card space-y-3.5">
-            <div class="flex items-center gap-2 pb-2.5 border-b border-gray-100 dark:border-gray-800">
-              <SlidersHorizontal class="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">整理参数设置</h4>
-            </div>
-
-            <!-- 待整理源目录 -->
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="block text-xs font-semibold text-gray-700 dark:text-slate-300">待整理源目录</label>
-                <button type="button" @click="fillDefaultStagingDir" class="text-[11px] text-amber-600 hover:text-amber-700 dark:text-amber-400 font-medium cursor-pointer transition-colors" title="快速填入配置中的默认暂存目录">⚡ 填入默认暂存区</button>
+        <!-- 左分栏：未识别待处理文件列表 (占 5 格) -->
+        <div class="lg:col-span-5 space-y-3">
+          <div class="settings-card space-y-3">
+            <!-- 列表工具栏 -->
+            <div class="flex items-center justify-between pb-2.5 border-b border-gray-100 dark:border-gray-800">
+              <div class="flex items-center gap-2">
+                <FileVideo class="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <h4 class="text-xs font-bold text-gray-900 dark:text-white">待处理视频清单</h4>
               </div>
-              <div class="flex gap-2">
-                <input
-                  v-model="manualOrganizeConfig.sourceDirPath"
-                  class="input-base text-xs font-mono flex-1 bg-slate-50 dark:bg-slate-800/50"
-                  placeholder="如 /暂存区/频道转存"
-                />
+
+              <!-- 切换模式：仅未识别 vs 全部 -->
+              <div class="inline-flex rounded-lg p-0.5 bg-slate-100 dark:bg-slate-800 text-[11px]">
                 <button
                   type="button"
-                  @click="openFolderPicker('manual-source')"
-                  class="btn-default text-xs h-[38px] px-3 shrink-0 flex items-center gap-1 cursor-pointer"
-                  title="从网盘目录树选取"
+                  @click="filterOnlyUnrecognized = true"
+                  class="px-2 py-0.5 rounded-md transition-all cursor-pointer font-medium"
+                  :class="filterOnlyUnrecognized ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
                 >
-                  <Folder class="w-3.5 h-3.5 text-amber-500" />
-                  <span>选择</span>
+                  未识别 ({{ unrecognizedFiles.length }})
+                </button>
+                <button
+                  type="button"
+                  @click="filterOnlyUnrecognized = false"
+                  class="px-2 py-0.5 rounded-md transition-all cursor-pointer font-medium"
+                  :class="!filterOnlyUnrecognized ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
+                >
+                  全部 ({{ allScannedFiles.length }})
                 </button>
               </div>
             </div>
 
-            <!-- 媒体库目的路径 -->
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="block text-xs font-semibold text-gray-700 dark:text-slate-300">媒体库目的路径</label>
-                <button type="button" @click="fillDefaultTargetDir" class="text-[11px] text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-medium cursor-pointer transition-colors" title="快速填入配置中的默认媒体库路径">⚡ 填入默认媒体库</button>
-              </div>
-              <div class="flex gap-2">
+            <!-- 本地搜索与全选控制 -->
+            <div class="flex items-center justify-between gap-2">
+              <div class="relative flex-1">
+                <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
-                  v-model="manualOrganizeConfig.targetDirPath"
-                  class="input-base text-xs font-mono flex-1 bg-slate-50 dark:bg-slate-800/50"
-                  placeholder="如 /媒体库"
+                  v-model="unrecognizedSearchQuery"
+                  class="input-base text-xs pl-8 py-1.5 h-8 w-full bg-slate-50 dark:bg-slate-800/60"
+                  placeholder="过滤待处理文件名..."
                 />
-                <button
-                  type="button"
-                  @click="openFolderPicker('manual-target')"
-                  class="btn-default text-xs h-[38px] px-3 shrink-0 flex items-center gap-1 cursor-pointer"
-                  title="从网盘目录树选取"
-                >
-                  <Folder class="w-3.5 h-3.5 text-indigo-500" />
-                  <span>选择</span>
-                </button>
               </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">媒体类型</label>
-                <select
-                  v-model="manualOrganizeConfig.mediaType"
-                  class="input-base text-xs w-full"
-                >
-                  <option value="auto">自动识别</option>
-                  <option value="tv">电视剧</option>
-                  <option value="movie">电影</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">数据源</label>
-                <select
-                  v-model="manualOrganizeConfig.dataSource"
-                  class="input-base text-xs w-full"
-                >
-                  <option value="auto">自动 (TMDB)</option>
-                  <option value="tmdb">TheMovieDb</option>
-                  <option value="douban">豆瓣</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- 未匹配季集策略 -->
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">未匹配季集策略</label>
-              <select
-                v-model="manualOrganizeConfig.unmatchedSeasonPolicy"
-                class="input-base text-xs w-full"
-              >
-                <option value="fallbackCleanSeason">自动自愈（降级平铺到规范目录）</option>
-                <option value="protectInPlace">严格保护（原地不动跳过写入）</option>
-              </select>
-            </div>
-
-            <!-- 显示官方单集标题开关 -->
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-2.5 flex items-center justify-between">
-              <div>
-                <h4 class="text-xs font-semibold text-gray-800 dark:text-slate-200">显示官方单集标题</h4>
-                <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-                  注入 TMDB 官方分集小标题 (S01E08.标题.2160p)
-                </p>
-              </div>
-              <el-switch v-model="manualOrganizeConfig.includeEpisodeTitle" size="small" />
-            </div>
-
-            <!-- 清理源空文件夹开关 -->
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-2.5 flex items-center justify-between">
-              <div>
-                <h4 class="text-xs font-semibold text-gray-800 dark:text-slate-200">清理源空文件夹</h4>
-                <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-                  整理完成后自动删除源暂存路径下的残留空目录
-                </p>
-              </div>
-              <el-switch v-model="manualOrganizeConfig.cleanEmptySources" size="small" />
-            </div>
-
-            <!-- 操作按钮组 -->
-            <div class="pt-2 flex items-center justify-between">
               <button
                 type="button"
-                :disabled="scanning || previewing"
-                @click="triggerPreview"
-                class="btn-default text-xs h-9 px-4 flex items-center gap-1.5 cursor-pointer font-semibold text-blue-600 dark:text-cyan-300 border-blue-200 dark:border-blue-800/60"
+                @click="toggleSelectAllUnrecognized"
+                class="btn-default text-xs h-8 px-2.5 shrink-0 flex items-center gap-1 cursor-pointer"
+                :title="selectedUnrecognizedIds.size > 0 ? '反选/清空' : '全选所有'"
               >
-                <RotateCw v-if="scanning || previewing" class="w-3.5 h-3.5 animate-spin" />
-                <Eye v-else class="w-3.5 h-3.5" />
-                <span>{{ scanning ? '扫描中...' : (previewing ? '正在识别与比对...' : '扫描并预览效果') }}</span>
+                <Check class="w-3.5 h-3.5" />
+                <span>{{ selectedUnrecognizedIds.size > 0 && selectedUnrecognizedIds.size >= filteredUnrecognizedFiles.length ? '取消全选' : '全选' }}</span>
               </button>
+            </div>
 
-              <!-- 原位执行确认胶囊 (零弹窗规范) -->
-              <div v-if="executeOrganizeConfirm" class="flex items-center gap-1">
-                <span class="text-[11px] text-emerald-600 font-semibold">确认执行入库?</span>
-                <button
-                  type="button"
-                  class="px-2.5 py-1 rounded text-[11px] bg-emerald-600 text-white font-semibold cursor-pointer hover:bg-emerald-700"
-                  @click="executeOrganize"
-                >
-                  确认执行
-                </button>
-                <button
-                  type="button"
-                  class="px-2 py-1 rounded text-[11px] bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 cursor-pointer"
-                  @click="executeOrganizeConfirm = false"
-                >
-                  取消
-                </button>
-              </div>
+            <!-- 选择状态指示条 -->
+            <div v-if="selectedUnrecognizedIds.size > 0" class="p-2 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/60 dark:border-indigo-900/60 flex items-center justify-between text-xs">
+              <span class="font-medium text-indigo-700 dark:text-indigo-300">
+                已勾选 <strong class="font-mono font-bold">{{ selectedUnrecognizedIds.size }}</strong> 项文件
+              </span>
               <button
-                v-else
                 type="button"
-                :disabled="executing || (!previewDone && previewTasks.length === 0)"
-                @click="executeOrganize"
-                class="btn-primary text-xs h-9 px-4 flex items-center gap-1.5 cursor-pointer font-semibold shadow-xs"
+                @click="selectedUnrecognizedIds.clear()"
+                class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
               >
-                <RotateCw v-if="executing" class="w-3.5 h-3.5 animate-spin" />
-                <Play v-else class="w-3.5 h-3.5" />
-                <span>确认执行入库</span>
+                清空选择
               </button>
+            </div>
+
+            <!-- 列表视图 -->
+            <div v-if="loadingUnrecognized" class="p-12 text-center space-y-2">
+              <RotateCw class="w-6 h-6 animate-spin mx-auto text-amber-500" />
+              <p class="text-xs text-slate-400">正在扫描暂存区目录中的媒体文件...</p>
+            </div>
+
+            <div v-else-if="filteredUnrecognizedFiles.length === 0" class="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+              <CheckCircle2 class="w-10 h-10 mx-auto text-emerald-500 opacity-80" />
+              <h5 class="text-xs font-bold text-slate-700 dark:text-slate-300">
+                {{ unrecognizedSearchQuery ? '未找到符合条件的待处理文件' : '太棒了！当前暂存区没有未识别视频' }}
+              </h5>
+              <p class="text-[11px] text-slate-400 max-w-xs mx-auto">
+                {{ unrecognizedSearchQuery ? '请尝试修改搜索词，或清空筛选' : '所有转存入库的视频文件均已被自动识别归档，暂无需要人工治理的疑难项' }}
+              </p>
+            </div>
+
+            <div v-else class="space-y-2 max-h-[560px] overflow-y-auto pr-1">
+              <div
+                v-for="item in filteredUnrecognizedFiles"
+                :key="item.id"
+                class="p-2.5 rounded-xl border transition-all cursor-pointer space-y-1.5"
+                :class="selectedUnrecognizedIds.has(String(item.id)) ? 'bg-indigo-50/60 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-700 shadow-2xs' : 'bg-white dark:bg-slate-900/70 border-slate-200/80 dark:border-slate-800 hover:border-slate-300'"
+                @click="toggleSelectUnrecognized(String(item.id))"
+              >
+                <!-- 头部：复选框 + 文件名 -->
+                <div class="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    :checked="selectedUnrecognizedIds.has(String(item.id))"
+                    @click.stop="toggleSelectUnrecognized(String(item.id))"
+                    class="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <h5 class="text-xs font-medium text-slate-800 dark:text-slate-200 break-all leading-snug" :title="item.name">
+                      {{ item.name }}
+                    </h5>
+                  </div>
+                </div>
+
+                <!-- 标签流与卡点提示 -->
+                <div class="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[10px]">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <!-- 卡点原因标签 -->
+                    <span v-if="!item.tmdbId" class="px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900 font-semibold">
+                      未匹配 TMDB
+                    </span>
+                    <span v-else-if="item.isSuspicious" class="px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900 font-semibold">
+                      格式异常
+                    </span>
+                    <span v-else-if="item.tmdbNotFound" class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                      查无此片
+                    </span>
+                    <span v-if="!item.episode" class="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-900 font-mono">
+                      季集未定
+                    </span>
+                    <span v-else class="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
+                      S{{ String(item.season || 1).padStart(2, '0') }}E{{ String(item.episode || 1).padStart(2, '0') }}
+                    </span>
+
+                    <!-- 规格信息 -->
+                    <span v-if="item.tech?.resolution" class="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono">
+                      {{ item.tech.resolution }}
+                    </span>
+                    <span v-if="item.size" class="text-slate-400 font-mono">
+                      {{ formatSize(item.size) }}
+                    </span>
+                  </div>
+
+                  <!-- 查此片快捷按钮 -->
+                  <button
+                    type="button"
+                    @click.stop="quickFillSearchFromItem(item)"
+                    class="px-2 py-0.5 rounded text-[10px] bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-medium cursor-pointer transition-colors shrink-0 flex items-center gap-0.5"
+                    title="自动提取关键词并在右侧精准检索 TMDB"
+                  >
+                    <Search class="w-3 h-3" />
+                    <span>查此片</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- 右分栏：推演预览看板 (占 7 格) -->
+        <!-- 右分栏：TMDB 精准匹配与重命名纠偏器 (占 7 格) -->
         <div class="lg:col-span-7 space-y-4">
-          <div class="settings-card space-y-3">
-            <div class="flex items-center justify-between pb-2.5 border-b border-gray-100 dark:border-gray-800">
-              <span class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                <Sparkles class="w-3.5 h-3.5 text-indigo-500" />
-                <span>整理预览清单</span>
-              </span>
-              <div v-if="previewDone" class="flex items-center gap-1 text-[10px] font-mono font-semibold">
-                <span class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">总数: {{ previewSummary.total }}</span>
-                <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">就绪: {{ previewSummary.ready }}</span>
-                <span v-if="previewSummary.protectedCount > 0" class="px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">保护: {{ previewSummary.protectedCount }}</span>
-                <span v-if="previewSummary.fallbackCount > 0" class="px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">自愈: {{ previewSummary.fallbackCount }}</span>
-              </div>
-            </div>
+          <!-- 状态 1: 未勾选任何文件时的引导空态 -->
+          <div v-if="selectedUnrecognizedIds.size === 0" class="settings-card p-16 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+            <Sparkles class="w-10 h-10 mx-auto text-amber-500/70" />
+            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">
+              请在左侧选择需要人工治理的文件
+            </h4>
+            <p class="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+              👈 您可以单选单个视频，也可以批量勾选同一部剧的多个单集。<br/>
+              选定后在右侧精准检索 TMDB 影视库，指派季集编号并一键规范归档入库。
+            </p>
+          </div>
 
-            <!-- 影视刮削主卡片 (若解析出主要影视组) -->
-            <div
-              v-if="primaryGroup && previewDone"
-              class="p-3 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/50 flex items-center gap-3.5"
-            >
-              <div class="w-12 h-16 rounded-lg bg-slate-200 dark:bg-slate-700 shrink-0 overflow-hidden flex items-center justify-center border border-indigo-200/50 dark:border-indigo-800/50 shadow-2xs">
-                <img
-                  v-if="primaryGroup.posterPath"
-                  :src="formatPosterUrl(primaryGroup.posterPath)"
-                  :alt="primaryGroup.title"
-                  class="w-full h-full object-cover"
-                  loading="lazy"
-                />
-                <Tv v-else-if="primaryGroup.mediaType === 'tv'" class="w-5 h-5 text-indigo-400" />
-                <Film v-else class="w-5 h-5 text-indigo-400" />
-              </div>
-              <div class="min-w-0 flex-1">
+          <!-- 状态 2: 已勾选文件时的纠偏操作台 -->
+          <div v-else class="space-y-4">
+            <!-- 模块 A: TMDB 影视联机检索卡片 -->
+            <div class="settings-card space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
                 <div class="flex items-center gap-2">
-                  <h4 class="text-xs font-bold text-gray-900 dark:text-white truncate">
-                    {{ primaryGroup.title }}
-                  </h4>
-                  <span
-                    class="px-1.5 py-0.2 rounded text-[10px] font-semibold"
-                    :class="primaryGroup.mediaType === 'tv' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'"
-                  >
-                    {{ primaryGroup.mediaType === 'tv' ? '电视剧' : '电影' }}
-                  </span>
-                  <span v-if="primaryGroup.year" class="text-[10px] text-gray-400 font-mono">({{ primaryGroup.year }})</span>
+                  <Search class="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <h4 class="text-xs font-bold text-gray-900 dark:text-white">步骤 1: 关联 TMDB 官方影视条目</h4>
                 </div>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 line-clamp-1">
-                  {{ primaryGroup.overview || '已精准匹配 TMDB 官方影视元数据' }}
-                </p>
-                <div class="mt-1 flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                  <span>发现剧集项: {{ previewTasks.length }} 集</span>
+                <span class="text-[11px] text-slate-400 font-mono">
+                  已选 {{ selectedFilesList.length }} 项文件进行合并治理
+                </span>
+              </div>
+
+              <!-- 搜索表单 -->
+              <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                  <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    v-model="tmdbSearchQuery"
+                    @keyup.enter="doSearchTmdb"
+                    class="input-base text-xs pl-8 py-2 w-full"
+                    placeholder="输入影视中文名、拼音、原名或直接输入 TMDB ID (回车检索)..."
+                  />
+                </div>
+                <select v-model="tmdbSearchMediaType" class="input-base text-xs w-28 shrink-0">
+                  <option value="">全部类型</option>
+                  <option value="tv">电视剧</option>
+                  <option value="movie">电影</option>
+                </select>
+                <button
+                  type="button"
+                  :disabled="isSearchingTmdb"
+                  @click="doSearchTmdb"
+                  class="btn-primary text-xs h-[38px] px-4 shrink-0 flex items-center gap-1.5 cursor-pointer font-semibold"
+                >
+                  <RotateCw v-if="isSearchingTmdb" class="w-3.5 h-3.5 animate-spin" />
+                  <Search v-else class="w-3.5 h-3.5" />
+                  <span>{{ isSearchingTmdb ? '检索中...' : '搜索 TMDB' }}</span>
+                </button>
+              </div>
+
+              <!-- 搜索候选结果列表 (紧凑卡片流) -->
+              <div v-if="tmdbCandidates.length > 0" class="space-y-2 pt-1">
+                <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>TMDB 候选影视 (点击选定):</span>
+                  <span class="font-mono text-[10px]">共找到 {{ tmdbCandidates.length }} 条候选</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                  <div
+                    v-for="cand in tmdbCandidates"
+                    :key="cand.id"
+                    class="p-2.5 rounded-xl border flex items-center gap-2.5 transition-all cursor-pointer"
+                    :class="selectedTmdbCandidate?.id === cand.id ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-indigo-500 shadow-2xs' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-300'"
+                    @click="selectTmdbCandidate(cand)"
+                  >
+                    <!-- 海报小图 -->
+                    <div class="w-10 h-14 rounded-md bg-slate-200 dark:bg-slate-800 shrink-0 overflow-hidden flex items-center justify-center">
+                      <img
+                        v-if="cand.poster_path"
+                        :src="formatPosterUrl(cand.poster_path)"
+                        :alt="cand.title || cand.name"
+                        class="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                      <Tv v-else-if="cand.media_type === 'tv'" class="w-4 h-4 text-slate-400" />
+                      <Film v-else class="w-4 h-4 text-slate-400" />
+                    </div>
+
+                    <!-- 影视信息 -->
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-1.5">
+                        <h5 class="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {{ cand.title || cand.name }}
+                        </h5>
+                        <span
+                          class="px-1 py-0.2 rounded text-[9px] font-semibold shrink-0"
+                          :class="cand.media_type === 'movie' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'"
+                        >
+                          {{ cand.media_type === 'movie' ? '电影' : '剧集' }}
+                        </span>
+                      </div>
+                      <p class="text-[10px] text-slate-400 font-mono mt-0.5">
+                        {{ cand.release_date || cand.first_air_date || '未知年份' }} · TMDB: {{ cand.id }}
+                      </p>
+                      <p class="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
+                        {{ cand.overview || '暂无官方简介' }}
+                      </p>
+                    </div>
+
+                    <!-- 选中标识 -->
+                    <div v-if="selectedTmdbCandidate?.id === cand.id" class="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                      <Check class="w-3 h-3 stroke-3" />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- 空态引导 -->
-            <div v-if="!previewDone && !scanning && !previewing" class="p-16 text-center border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-xl">
-              <Sparkles class="w-10 h-10 mx-auto mb-3 text-indigo-400 opacity-60 animate-bounce" />
-              <h4 class="text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">尚未开始预览</h4>
-              <p class="text-xs text-gray-400 max-w-sm mx-auto">
-                👈 请在左侧选定待整理目录与目标媒体库，点击「扫描并预览效果」，系统将在安全预览状态下提前生成识别与重命名清单
-              </p>
-            </div>
-
-            <!-- 加载态 -->
-            <div v-else-if="scanning || previewing" class="p-16 text-center border border-gray-200 dark:border-gray-800 rounded-xl space-y-3">
-              <RotateCw class="w-8 h-8 animate-spin mx-auto text-indigo-500" />
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-gray-800 dark:text-gray-200">
-                  {{ scanning ? '正在扫描 139 网盘源目录...' : '正在联机 TMDB 刮削并规范点分重命名...' }}
-                </h4>
-                <p class="text-[11px] text-gray-400">
-                  安全预览阶段仅在内存中分析与匹配，绝对不会改动云盘中的任何文件
-                </p>
+            <!-- 模块 B: 目标分类、季集微调与规范重命名推演 -->
+            <div v-if="selectedTmdbCandidate" class="settings-card space-y-3.5">
+              <div class="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
+                <div class="flex items-center gap-2">
+                  <Sliders class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <h4 class="text-xs font-bold text-gray-900 dark:text-white">步骤 2: 归档目标微调与规范入库推演</h4>
+                </div>
+                <!-- 已锁定的影视元数据胶囊 -->
+                <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold border border-emerald-200 dark:border-emerald-800">
+                  <CheckCircle2 class="w-3 h-3" />
+                  <span>已锁定: {{ selectedTmdbCandidate.title || selectedTmdbCandidate.name }}</span>
+                </div>
               </div>
-            </div>
 
-            <!-- 比对列表 (高容量滚动视图) -->
-            <div v-else class="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
-              <div
-                v-for="task in previewTasks"
-                :key="task.fileId"
-                class="p-3 rounded-xl border text-[11px] font-mono transition-all space-y-1.5"
-                :class="task.status === 'ready' ? 'bg-white dark:bg-slate-900 border-gray-200/90 dark:border-slate-800 shadow-2xs' : 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'"
-              >
-                <!-- 原名与状态 -->
-                <div class="flex items-center justify-between gap-2 text-gray-500">
-                  <div class="flex items-center gap-1.5 truncate">
-                    <span class="text-gray-400">原:</span>
-                    <span class="truncate font-medium text-gray-600 dark:text-gray-400" :title="task.oldName">{{ task.oldName }}</span>
+              <!-- 参数调整网格 -->
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <!-- 目标大类 -->
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">媒体归档分类</label>
+                  <select v-model="targetCategory" class="input-base text-xs w-full">
+                    <option v-for="cat in availableCategories" :key="cat" :value="cat">{{ cat }}</option>
+                  </select>
+                </div>
+
+                <!-- 剧集季号 (电视剧时可选) -->
+                <div v-if="selectedTmdbCandidate.media_type !== 'movie'">
+                  <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">目标季号 (Season)</label>
+                  <div class="flex items-center gap-1.5">
+                    <input
+                      v-model.number="targetSeason"
+                      type="number"
+                      min="1"
+                      max="99"
+                      class="input-base text-xs w-full font-mono text-center"
+                    />
+                    <span class="text-xs text-slate-400 shrink-0 font-mono">第 {{ targetSeason }} 季</span>
                   </div>
-                  <span
-                    class="px-2 py-0.5 rounded text-[10px] shrink-0 font-sans font-bold"
-                    :class="task.status === 'ready' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60'"
+                </div>
+
+                <!-- 清理空目录 -->
+                <div class="flex items-center sm:pt-5">
+                  <label class="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <el-switch v-model="cleanEmptySourceDirOnResolve" size="small" />
+                    <span>归档完成后清理空源目录</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 选中文件集号微调与规范路径推演表 -->
+              <div class="space-y-2 pt-1">
+                <div class="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                  <span>文件季集对应表与规范重命名预览:</span>
+                  <span class="text-[10px] text-slate-400">支持直接修改集号，将自动推导入库新名称</span>
+                </div>
+
+                <div class="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                  <div
+                    v-for="item in previewOrganizedList"
+                    :key="item.fileId"
+                    class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 text-xs font-mono space-y-1.5"
                   >
-                    {{ task.status === 'ready' ? '✓ 就绪' : '⛊ 原地保护' }}
-                  </span>
-                </div>
+                    <!-- 原文件名与集号编辑行 -->
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="truncate text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-1">
+                        <span class="text-slate-400">原:</span>
+                        <span class="truncate" :title="item.originalName">{{ item.originalName }}</span>
+                      </div>
+                      <div v-if="selectedTmdbCandidate.media_type !== 'movie'" class="flex items-center gap-1.5 shrink-0">
+                        <span class="text-[11px] text-slate-500 font-sans font-semibold">指派集号:</span>
+                        <input
+                          v-model.number="targetEpisodeOverrides[item.fileId]"
+                          type="number"
+                          min="1"
+                          max="999"
+                          class="input-base text-xs w-16 py-0.5 px-1.5 h-6 text-center font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-800"
+                        />
+                      </div>
+                    </div>
 
-                <!-- 规范新名称 -->
-                <div class="flex items-center gap-1.5">
-                  <span class="text-emerald-600 dark:text-emerald-400 font-bold shrink-0">新:</span>
-                  <span class="font-bold text-emerald-600 dark:text-emerald-400 truncate" :title="task.newName">
-                    {{ task.newName }}
-                  </span>
-                </div>
+                    <!-- 规范新名称与归档路径 -->
+                    <div class="pt-1 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between gap-2">
+                      <div class="truncate flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
+                        <span class="shrink-0 font-bold">新:</span>
+                        <span class="truncate" :title="item.newFileName">{{ item.newFileName }}</span>
+                      </div>
+                      <span class="text-[10px] text-slate-400 shrink-0 font-sans">
+                        {{ item.tech?.resolution || '' }}
+                      </span>
+                    </div>
 
-                <!-- 目标路径与元数据徽章 -->
-                <div class="flex items-center justify-between gap-2 pt-1 border-t border-gray-100 dark:border-gray-800/60 text-[10px]">
-                  <div class="flex items-center gap-1.5 flex-wrap truncate">
-                    <!-- 分集小标题标签 -->
-                    <span v-if="task.episodeTitle" class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-sans font-medium bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60">
-                      <span class="opacity-75 font-mono mr-1">{{ task.seasonEpisode || `S${String(task.season || 1).padStart(2, '0')}E${String(task.episode || 1).padStart(2, '0')}` }}</span> {{ task.episodeTitle }}
-                    </span>
-                    <span v-else-if="task.seasonEpisode" class="px-1.5 py-0.5 rounded font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                      {{ task.seasonEpisode }}
-                    </span>
-                    <span v-if="task.targetFolderPath" class="text-slate-400 truncate" :title="task.targetFolderPath">
-                      目标: {{ task.targetFolderPath }}
-                    </span>
+                    <!-- 完整归档路径预览 -->
+                    <div class="text-[10px] text-slate-400 truncate flex items-center gap-1" :title="item.targetPath">
+                      <Folder class="w-3 h-3 text-slate-400 shrink-0" />
+                      <span class="truncate">路径: {{ item.targetPath }}</span>
+                    </div>
                   </div>
-
-                  <span v-if="task.fileSize" class="text-slate-400 font-mono shrink-0">
-                    {{ formatSize(task.fileSize) }}
-                  </span>
                 </div>
+              </div>
+
+              <!-- 底部一键指派并归档入库大按钮 -->
+              <div class="pt-2 flex items-center justify-end">
+                <button
+                  type="button"
+                  :disabled="resolvingNow || previewOrganizedList.length === 0"
+                  @click="executeResolveUnrecognized"
+                  class="btn-primary text-xs h-10 px-6 flex items-center gap-2 cursor-pointer font-bold shadow-sm"
+                >
+                  <RotateCw v-if="resolvingNow" class="w-4 h-4 animate-spin" />
+                  <CheckCircle2 v-else class="w-4 h-4" />
+                  <span>{{ resolvingNow ? '正在归档入库...' : `一键指派并归档入库 (${previewOrganizedList.length} 项)` }}</span>
+                </button>
               </div>
             </div>
           </div>

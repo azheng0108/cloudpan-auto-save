@@ -1902,6 +1902,308 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
+    // 6. 暂存区无法自动识别/待人工纠偏的文件清单接口
+    app.get('/api/tmdb-organize/unrecognized', async (req, res) => {
+        try {
+            const { accountId } = req.query || {};
+            let folderId = req.query.folderId;
+            const accountRepo = AppDataSource.getRepository(Account);
+            const account = (accountId ? await accountRepo.findOne({ where: { id: Number(accountId), accountType: 'cloud139' } }) : null)
+                || (await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: true } }))
+                || (await accountRepo.findOne({ where: { accountType: 'cloud139' } }));
+            if (!account) return res.status(400).json({ success: false, error: '未找到可用的 139 网盘账号' });
+
+            const cloud139 = Cloud139Service.getInstance(account);
+            const { TmdbOrganizeService } = require('../services/TmdbOrganizeService');
+            const { TMDBService } = require('../services/tmdb');
+            const { RecognitionEngine } = require('../services/RecognitionEngine');
+            const ConfigService = require('../services/ConfigService');
+
+            let stagingFolderName = ConfigService.getConfigValue('channelMonitor.stagingFolderName', '/暂存区/频道转存');
+            if (!folderId || folderId === 'default' || folderId === '/') {
+                const configuredStagingId = ConfigService.getConfigValue('channelMonitor.stagingFolderId', '');
+                if (configuredStagingId) {
+                    folderId = configuredStagingId;
+                }
+            }
+
+            // 扫描目标目录下所有视频文件
+            const files = await TmdbOrganizeService.scanDirectory(folderId || '/', {
+                modeConfig: { cloud139 }
+            });
+
+            const tmdbClient = new TMDBService();
+            const groups = TmdbOrganizeService.clusterFiles(files);
+            if (tmdbClient.apiKey) {
+                try {
+                    await TmdbOrganizeService.scrapeGroups(groups, tmdbClient);
+                } catch (scrapeErr) {
+                    logger.warn(`[TMDB未识别查询] 刮削部分组失败: ${scrapeErr.message}`);
+                }
+            }
+
+            const unrecognizedFiles = [];
+            const allFiles = [];
+
+            for (const g of groups) {
+                const isUnrecognized = !g.tmdbId || !g.title || g.isSuspicious || g.tmdbNotFound;
+                for (const f of g.files || []) {
+                    const parsedSe = RecognitionEngine.parseSeasonEpisode(f.name, Number(f._folderSeason || g.season || 1));
+                    const tech = RecognitionEngine.inferTechnicalTags(f.name, f.size);
+                    const item = {
+                        id: f.id || f.fileId,
+                        fileId: f.fileId || f.id,
+                        name: f.name,
+                        size: f.size || 0,
+                        relativePath: f.relativePath || f.name,
+                        parentFolderId: f.parentFileId || '',
+                        parentFolderName: f.parentFolderName || '',
+                        inferredTitle: g.title || RecognitionEngine.sanitizeMediaTitle(f.name) || f.name,
+                        year: g.year || '',
+                        mediaType: g.mediaType || (parsedSe.hasEpisode ? 'tv' : 'movie'),
+                        season: parsedSe.season || Number(f._folderSeason || g.season || 1),
+                        episode: parsedSe.episode !== null ? parsedSe.episode : null,
+                        isSpecial: parsedSe.isSpecial || false,
+                        issueType: !g.tmdbId ? 'unmatched_tmdb' : (parsedSe.episode === null && g.mediaType === 'tv' ? 'unknown_episode' : 'suspicious'),
+                        issueReason: !g.tmdbId ? '未在 TMDB 中匹配到影视条目' : (parsedSe.episode === null && g.mediaType === 'tv' ? '无法推导季集号' : (g.suspiciousReason || '疑似非标准影视')),
+                        specs: {
+                            resolution: tech.resolution || '',
+                            dynamicRange: tech.dynamicRange || 'SDR',
+                            videoCodec: tech.videoCodec || '',
+                            resourceType: tech.resourceType || '',
+                            frameRate: tech.frameRate || '',
+                            colorDepth: tech.colorDepth || ''
+                        }
+                    };
+                    allFiles.push(item);
+                    if (isUnrecognized) {
+                        unrecognizedFiles.push(item);
+                    }
+                }
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    stagingFolderId: folderId,
+                    stagingFolderName,
+                    unrecognizedFiles,
+                    allFiles,
+                    totalScanned: files.length,
+                    totalUnrecognized: unrecognizedFiles.length
+                }
+            });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // 7. TMDB 即时影视检索（供人工纠偏工作台精准查片）
+    app.post('/api/tmdb-organize/search-tmdb', async (req, res) => {
+        try {
+            const { query, mediaType, year } = req.body || {};
+            if (!query) {
+                return res.status(400).json({ success: false, error: '搜索关键词不能为空' });
+            }
+            const { TMDBService } = require('../services/tmdb');
+            const { RecognitionEngine } = require('../services/RecognitionEngine');
+            const tmdb = new TMDBService();
+
+            const parsed = TMDBService.parseTmdbLookupQuery(query);
+            if (parsed && parsed.tmdbId) {
+                const item = await tmdb.lookupById(parsed.tmdbId, mediaType || parsed.mediaType || 'auto');
+                const list = item ? (Array.isArray(item) ? item : [item]) : [];
+                return res.json({ success: true, data: list });
+            }
+
+            const cleanTitle = RecognitionEngine.sanitizeMediaTitle(query) || query;
+            const candidates = await tmdb.searchCandidates(cleanTitle, year || '', mediaType || 'auto');
+            res.json({ success: true, data: candidates });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // 8. 人工纠偏并规范归档入库接口 (单项/批量精准解决未识别文件)
+    app.post('/api/tmdb-organize/resolve-unrecognized', async (req, res) => {
+        try {
+            const {
+                accountId,
+                items,
+                targetDirPath = '/媒体库',
+                cleanEmptySourceDir = true
+            } = req.body || {};
+
+            if (!items || !Array.isArray(items) || items.length === 0) {
+                return res.status(400).json({ success: false, error: '请提供待归档的文件项列表' });
+            }
+
+            const accountRepo = AppDataSource.getRepository(Account);
+            const account = (accountId ? await accountRepo.findOne({ where: { id: Number(accountId), accountType: 'cloud139' } }) : null)
+                || (await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: true } }))
+                || (await accountRepo.findOne({ where: { accountType: 'cloud139' } }));
+            if (!account) return res.status(400).json({ success: false, error: '未找到可用的 139 网盘账号' });
+
+            const { MediaScrapeService } = require('../services/MediaScrapeService');
+            const { ScrapeJournalService } = require('../services/ScrapeJournalService');
+            const { RecognitionEngine } = require('../services/RecognitionEngine');
+            const adapter = await MediaScrapeService.getAdapter({ driveType: 'cloud139', accountId: account?.id });
+
+            const targetRoot = (targetDirPath || '/媒体库').replace(/\/+$/, '');
+            const targetRootId = await adapter.ensureDirPath(targetRoot);
+
+            const batch = await ScrapeJournalService.createBatch({
+                driveType: 'cloud139',
+                accountId: Number(account.id),
+                rootRef: '/',
+                rootPath: '/',
+                targetRootRef: targetRootId,
+                targetRootPath: targetRoot,
+                trigger: 'manual_resolve',
+                organize: true
+            });
+
+            const processed = [];
+            const failed = [];
+            const sourceFoldersToClean = new Set();
+
+            for (const item of items) {
+                try {
+                    const fileId = item.fileId || item.id;
+                    const oldName = item.name || item.oldName;
+                    const tmdbId = String(item.targetTmdbId || item.tmdbId || '');
+                    const title = (item.targetTitle || item.title || '').trim();
+                    const year = item.targetYear || item.year || '';
+                    const mediaType = item.targetMediaType || item.mediaType || 'tv';
+                    const category = item.targetCategory || (mediaType === 'tv' ? '国产剧' : '电影');
+                    const season = mediaType === 'tv' ? Number(item.targetSeason !== undefined ? item.targetSeason : (item.season || 1)) : null;
+                    const episode = mediaType === 'tv' ? Number(item.targetEpisode !== undefined ? item.targetEpisode : (item.episode || 1)) : null;
+                    const episodeTitle = item.targetEpisodeTitle || '';
+
+                    // 1. 推导目标相对子路径
+                    let subDir = '';
+                    let tmdbTag = tmdbId ? ` {tmdb-${tmdbId}}` : '';
+                    let titleYear = year ? `${title} (${year})` : title;
+
+                    if (mediaType === 'tv') {
+                        const sStr = String(season || 1).padStart(2, '0');
+                        subDir = `剧集/${category}/${titleYear}${tmdbTag}/Season ${sStr}`.replace(/\/+/g, '/');
+                    } else {
+                        subDir = `电影/${category}/${titleYear}${tmdbTag}`.replace(/\/+/g, '/');
+                    }
+
+                    // 2. 推导规范化文件名 (保留原有技术参数，如 1080p, WEB-DL, SDR, H.264 等)
+                    const extMatch = oldName.match(/\.([a-zA-Z0-9]+)$/);
+                    const ext = extMatch ? `.${extMatch[1]}` : '.mp4';
+                    const tech = RecognitionEngine.inferTechnicalTags(oldName, item.size || 0);
+                    
+                    const techParts = [];
+                    if (tech.resolution) techParts.push(tech.resolution);
+                    if (tech.resourceType) techParts.push(tech.resourceType);
+                    if (tech.dynamicRange && tech.dynamicRange !== 'SDR') techParts.push(tech.dynamicRange);
+                    if (tech.videoCodec) techParts.push(tech.videoCodec);
+                    if (tech.audioCodec) techParts.push(tech.audioCodec);
+                    const techTagStr = techParts.length > 0 ? '.' + techParts.join('.') : '';
+
+                    let newName = '';
+                    if (mediaType === 'tv') {
+                        const sStr = String(season || 1).padStart(2, '0');
+                        const eStr = String(episode || 1).padStart(2, '0');
+                        const epTitleStr = episodeTitle ? `.${episodeTitle}` : '';
+                        newName = `${title}.${year ? year + '.' : ''}S${sStr}E${eStr}${epTitleStr}${techTagStr}${ext}`;
+                    } else {
+                        newName = `${title}.${year ? year : ''}${techTagStr}${ext}`;
+                    }
+                    newName = newName.replace(/\.{2,}/g, '.');
+
+                    // 3. 幂等创建目标目录
+                    let currentParentRef = targetRootId;
+                    const segs = subDir.split('/').filter(Boolean);
+                    for (const seg of segs) {
+                        currentParentRef = await adapter.ensureDir(currentParentRef, seg);
+                    }
+
+                    // 4. 记录 WAL
+                    const targetDisplayDir = `${targetRoot}/${subDir}`.replace(/\/+/g, '/');
+                    const [record] = await ScrapeJournalService.recordOperations(batch.id, [{
+                        driveType: 'cloud139',
+                        accountId: Number(account.id),
+                        kind: 'video',
+                        fileRef: fileId,
+                        oldParentRef: item.parentFolderId || '/',
+                        oldParentPath: item.oldPath || item.relativePath || '/',
+                        oldName,
+                        newName,
+                        newParentPath: targetDisplayDir,
+                        targetSubDir: subDir,
+                        mediaType,
+                        tmdbId: tmdbId || null,
+                        season,
+                        episode,
+                        title,
+                        year: year ? String(year) : null,
+                        confidence: 500,
+                        status: 'applying',
+                        source: 'manual_resolve'
+                    }]);
+
+                    // 5. 跨目录移动并重命名
+                    await adapter.batchMove([fileId], currentParentRef);
+                    if (newName !== oldName) {
+                        await adapter.rename(fileId, newName);
+                    }
+
+                    await ScrapeJournalService.markApplied([record.id], { [record.id]: fileId });
+                    if (ScrapeJournalService.recordRepo) {
+                        await ScrapeJournalService.recordRepo.update(record.id, {
+                            newParentRef: String(currentParentRef)
+                        });
+                    }
+
+                    if (item.parentFolderId) {
+                        sourceFoldersToClean.add(item.parentFolderId);
+                    }
+
+                    processed.push({
+                        fileId,
+                        oldName,
+                        newName,
+                        targetPath: `${targetDisplayDir}/${newName}`
+                    });
+                } catch (itemErr) {
+                    logger.error(`[人工归档] 处理单个文件失败: ${itemErr.message}`);
+                    failed.push({ fileId: item.fileId, name: item.name, error: itemErr.message });
+                }
+            }
+
+            // 6. 清理源空目录（自底向上）
+            if (cleanEmptySourceDir && sourceFoldersToClean.size > 0) {
+                for (const fId of sourceFoldersToClean) {
+                    try {
+                        const subEntries = await adapter.listDir(fId).catch(() => []);
+                        if (!subEntries || subEntries.length === 0) {
+                            await adapter.deleteDir(fId).catch(() => {});
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    batchId: batch.id,
+                    total: items.length,
+                    processedCount: processed.length,
+                    failedCount: failed.length,
+                    processed,
+                    failed
+                }
+            });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     // ═════════════════════════════════════════════════════════════════════
     // STRM 文件生成与 302 直链播放服务
     // ═════════════════════════════════════════════════════════════════════
