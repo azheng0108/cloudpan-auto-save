@@ -179,14 +179,14 @@ class ConfigService {
         classifyConcerts: true,        // 分类策略：添加演唱会分类
         classifyRegion: true,          // 分类策略：按地区二次分类 (华语/欧美/日韩)
         classifyYear: false,           // 分类策略：按年份三次分类
-        washPriorityOrder: [           // 洗版策略：8 项自定义优先级序列
-          'releaseGroup',
-          'resourceType',
+        washPriorityOrder: [           // 洗版策略：8 项自定义优先级序列 (分辨率与动态范围绝对优先)
           'videoFormat',
           'dynamicRange',
+          'resourceType',
+          'releaseGroup',
+          'frameRate',
           'colorDepth',
           'audioCodec',
-          'frameRate',
           'fileSize'
         ],
         keepDolbyMultiVersion: false,  // 多版本策略：保留杜比视界+非杜比多版本并存

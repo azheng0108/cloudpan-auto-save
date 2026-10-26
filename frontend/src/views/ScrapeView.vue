@@ -470,102 +470,113 @@ function parseWashComparison(record: any) {
   const incomingSpecs = normalizeWashSpecs(washDetails?.incomingTags, incomingName, incomingSize, `${record.oldName} ${record.oldParentPath || ''}`);
   const existingSpecs = normalizeWashSpecs(washDetails?.existingTags, existingName, existingSize);
 
-  const diffItems: Array<{ key: string; label: string; winner: 'incoming' | 'existing' | 'equal'; detail: string }> = [];
+  // 权威单步决胜推导：根据洗版策略严格进行单步判断，命中首个差异维度即决胜短路退出，绝不罗列无关或平局维度
+  let decisiveItem: { key: string; label: string; winner: 'incoming' | 'existing'; detail: string } | null = null;
 
-  if (existingSpecs) {
-    // 1. 分辨率
-    if (incomingSpecs.resRank !== existingSpecs.resRank && (incomingSpecs.resRank > 0 || existingSpecs.resRank > 0)) {
-      const winner = incomingSpecs.resRank > existingSpecs.resRank ? 'incoming' : 'existing';
-      diffItems.push({
-        key: 'res',
-        label: '分辨率',
-        winner,
-        detail: winner === 'incoming'
-          ? `${incomingSpecs.resolution} 优于 ${existingSpecs.resolution || '常规'}`
-          : `${existingSpecs.resolution} 优于 ${incomingSpecs.resolution || '常规'}`
-      });
-    }
+  if (washDetails?.decisiveLabel && washDetails?.decisiveDetail) {
+    // 优先采用后端精准记录的决胜信息
+    const w = washDetails.winner === 'incoming' ? 'incoming' : (washDetails.winner === 'existing' ? 'existing' : (actionType === 'upgrade' ? 'incoming' : 'existing'));
+    decisiveItem = {
+      key: washDetails.decisiveCriterion || 'spec',
+      label: washDetails.decisiveLabel,
+      winner: w,
+      detail: washDetails.decisiveDetail
+    };
+  } else if (existingSpecs) {
+    // 兼容老记录：前端按用户配置洗版优先级逐级单步比对，找到首个非平局维度立即决胜退出！
+    const order = strategyConfig.value?.washPriorityOrder?.length ? strategyConfig.value.washPriorityOrder : [
+      'videoFormat',
+      'dynamicRange',
+      'resourceType',
+      'releaseGroup',
+      'frameRate',
+      'colorDepth',
+      'audioCodec',
+      'fileSize'
+    ];
 
-    // 2. 动态范围
-    if (incomingSpecs.drRank !== existingSpecs.drRank) {
-      const winner = incomingSpecs.drRank > existingSpecs.drRank ? 'incoming' : 'existing';
-      diffItems.push({
-        key: 'dr',
-        label: '动态范围',
-        winner,
-        detail: winner === 'incoming'
-          ? `${incomingSpecs.dynamicRange || 'HDR'} 优于 ${existingSpecs.dynamicRange || 'SDR'}`
-          : `${existingSpecs.dynamicRange || 'HDR'} 优于 ${incomingSpecs.dynamicRange || 'SDR'}`
-      });
-    }
-
-    // 3. 帧率
-    if (incomingSpecs.fpsRank !== existingSpecs.fpsRank && (incomingSpecs.fpsRank > 0 || existingSpecs.fpsRank > 0)) {
-      const winner = incomingSpecs.fpsRank > existingSpecs.fpsRank ? 'incoming' : 'existing';
-      diffItems.push({
-        key: 'fps',
-        label: '帧率',
-        winner,
-        detail: winner === 'incoming'
-          ? `${incomingSpecs.frameRate} 优于 ${existingSpecs.frameRate || '标准帧率'}`
-          : `${existingSpecs.frameRate} 优于 ${incomingSpecs.frameRate || '标准帧率'}`
-      });
-    }
-
-    // 4. 色彩位深
-    const effectiveInCd = incomingSpecs.cdRank || (existingSpecs.cdRank > 1 ? 1 : 0);
-    const effectiveExCd = existingSpecs.cdRank || (incomingSpecs.cdRank > 1 ? 1 : 0);
-    if (effectiveInCd !== effectiveExCd) {
-      const winner = effectiveInCd > effectiveExCd ? 'incoming' : 'existing';
-      diffItems.push({
-        key: 'cd',
-        label: '色深',
-        winner,
-        detail: winner === 'incoming'
-          ? `${incomingSpecs.colorDepth} 优于 ${existingSpecs.colorDepth || '8bit标准'}`
-          : `${existingSpecs.colorDepth} 优于 ${incomingSpecs.colorDepth || '8bit标准'}`
-      });
-    }
-
-    // 5. 文件体积差异
-    if (incomingSpecs.size > 0 && existingSpecs.size > 0 && Math.abs(incomingSpecs.size - existingSpecs.size) > 50 * 1024 * 1024) {
-      const winner = incomingSpecs.size > existingSpecs.size ? 'incoming' : 'existing';
-      const incGb = (incomingSpecs.size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-      const exGb = (existingSpecs.size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-      diffItems.push({
-        key: 'size',
-        label: '文件大小',
-        winner,
-        detail: winner === 'incoming' ? `${incGb} 优于 ${exGb}` : `${exGb} 优于 ${incGb}`
-      });
-    }
-
-    // 5. 介质
-    if (incomingSpecs.resTypeRank !== existingSpecs.resTypeRank && (incomingSpecs.resTypeRank > 0 || existingSpecs.resTypeRank > 0)) {
-      const winner = incomingSpecs.resTypeRank > existingSpecs.resTypeRank ? 'incoming' : 'existing';
-      diffItems.push({
-        key: 'type',
-        label: '介质',
-        winner,
-        detail: winner === 'incoming'
-          ? `${incomingSpecs.resourceType} 优于 ${existingSpecs.resourceType || 'WEB-DL'}`
-          : `${existingSpecs.resourceType} 优于 ${incomingSpecs.resourceType || 'WEB-DL'}`
-      });
-    }
-
-    // 6. 音效
-    if (incomingSpecs.audioRank !== existingSpecs.audioRank && Math.max(incomingSpecs.audioRank, existingSpecs.audioRank) >= 3) {
-      const winner = incomingSpecs.audioRank > existingSpecs.audioRank ? 'incoming' : 'existing';
-      diffItems.push({
-        key: 'audio',
-        label: '音效',
-        winner,
-        detail: winner === 'incoming'
-          ? `${incomingSpecs.audioCodec} 优于 ${existingSpecs.audioCodec || 'AAC立体声'}`
-          : `${existingSpecs.audioCodec} 优于 ${incomingSpecs.audioCodec || 'AAC立体声'}`
-      });
+    for (const crit of order) {
+      if (crit === 'videoFormat' || crit === 'resolution') {
+        if (incomingSpecs.resRank !== existingSpecs.resRank && (incomingSpecs.resRank > 0 || existingSpecs.resRank > 0)) {
+          const w = incomingSpecs.resRank > existingSpecs.resRank ? 'incoming' : 'existing';
+          const better = w === 'incoming' ? incomingSpecs.resolution : existingSpecs.resolution;
+          const worse = w === 'incoming' ? (existingSpecs.resolution || '标清') : (incomingSpecs.resolution || '标清');
+          if (better && worse && better !== worse) {
+            decisiveItem = { key: 'res', label: '分辨率', winner: w, detail: `${better} 优于 ${worse}` };
+            break;
+          }
+        }
+      } else if (crit === 'dynamicRange') {
+        if (incomingSpecs.drRank !== existingSpecs.drRank) {
+          const w = incomingSpecs.drRank > existingSpecs.drRank ? 'incoming' : 'existing';
+          const better = w === 'incoming' ? incomingSpecs.dynamicRange : existingSpecs.dynamicRange;
+          const worse = w === 'incoming' ? existingSpecs.dynamicRange : incomingSpecs.dynamicRange;
+          if (better && worse && better !== worse) {
+            decisiveItem = { key: 'dr', label: '动态范围', winner: w, detail: `${better} 优于 ${worse}` };
+            break;
+          }
+        }
+      } else if (crit === 'resourceType') {
+        if (incomingSpecs.resTypeRank !== existingSpecs.resTypeRank && (incomingSpecs.resTypeRank > 0 || existingSpecs.resTypeRank > 0)) {
+          const w = incomingSpecs.resTypeRank > existingSpecs.resTypeRank ? 'incoming' : 'existing';
+          const better = w === 'incoming' ? incomingSpecs.resourceType : existingSpecs.resourceType;
+          const worse = w === 'incoming' ? existingSpecs.resourceType : incomingSpecs.resourceType;
+          // 严禁同名！只有两边名称确实不同且非空才决胜
+          if (better && worse && better !== worse) {
+            decisiveItem = { key: 'type', label: '资源介质', winner: w, detail: `${better} 优于 ${worse}` };
+            break;
+          }
+        }
+      } else if (crit === 'frameRate') {
+        if (incomingSpecs.fpsRank !== existingSpecs.fpsRank && (incomingSpecs.fpsRank > 0 || existingSpecs.fpsRank > 0)) {
+          const w = incomingSpecs.fpsRank > existingSpecs.fpsRank ? 'incoming' : 'existing';
+          const better = w === 'incoming' ? incomingSpecs.frameRate : existingSpecs.frameRate;
+          const worse = w === 'incoming' ? existingSpecs.frameRate : incomingSpecs.frameRate;
+          if (better && worse && better !== worse) {
+            decisiveItem = { key: 'fps', label: '帧率', winner: w, detail: `${better} 优于 ${worse}` };
+            break;
+          }
+        }
+      } else if (crit === 'colorDepth') {
+        const inCd = incomingSpecs.cdRank || 0;
+        const exCd = existingSpecs.cdRank || 0;
+        if (inCd !== exCd && (inCd > 0 || exCd > 0)) {
+          const w = inCd > exCd ? 'incoming' : 'existing';
+          const better = w === 'incoming' ? incomingSpecs.colorDepth : existingSpecs.colorDepth;
+          const worse = w === 'incoming' ? existingSpecs.colorDepth : incomingSpecs.colorDepth;
+          if (better && worse && better !== worse) {
+            decisiveItem = { key: 'cd', label: '色彩位深', winner: w, detail: `${better} 优于 ${worse}` };
+            break;
+          }
+        }
+      } else if (crit === 'audioCodec') {
+        if (incomingSpecs.audioRank !== existingSpecs.audioRank && Math.max(incomingSpecs.audioRank, existingSpecs.audioRank) >= 3) {
+          const w = incomingSpecs.audioRank > existingSpecs.audioRank ? 'incoming' : 'existing';
+          const better = w === 'incoming' ? incomingSpecs.audioCodec : existingSpecs.audioCodec;
+          const worse = w === 'incoming' ? existingSpecs.audioCodec : incomingSpecs.audioCodec;
+          if (better && worse && better !== worse) {
+            decisiveItem = { key: 'audio', label: '音频规格', winner: w, detail: `${better} 优于 ${worse}` };
+            break;
+          }
+        }
+      } else if (crit === 'fileSize') {
+        if (incomingSpecs.size > 0 && existingSpecs.size > 0 && Math.abs(incomingSpecs.size - existingSpecs.size) > 50 * 1024 * 1024) {
+          const w = incomingSpecs.size > existingSpecs.size ? 'incoming' : 'existing';
+          const incGb = (incomingSpecs.size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+          const exGb = (existingSpecs.size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+          decisiveItem = {
+            key: 'size',
+            label: '文件大小',
+            winner: w,
+            detail: w === 'incoming' ? `${incGb} 优于 ${exGb}` : `${exGb} 优于 ${incGb}`
+          };
+          break;
+        }
+      }
     }
   }
+
+  const diffItems = decisiveItem ? [decisiveItem] : [];
 
   function buildBadges(specs: any, opposingSpecs: any, isInc: boolean) {
     if (!specs) return [];
@@ -573,7 +584,7 @@ function parseWashComparison(record: any) {
     const opp = opposingSpecs || {};
 
     if (specs.resolution) {
-      const isWin = isInc ? (specs.resRank > (opp.resRank || 0)) : (specs.resRank > (opp.resRank || 0));
+      const isWin = decisiveItem?.key === 'res' && decisiveItem.winner === (isInc ? 'incoming' : 'existing');
       badges.push({
         key: 'res',
         label: specs.resolution,
@@ -585,8 +596,8 @@ function parseWashComparison(record: any) {
     }
 
     if (specs.dynamicRange) {
-      const isWin = isInc ? (specs.drRank > (opp.drRank || 0)) : (specs.drRank > (opp.drRank || 0));
-      const isDv = specs.dynamicRange.includes('杜比');
+      const isWin = decisiveItem?.key === 'dr' && decisiveItem.winner === (isInc ? 'incoming' : 'existing');
+      const isDv = specs.dynamicRange.includes('杜比') || specs.dynamicRange.includes('DV');
       badges.push({
         key: 'dr',
         label: specs.dynamicRange,
@@ -598,7 +609,7 @@ function parseWashComparison(record: any) {
     }
 
     if (specs.frameRate) {
-      const isWin = specs.fpsRank > (opp.fpsRank || 0);
+      const isWin = decisiveItem?.key === 'fps' && decisiveItem.winner === (isInc ? 'incoming' : 'existing');
       badges.push({
         key: 'fps',
         label: specs.frameRate,
@@ -610,7 +621,7 @@ function parseWashComparison(record: any) {
     }
 
     if (specs.colorDepth) {
-      const isWin = specs.cdRank > (opp.cdRank || 0);
+      const isWin = decisiveItem?.key === 'cd' && decisiveItem.winner === (isInc ? 'incoming' : 'existing');
       badges.push({
         key: 'cd',
         label: specs.colorDepth,
@@ -622,7 +633,7 @@ function parseWashComparison(record: any) {
     }
 
     if (specs.resourceType) {
-      const isWin = specs.resTypeRank > (opp.resTypeRank || 0);
+      const isWin = decisiveItem?.key === 'type' && decisiveItem.winner === (isInc ? 'incoming' : 'existing');
       badges.push({
         key: 'type',
         label: specs.resourceType,
@@ -643,7 +654,7 @@ function parseWashComparison(record: any) {
     }
 
     if (specs.audioCodec) {
-      const isWin = specs.audioRank > (opp.audioRank || 0);
+      const isWin = decisiveItem?.key === 'audio' && decisiveItem.winner === (isInc ? 'incoming' : 'existing');
       badges.push({
         key: 'ac',
         label: specs.audioCodec,
@@ -666,13 +677,12 @@ function parseWashComparison(record: any) {
   let headerPill: { text: string; class: string } | null = null;
 
   if (actionType === 'skipped') {
-    headline = '洗版淘汰 · 保护媒体库高规格版本';
+    headline = '洗版拦截 · 保护媒体库高规格版本';
     badgeClass = 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300';
-    const winningDiffs = diffItems.filter(d => d.winner === 'existing');
-    if (winningDiffs.length > 0) {
-      verdictSummary = `媒体库已有更高规格版本（${winningDiffs.map(d => d.detail).join('、')}），进场次选版本移入回收站，避免媒体库高画质资产被降级覆盖。`;
+    if (decisiveItem) {
+      verdictSummary = `媒体库已有版本在【${decisiveItem.label}】规格上更优（${decisiveItem.detail}），进场次选版本移入回收站，避免媒体库高画质资产被降级覆盖。`;
       headerPill = {
-        text: `库内胜出: ${winningDiffs.map(d => d.label).join(' · ')}`,
+        text: `库内胜出: ${decisiveItem.label}`,
         class: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
       };
     } else {
@@ -685,11 +695,10 @@ function parseWashComparison(record: any) {
   } else if (actionType === 'upgrade') {
     headline = '洗版置换 · 新版本规格更优';
     badgeClass = 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300';
-    const winningDiffs = diffItems.filter(d => d.winner === 'incoming');
-    if (winningDiffs.length > 0) {
-      verdictSummary = `新进场资源在画质规格上全面胜出（${winningDiffs.map(d => d.detail).join('、')}），已洗版置换入库，媒体库旧版本延后移入回收站。`;
+    if (decisiveItem) {
+      verdictSummary = `新进场资源在【${decisiveItem.label}】规格上胜出（${decisiveItem.detail}），已洗版置换入库，媒体库旧版本延后移入回收站。`;
       headerPill = {
-        text: `洗版升级: ${winningDiffs.map(d => d.label).join(' · ')}`,
+        text: `洗版升级: ${decisiveItem.label}`,
         class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
       };
     } else {
@@ -1275,13 +1284,13 @@ async function loadStrategyConfig() {
         linkStrm: Boolean(res.linkStrm),
         notifyOnStrm: Boolean(res.notifyOnStrm),
         washPriorityOrder: Array.isArray(res.washPriorityOrder) && res.washPriorityOrder.length ? res.washPriorityOrder : [
-          'releaseGroup',
-          'resourceType',
           'videoFormat',
           'dynamicRange',
+          'resourceType',
+          'releaseGroup',
+          'frameRate',
           'colorDepth',
           'audioCodec',
-          'frameRate',
           'fileSize'
         ],
       };

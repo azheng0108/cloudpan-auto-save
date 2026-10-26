@@ -3274,7 +3274,14 @@ class RecognitionEngine {
      * ⑦ 帧率 (frameRate): 120fps > 60fps > 50fps > 30fps > 25fps > 24fps
      * ⑧ 文件大小 (fileSize): 大文件优先 / 小文件优先
      */
-    static compareCandidates(a, b, policy = {}) {
+    /**
+     * 单步权威决胜制洗版画质仲裁
+     * 严格按照用户配置的优先级顺序（默认分辨率绝对优先）自上而下比对：
+     * 一旦在高优先级维度分出胜负，立即短路决胜并返回决胜原因与细节，后续低级维度一概不比；
+     * 只有在当前维度完全相等时，才继续比对下一个维度。
+     * 严禁出现同值比优。
+     */
+    static compareCandidatesDecisive(a, b, policy = {}) {
         let storedOrder = [];
         try {
             const ConfigService = require('./ConfigService');
@@ -3288,66 +3295,120 @@ class RecognitionEngine {
             'videoFormat',
             'dynamicRange',
             'resourceType',
+            'releaseGroup',
             'frameRate',
             'colorDepth',
             'audioCodec',
-            'fileSize',
-            'releaseGroup'
+            'fileSize'
         ];
-        const priorityOrder = Array.isArray(policy.washPriorityOrder) && policy.washPriorityOrder.length > 0
+        const rawOrder = Array.isArray(policy.washPriorityOrder) && policy.washPriorityOrder.length > 0
             ? policy.washPriorityOrder
             : (Array.isArray(storedOrder) && storedOrder.length > 0 ? storedOrder : defaultOrder);
 
-        // 辅助评分映射
-        const getResourceTypeScore = (cand) => {
-            if (cand.isRemux || /REMUX/i.test(cand.resourceType || '')) return 7;
-            if (cand.isBluRay || /BLU[- .]?RAY|原盘/i.test(cand.resourceType || cand.mediaSource || '')) return 6;
-            if (/BDRIP/i.test(cand.resourceType || '')) return 5;
-            if (/WEB[- .]?DL/i.test(cand.resourceType || cand.mediaSource || '')) return 4;
-            if (/WEBRIP/i.test(cand.resourceType || cand.mediaSource || '')) return 3;
-            if (/HDTV/i.test(cand.resourceType || cand.mediaSource || '')) return 2;
-            if (/DVD/i.test(cand.resourceType || cand.mediaSource || '')) return 1;
-            // 现代影视视频如果未标注介质，默认等同于常规数字网络版 (3)，绝不能当成 0 分被盲目淘汰！
-            return 3;
+        const priorityOrder = Array.from(new Set([...rawOrder, ...defaultOrder]));
+
+        // 辅助映射与可读文本提取
+        const getResourceTypeInfo = (cand) => {
+            if (cand.isRemux || /REMUX/i.test(cand.resourceType || '')) return { score: 7, label: 'Remux' };
+            if (cand.isBluRay || /BLU[- .]?RAY|原盘/i.test(cand.resourceType || cand.mediaSource || '')) return { score: 6, label: 'Blu-ray' };
+            if (/BDRIP/i.test(cand.resourceType || '')) return { score: 5, label: 'BDRip' };
+            if (/WEB[- .]?DL/i.test(cand.resourceType || cand.mediaSource || '')) return { score: 4, label: 'WEB-DL' };
+            if (/WEBRIP/i.test(cand.resourceType || cand.mediaSource || '')) return { score: 3, label: 'WEBRip' };
+            if (/HDTV/i.test(cand.resourceType || cand.mediaSource || '')) return { score: 2, label: 'HDTV' };
+            if (/DVD/i.test(cand.resourceType || cand.mediaSource || '')) return { score: 1, label: 'DVD' };
+            return { score: 3, label: 'WEB-DL' };
         };
 
-        const getDynamicRangeScore = (cand) => {
+        const getDynamicRangeInfo = (cand) => {
             const dr = String(cand.dynamicRange || '').toUpperCase();
-            if (dr.includes('DV+HDR') || (cand.isDolby && /HDR/.test(dr))) return 6;
-            if (cand.isDolby || dr.includes('DV')) return 5;
-            if (dr.includes('HDR10+')) return 4;
-            if (dr.includes('HDR10') || dr.includes('HDR')) return 3;
-            if (dr.includes('HLG')) return 2;
-            if (dr.includes('SDR')) return 1;
-            return 0;
+            if (dr.includes('DV+HDR') || (cand.isDolby && /HDR/.test(dr))) return { score: 6, label: 'DV+HDR' };
+            if (cand.isDolby || dr.includes('DV')) return { score: 5, label: 'Dolby Vision' };
+            if (dr.includes('HDR10+')) return { score: 4, label: 'HDR10+' };
+            if (dr.includes('HDR10') || dr.includes('HDR')) return { score: 3, label: 'HDR10' };
+            if (dr.includes('HLG')) return { score: 2, label: 'HLG' };
+            if (dr.includes('SDR')) return { score: 1, label: 'SDR' };
+            return { score: 1, label: 'SDR' };
         };
 
-        const getColorDepthScore = (cand) => {
+        const getColorDepthInfo = (cand) => {
             const cd = String(cand.colorDepth || '').toLowerCase();
-            if (cd.includes('12')) return 3;
-            if (cd.includes('10')) return 2;
-            if (cd.includes('8')) return 1;
-            return 0;
+            if (cd.includes('12')) return { score: 3, label: '12bit' };
+            if (cd.includes('10')) return { score: 2, label: '10bit' };
+            if (cd.includes('8')) return { score: 1, label: '8bit' };
+            return { score: 1, label: '8bit' };
         };
 
-        const getAudioCodecScore = (cand) => {
+        const getAudioCodecInfo = (cand) => {
             const ac = String(cand.audioCodec || '').toUpperCase();
-            if (ac.includes('TRUEHD') && ac.includes('ATMOS')) return 11;
-            if (ac.includes('DTS:X') || ac.includes('DTS-X')) return 10;
-            if (ac.includes('TRUEHD')) return 9;
-            if ((ac.includes('DDP') || ac.includes('EAC3')) && ac.includes('ATMOS')) return 8;
-            if (ac.includes('DTS-HD') || ac.includes('DTS-HDMA')) return 7;
-            if (ac.includes('LPCM') || ac.includes('PCM')) return 6;
-            if (ac.includes('FLAC')) return 5;
-            if (ac.includes('DDP') || ac.includes('EAC3') || ac.includes('DD+')) return 4;
-            if (ac.includes('DTS')) return 3;
-            if (ac.includes('DD') || ac.includes('AC3')) return 2;
-            if (ac.includes('AAC')) return 1;
-            return 0;
+            if (ac.includes('TRUEHD') && ac.includes('ATMOS')) return { score: 11, label: 'TrueHD Atmos' };
+            if (ac.includes('DTS:X') || ac.includes('DTS-X')) return { score: 10, label: 'DTS:X' };
+            if (ac.includes('TRUEHD')) return { score: 9, label: 'TrueHD' };
+            if ((ac.includes('DDP') || ac.includes('EAC3')) && ac.includes('ATMOS')) return { score: 8, label: 'DDP Atmos' };
+            if (ac.includes('DTS-HD') || ac.includes('DTS-HDMA')) return { score: 7, label: 'DTS-HD MA' };
+            if (ac.includes('LPCM') || ac.includes('PCM')) return { score: 6, label: 'LPCM' };
+            if (ac.includes('FLAC')) return { score: 5, label: 'FLAC' };
+            if (ac.includes('DDP') || ac.includes('EAC3') || ac.includes('DD+')) return { score: 4, label: 'DDP 5.1' };
+            if (ac.includes('DTS')) return { score: 3, label: 'DTS 5.1' };
+            if (ac.includes('DD') || ac.includes('AC3')) return { score: 2, label: 'DD 5.1' };
+            if (ac.includes('AAC')) return { score: 1, label: 'AAC' };
+            return { score: 1, label: 'AAC' };
         };
 
         for (const criterion of priorityOrder) {
             switch (criterion) {
+                case 'videoFormat': {
+                    if (policy.preferHighResolution !== false) {
+                        const rankA = Number(a.resolutionRank || 0);
+                        const rankB = Number(b.resolutionRank || 0);
+                        if (rankA !== rankB) {
+                            const aBetter = rankA > rankB;
+                            const resA = a.videoFormat || a.resolution || `${rankA}级分辨率`;
+                            const resB = b.videoFormat || b.resolution || `${rankB}级分辨率`;
+                            return {
+                                cmp: aBetter ? -1 : 1,
+                                winner: aBetter ? 'a' : 'b',
+                                decisiveCriterion: 'videoFormat',
+                                decisiveLabel: '分辨率',
+                                decisiveDetail: aBetter ? `${resA} 优于 ${resB}` : `${resB} 优于 ${resA}`
+                            };
+                        }
+                    }
+                    break;
+                }
+                case 'dynamicRange': {
+                    if (policy.preferDolby !== false) {
+                        const infoA = getDynamicRangeInfo(a);
+                        const infoB = getDynamicRangeInfo(b);
+                        if (infoA.score !== infoB.score) {
+                            const aBetter = infoA.score > infoB.score;
+                            return {
+                                cmp: aBetter ? -1 : 1,
+                                winner: aBetter ? 'a' : 'b',
+                                decisiveCriterion: 'dynamicRange',
+                                decisiveLabel: '动态范围',
+                                decisiveDetail: aBetter ? `${infoA.label} 优于 ${infoB.label}` : `${infoB.label} 优于 ${infoA.label}`
+                            };
+                        }
+                    }
+                    break;
+                }
+                case 'resourceType': {
+                    if (policy.preferRemux !== false) {
+                        const infoA = getResourceTypeInfo(a);
+                        const infoB = getResourceTypeInfo(b);
+                        if (infoA.score !== infoB.score) {
+                            const aBetter = infoA.score > infoB.score;
+                            return {
+                                cmp: aBetter ? -1 : 1,
+                                winner: aBetter ? 'a' : 'b',
+                                decisiveCriterion: 'resourceType',
+                                decisiveLabel: '资源介质',
+                                decisiveDetail: aBetter ? `${infoA.label} 优于 ${infoB.label}` : `${infoB.label} 优于 ${infoA.label}`
+                            };
+                        }
+                    }
+                    break;
+                }
                 case 'releaseGroup': {
                     if (policy.enableReleaseGroupPriority !== false && policy.releaseGroups?.length) {
                         const getGroupRank = (grp) => {
@@ -3357,70 +3418,99 @@ class RecognitionEngine {
                         };
                         const rankA = getGroupRank(a.releaseGroup);
                         const rankB = getGroupRank(b.releaseGroup);
-                        if (rankA !== rankB) return rankA - rankB; // 越小越优
-                    }
-                    break;
-                }
-                case 'resourceType': {
-                    if (policy.preferRemux !== false) {
-                        const scoreA = getResourceTypeScore(a);
-                        const scoreB = getResourceTypeScore(b);
-                        if (scoreA !== scoreB) return scoreB - scoreA; // 越高越优
-                    }
-                    break;
-                }
-                case 'videoFormat': {
-                    if (policy.preferHighResolution !== false) {
-                        const rankA = Number(a.resolutionRank || 0);
-                        const rankB = Number(b.resolutionRank || 0);
-                        if (rankA !== rankB) return rankB - rankA; // 越高越优
-                    }
-                    break;
-                }
-                case 'dynamicRange': {
-                    if (policy.preferDolby !== false) {
-                        const scoreA = getDynamicRangeScore(a);
-                        const scoreB = getDynamicRangeScore(b);
-                        if (scoreA !== scoreB) return scoreB - scoreA; // 越高越优
-                    }
-                    break;
-                }
-                case 'colorDepth': {
-                    const scoreA = getColorDepthScore(a);
-                    const scoreB = getColorDepthScore(b);
-                    if (scoreA !== scoreB) return scoreB - scoreA; // 越高越优
-                    break;
-                }
-                case 'audioCodec': {
-                    const scoreA = getAudioCodecScore(a);
-                    const scoreB = getAudioCodecScore(b);
-                    // 普通基础立体声 (AAC/未标注等 <= 1) 不构成洗版置换门槛，只有高保真/次世代全景声 (DDP/DTS/TrueHD/Atmos/FLAC 等 >= 3) 才参与画质仲裁
-                    if (Math.max(scoreA, scoreB) >= 3) {
-                        if (scoreA !== scoreB) return scoreB - scoreA; // 越高越优
+                        if (rankA !== rankB) {
+                            const aBetter = rankA < rankB; // 越小优先级越高
+                            const grpA = a.releaseGroup || '未知组';
+                            const grpB = b.releaseGroup || '未知组';
+                            return {
+                                cmp: aBetter ? -1 : 1,
+                                winner: aBetter ? 'a' : 'b',
+                                decisiveCriterion: 'releaseGroup',
+                                decisiveLabel: '发布组',
+                                decisiveDetail: aBetter ? `优先发布组【${grpA}】优于【${grpB}】` : `优先发布组【${grpB}】优于【${grpA}】`
+                            };
+                        }
                     }
                     break;
                 }
                 case 'frameRate': {
                     const rankA = Number(a.frameRateRank || 0);
                     const rankB = Number(b.frameRateRank || 0);
-                    if (rankA !== rankB) return rankB - rankA; // 越高越优
+                    if (rankA !== rankB && (rankA > 0 || rankB > 0)) {
+                        const aBetter = rankA > rankB;
+                        const fpsA = a.frameRate || '标准帧率';
+                        const fpsB = b.frameRate || '标准帧率';
+                        return {
+                            cmp: aBetter ? -1 : 1,
+                            winner: aBetter ? 'a' : 'b',
+                            decisiveCriterion: 'frameRate',
+                            decisiveLabel: '高帧率',
+                            decisiveDetail: aBetter ? `${fpsA} 优于 ${fpsB}` : `${fpsB} 优于 ${fpsA}`
+                        };
+                    }
+                    break;
+                }
+                case 'colorDepth': {
+                    const infoA = getColorDepthInfo(a);
+                    const infoB = getColorDepthInfo(b);
+                    if (infoA.score !== infoB.score) {
+                        const aBetter = infoA.score > infoB.score;
+                        return {
+                            cmp: aBetter ? -1 : 1,
+                            winner: aBetter ? 'a' : 'b',
+                            decisiveCriterion: 'colorDepth',
+                            decisiveLabel: '色彩位深',
+                            decisiveDetail: aBetter ? `${infoA.label} 优于 ${infoB.label}` : `${infoB.label} 优于 ${infoA.label}`
+                        };
+                    }
+                    break;
+                }
+                case 'audioCodec': {
+                    const infoA = getAudioCodecInfo(a);
+                    const infoB = getAudioCodecInfo(b);
+                    if (Math.max(infoA.score, infoB.score) >= 3 && infoA.score !== infoB.score) {
+                        const aBetter = infoA.score > infoB.score;
+                        return {
+                            cmp: aBetter ? -1 : 1,
+                            winner: aBetter ? 'a' : 'b',
+                            decisiveCriterion: 'audioCodec',
+                            decisiveLabel: '音频规格',
+                            decisiveDetail: aBetter ? `${infoA.label} 优于 ${infoB.label}` : `${infoB.label} 优于 ${infoA.label}`
+                        };
+                    }
                     break;
                 }
                 case 'fileSize': {
                     const sizeA = Number(a.size || 0);
                     const sizeB = Number(b.size || 0);
-                    if (policy.conflictMode === 0 && sizeA !== sizeB) {
-                        return sizeA - sizeB; // 小文件优先
-                    }
-                    if (sizeA !== sizeB) {
-                        return sizeB - sizeA; // 默认大文件优先
+                    if (sizeA > 0 && sizeB > 0 && Math.abs(sizeA - sizeB) > 50 * 1024 * 1024) {
+                        const aBetter = policy.conflictMode === 0 ? sizeA < sizeB : sizeA > sizeB;
+                        const sizeStrA = (sizeA / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+                        const sizeStrB = (sizeB / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+                        return {
+                            cmp: aBetter ? -1 : 1,
+                            winner: aBetter ? 'a' : 'b',
+                            decisiveCriterion: 'fileSize',
+                            decisiveLabel: '文件大小',
+                            decisiveDetail: aBetter ? `${sizeStrA} 优于 ${sizeStrB}` : `${sizeStrB} 优于 ${sizeStrA}`
+                        };
                     }
                     break;
                 }
             }
         }
 
-        return 0;
+        return {
+            cmp: 0,
+            winner: 'equal',
+            decisiveCriterion: 'equal',
+            decisiveLabel: '画质规格',
+            decisiveDetail: '画质规格一致'
+        };
+    }
+
+    static compareCandidates(a, b, policy = {}) {
+        return this.compareCandidatesDecisive(a, b, policy).cmp;
     }
 
     /**
