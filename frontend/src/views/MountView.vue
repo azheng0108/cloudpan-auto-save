@@ -27,16 +27,16 @@ const route = useRoute();
 const router = useRouter();
 
 // 当前激活的配置选项卡 ('strm' | 'emby' | 'alist')
-const activeTab = ref<'strm' | 'emby' | 'alist'>('strm');
+const activeTab = ref<'strm' | 'emby'>('strm');
 
 function syncTabFromRoute() {
   const t = route.query.tab as string;
-  if (t === 'strm' || t === 'emby' || t === 'alist') {
+  if (t === 'strm' || t === 'emby') {
     activeTab.value = t;
   }
 }
 
-function switchTab(t: 'strm' | 'emby' | 'alist') {
+function switchTab(t: 'strm' | 'emby') {
   activeTab.value = t;
   router.replace({
     path: '/mount',
@@ -104,13 +104,6 @@ const form = reactive({
     embyMountPrefix: '',
     syncDeleteCloud: true,
     syncDeleteTask: true,
-  },
-  // AList / OpenList 外部挂载配置
-  alist: {
-    enable: false,
-    baseUrl: '',
-    apiKey: '',
-    strmMountPath: '',
   },
 });
 
@@ -213,14 +206,6 @@ async function loadConfig() {
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');
     }
-
-    // 4. AList 回填
-    if (data.alist) {
-      form.alist.enable = Boolean(data.alist.enable);
-      form.alist.baseUrl = data.alist.baseUrl || '';
-      form.alist.apiKey = data.alist.apiKey || '';
-      form.alist.strmMountPath = data.alist.strmMountPath || '';
-    }
   } catch (err: any) {
     ElMessage.error('加载挂载与 STRM 配置失败: ' + (err.message || '网络异常'));
   } finally {
@@ -257,13 +242,6 @@ async function saveConfig() {
         embyMountPrefix: form.webhook.embyMountPrefix.trim(),
         syncDeleteCloud: Boolean(form.webhook.syncDeleteCloud),
         syncDeleteTask: Boolean(form.webhook.syncDeleteTask),
-      },
-      alist: {
-        ...(rawConfig.alist || {}),
-        enable: Boolean(form.alist.enable),
-        baseUrl: form.alist.baseUrl.trim(),
-        apiKey: form.alist.apiKey.trim(),
-        strmMountPath: form.alist.strmMountPath.trim(),
       },
     };
 
@@ -354,35 +332,6 @@ onUnmounted(() => {
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <!-- 胶囊选项卡群组 -->
         <div class="flex items-center p-1 bg-slate-100 dark:bg-slate-900/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60 text-xs font-medium">
-          <button
-            type="button"
-            @click="switchTab('strm')"
-            :class="activeTab === 'strm' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-white shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
-            class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <FileVideo class="w-3.5 h-3.5" />
-            <span>本地 STRM 直链映射</span>
-          </button>
-
-          <button
-            type="button"
-            @click="switchTab('emby')"
-            :class="activeTab === 'emby' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-white shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
-            class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <Tv class="w-3.5 h-3.5" />
-            <span>Emby 媒体服务联动</span>
-          </button>
-
-          <button
-            type="button"
-            @click="switchTab('alist')"
-            :class="activeTab === 'alist' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-white shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
-            class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <HardDrive class="w-3.5 h-3.5" />
-            <span>AList 外部存储挂载</span>
-          </button>
         </div>
 
         <!-- 右侧快速操作区 -->
@@ -784,79 +733,7 @@ onUnmounted(() => {
       </div>
 
       </div>
-
-      <!-- ================= Tab 3: AList / OpenList 外部挂载管理 ================= -->
-      <div v-if="activeTab === 'alist'" class="space-y-6">
-      <!-- ================= 模块 4: AList / OpenList 外部挂载管理 ================= -->
-      <div class="settings-card">
-        <div class="flex items-center gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
-          <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-            <HardDrive class="w-5 h-5" />
-          </div>
-          <div>
-            <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">AList / OpenList 外部挂载管理 (可选)</h3>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              用于连接外部 AList 服务或 OpenList 原生 STRM 存储目录
-            </p>
-          </div>
-        </div>
-
-        <div class="space-y-4">
-          <div class="switch-row">
-            <div>
-              <label class="switch-row__title">启用 AList 服务联动</label>
-              <p class="switch-row__desc">与外部 AList 挂载点保持连通</p>
-            </div>
-            <el-switch v-model="form.alist.enable" />
-          </div>
-
-          <div v-if="form.alist.enable" class="space-y-3 pt-2">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">AList 服务地址</label>
-                <input
-                  v-model="form.alist.baseUrl"
-                  type="text"
-                  placeholder="例如: http://192.168.1.100:5244"
-                  class="input-base font-mono text-xs w-full"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">AList 访问令牌 (Token)</label>
-                <div class="relative">
-                  <input
-                    v-model="form.alist.apiKey"
-                    :type="showAlistApiKey ? 'text' : 'password'"
-                    placeholder="从 AList 管理后台 -> 设置 -> 令牌 中获取"
-                    class="input-base font-mono text-xs pr-10 w-full"
-                  />
-                  <button
-                    type="button"
-                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                    @click="showAlistApiKey = !showAlistApiKey"
-                  >
-                    <EyeOff v-if="showAlistApiKey" class="w-4 h-4" />
-                    <Eye v-else class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">AList 挂载根路径</label>
-              <input
-                v-model="form.alist.strmMountPath"
-                type="text"
-                placeholder="例如: /139云盘 或 /媒体库"
-                class="input-base font-mono text-xs w-full"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      </div>
-    </template>
+      </template>
 
     <!-- 目录树选择弹窗 (FolderTreeSelector) -->
     <FolderTreeSelector

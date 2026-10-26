@@ -3,7 +3,6 @@ const path = require('path');
 const ConfigService = require('./ConfigService');
 const { logTaskEvent } = require('../utils/logUtils');
 const CryptoUtils = require('../utils/cryptoUtils');
-const alistService = require('./alistService');
 const { MessageUtil } = require('./message');
 const logger = require('../utils/logger');
 

@@ -73,11 +73,6 @@ class ConfigService {
         apiKey: '',
         sessionSecret: ''
       },
-      cloudSaver: {
-        baseUrl: '',
-        username: '',
-        password: ''
-      },
       // Alist/OpenList 连接配置，供 StrmService.generateAll 和追更 STRM 刷新使用
       alist: {
         enable: false,

@@ -5,16 +5,13 @@ const { webhookService } = require('./WebhookService');
 const { EmbyService } = require('./emby');
 const { StrmService } = require('./strm');
 const { ScrapeService } = require('./ScrapeService');
-const alistService = require('./alistService');
 const ConfigService = require('./ConfigService');
 
 
 class TaskEventHandler {
     constructor(messageUtil) {
         this.messageUtil = messageUtil;
-        this._embyNotifyAt = new Map();
-        this._alistFirstLevelCache = new Map();
-    }
+        this._embyNotifyAt = new Map();    }
 
     async _buildNormalizedTaskSubfolder(task, account, normalizedBasePath) {
         let taskSubfolder = String(task.realFolderName || '')
@@ -75,29 +72,6 @@ class TaskEventHandler {
             matchedAnchor,
             rootFolders,
         };
-    }
-
-    async _getAListRootFolders(normalizedBasePath) {
-        const cacheKey = normalizedBasePath || '/';
-        const now = Date.now();
-        const ttlMs = 60 * 1000;
-        const cached = this._alistFirstLevelCache.get(cacheKey);
-        if (cached && now - cached.timestamp < ttlMs) {
-            return cached.folders;
-        }
-
-        try {
-            const folders = await alistService.getFirstLevelFolders(cacheKey);
-            this._alistFirstLevelCache.set(cacheKey, { folders, timestamp: now });
-            if (folders.length > 0) {
-                logger.debug(`OpenList 挂载根首层目录: ${folders.join(', ')}`);
-            }
-            return folders;
-        } catch (error) {
-            logTaskEvent(`读取 OpenList 挂载根首层目录失败: ${error.message}`);
-            this._alistFirstLevelCache.set(cacheKey, { folders: [], timestamp: now });
-            return [];
-        }
     }
 
     async handle(taskCompleteEventDto) {
