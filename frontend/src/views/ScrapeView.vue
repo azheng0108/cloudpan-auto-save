@@ -725,11 +725,154 @@ function parseWashComparison(record: any) {
     };
   }
 
+  let mainBadge = {
+    text: '整理入库',
+    class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+  };
+
+  if (record.status === 'reverted') {
+    mainBadge = {
+      text: '↩ 已原路撤回',
+      class: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+    };
+  } else if (actionType === 'upgrade') {
+    mainBadge = {
+      text: '✨ 洗版升级 (新版入库)',
+      class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+    };
+  } else if (actionType === 'skipped') {
+    mainBadge = {
+      text: '🛡️ 保留旧版 (次选淘汰)',
+      class: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+    };
+  } else if (actionType === 'protect') {
+    mainBadge = {
+      text: '🛡️ 逆向降级拦截',
+      class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+    };
+  } else if (actionType === 'exempt') {
+    mainBadge = {
+      text: '💎 杜比双版豁免',
+      class: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+    };
+  } else if (actionType === 'duplicate') {
+    mainBadge = {
+      text: '🧹 同名清理',
+      class: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+    };
+  }
+
+  const comparisonRows: Array<{
+    role: 'winner' | 'loser' | 'coexist';
+    badgeText: string;
+    badgeClass: string;
+    sourceLabel: string;
+    name: string;
+    sizeFormatted: string;
+    badges: Array<{ key: string; label: string; isWinner: boolean; badgeClass: string }>;
+    isDeletedOrTrash?: boolean;
+  }> = [];
+
+  if (existingName) {
+    if (actionType === 'upgrade') {
+      comparisonRows.push({
+        role: 'winner',
+        badgeText: '✓ 最终保留',
+        badgeClass: 'bg-emerald-600 text-white shadow-2xs',
+        sourceLabel: '新进场胜出入库',
+        name: incomingName,
+        sizeFormatted: formatSize(incomingSize),
+        badges: incomingBadges
+      });
+      comparisonRows.push({
+        role: 'loser',
+        badgeText: '✗ 淘汰置换',
+        badgeClass: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800',
+        sourceLabel: '媒体库旧版 · 已移至回收站',
+        name: existingName,
+        sizeFormatted: existingSize ? formatSize(existingSize) : '',
+        badges: existingBadges,
+        isDeletedOrTrash: true
+      });
+    } else if (actionType === 'skipped' || actionType === 'protect') {
+      comparisonRows.push({
+        role: 'winner',
+        badgeText: '✓ 最终保留',
+        badgeClass: 'bg-emerald-600 text-white shadow-2xs',
+        sourceLabel: '媒体库高画质原版 · 原地留存',
+        name: existingName,
+        sizeFormatted: existingSize ? formatSize(existingSize) : '',
+        badges: existingBadges
+      });
+      comparisonRows.push({
+        role: 'loser',
+        badgeText: '✗ 淘汰拦截',
+        badgeClass: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800',
+        sourceLabel: '进场次选版本 · 已移至回收站',
+        name: incomingName,
+        sizeFormatted: formatSize(incomingSize),
+        badges: incomingBadges,
+        isDeletedOrTrash: true
+      });
+    } else if (actionType === 'exempt') {
+      comparisonRows.push({
+        role: 'coexist',
+        badgeText: '✓ 双版并存',
+        badgeClass: 'bg-purple-600 text-white shadow-2xs',
+        sourceLabel: '新进场版本 (杜比视界)',
+        name: incomingName,
+        sizeFormatted: formatSize(incomingSize),
+        badges: incomingBadges
+      });
+      comparisonRows.push({
+        role: 'coexist',
+        badgeText: '✓ 双版并存',
+        badgeClass: 'bg-purple-600 text-white shadow-2xs',
+        sourceLabel: '媒体库原版本 (非杜比标准版)',
+        name: existingName,
+        sizeFormatted: existingSize ? formatSize(existingSize) : '',
+        badges: existingBadges
+      });
+    } else {
+      comparisonRows.push({
+        role: 'winner',
+        badgeText: '✓ 媒体库已有',
+        badgeClass: 'bg-slate-600 text-white shadow-2xs',
+        sourceLabel: '媒体库留存资产',
+        name: existingName,
+        sizeFormatted: existingSize ? formatSize(existingSize) : '',
+        badges: existingBadges
+      });
+      comparisonRows.push({
+        role: 'loser',
+        badgeText: '✗ 重复清理',
+        badgeClass: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700',
+        sourceLabel: '暂存区重复副本 · 已清理移入回收站',
+        name: incomingName,
+        sizeFormatted: formatSize(incomingSize),
+        badges: incomingBadges,
+        isDeletedOrTrash: true
+      });
+    }
+  } else {
+    comparisonRows.push({
+      role: 'winner',
+      badgeText: '✓ 整理入库',
+      badgeClass: 'bg-blue-600 text-white shadow-2xs',
+      sourceLabel: '入库目标文件',
+      name: incomingName,
+      sizeFormatted: formatSize(incomingSize),
+      badges: incomingBadges
+    });
+  }
+
   return {
     actionType,
     headline,
     badgeClass,
     headerPill,
+    mainBadge,
+    comparisonRows,
     verdictSummary,
     incoming: {
       name: incomingName,
@@ -1497,8 +1640,11 @@ function parseRecordDetails(record: any) {
   let episodeTitle = record.episodeTitle || '';
   if (!episodeTitle && newName) {
     const epMatch = newName.match(/S\d{1,2}E\d{1,4}\.([^.]+?)\.(?:2160p|1080p|720p|4k|web-dl|h\.?26[45]|hevc|sdr|hdr|dv|10bit|remux)/i);
-    if (epMatch && epMatch[1] && !/^(?:20\d\d|19\d\d)$/.test(epMatch[1])) {
-      episodeTitle = epMatch[1].trim();
+    if (epMatch && epMatch[1]) {
+      const candidate = epMatch[1].trim();
+      if (!/^(?:20\d\d|19\d\d|2160p|1080p|720p|576p|480p|4k|2k|8k|web-?dl|web-?rip|hd-?tv|bluray|bdr-?ip|remux|h\.?26[45]|x26[45]|hevc|avc|av1|sdr|hdr(?:10\+?)?|dv|dovi|10bit|8bit|aac|ddp|atmos)$/i.test(candidate)) {
+        episodeTitle = candidate;
+      }
     }
   }
   const displayEpTitle = episodeTitle ? (seasonEpisode ? `${seasonEpisode} · ${episodeTitle}` : episodeTitle) : '';
@@ -2864,34 +3010,17 @@ onUnmounted(() => {
                   </span>
 
                   <span
-                    v-if="parseRecordDetails(record).episodeTitle"
-                    class="text-xs text-indigo-600 dark:text-indigo-400 font-medium truncate flex items-center gap-1 shrink-0"
-                    :title="parseRecordDetails(record).episodeTitle"
+                    v-if="parseRecordDetails(record).seasonEpisode"
+                    class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0"
                   >
-                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
-                    {{ parseRecordDetails(record).episodeTitle }}
+                    {{ parseRecordDetails(record).seasonEpisode }}
                   </span>
 
-                  <!-- 规格徽章 -->
-                  <div v-if="parseRecordDetails(record).specs.length > 0" class="flex items-center gap-1 shrink-0">
-                    <span
-                      v-for="spec in parseRecordDetails(record).specs.slice(0, 4)"
-                      :key="spec"
-                      class="px-1.5 py-0.2 rounded text-[10.5px] font-mono font-medium"
-                      :class="getSpecBadgeClass(spec)"
-                    >
-                      {{ spec }}
-                    </span>
-                  </div>
-
-                  <!-- 决胜关键差异胶囊 -->
                   <span
-                    v-if="parseWashComparison(record).headerPill"
-                    class="px-2 py-0.5 rounded text-[11px] font-semibold border select-none shrink-0"
-                    :class="parseWashComparison(record).headerPill?.class"
-                    :title="parseWashComparison(record).verdictSummary"
+                    v-if="parseRecordDetails(record).episodeTitle && parseRecordDetails(record).episodeTitle !== parseRecordDetails(record).seasonEpisode"
+                    class="text-xs text-slate-500 dark:text-slate-400 truncate shrink-0"
                   >
-                    {{ parseWashComparison(record).headerPill?.text }}
+                    {{ parseRecordDetails(record).episodeTitle }}
                   </span>
                 </div>
               </div>
@@ -2918,13 +3047,13 @@ onUnmounted(() => {
                   <span>{{ record.driveType === 'cloud139' || !record.driveType ? '139云盘' : record.driveType }} · {{ formatSize(record.size) }}</span>
                 </span>
 
-                <!-- 状态单行标签 (紧凑横排胶囊) -->
+                <!-- 唯一高辨识度主状态勋章 -->
                 <span
-                  class="px-2 py-0.5 rounded-full text-[11px] font-semibold border select-none shrink-0"
-                  :class="parseWashAction(record).badgeClass"
-                  :title="parseWashAction(record).actionTitle"
+                  class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold border select-none shrink-0 shadow-2xs"
+                  :class="parseWashComparison(record).mainBadge.class"
+                  :title="parseWashComparison(record).verdictSummary"
                 >
-                  {{ parseWashAction(record).badgeTop }} · {{ parseWashAction(record).badgeBottom }}
+                  {{ parseWashComparison(record).mainBadge.text }}
                 </span>
 
                 <!-- 单项操作按键 -->
@@ -2989,62 +3118,74 @@ onUnmounted(() => {
               </div>
             </div>
 
-                        <!-- 第二行: 洗版画质规格比对面板 (双版本规格对比矩阵、胜负决胜项突出、防截断全宽舒展) -->
+            <!-- 第二行: 洗版画质规格比对面板 (垂直上下流对比，彻底消灭左右分栏与东一块西一块) -->
             <div class="rounded-xl border border-slate-200/80 dark:border-slate-800/80 p-3 sm:p-3.5 space-y-2.5 bg-slate-50/60 dark:bg-slate-900/40">
-              <!-- 顶栏: 源文件路径与裁决结果 -->
-              <div class="flex items-center justify-between gap-2 flex-wrap text-xs">
-                <div class="flex items-center gap-2 min-w-0 flex-1">
-                  <span class="text-[11px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">源文件</span>
-                  <span class="text-slate-600 dark:text-slate-300 font-mono select-all truncate" :title="(record.oldParentPath && record.oldParentPath !== '/' ? record.oldParentPath + '/' : '') + record.oldName">
-                    <span v-if="record.oldParentPath && record.oldParentPath !== '/'" class="text-slate-400 dark:text-slate-500">{{ record.oldParentPath }}/</span>{{ record.oldName }}
-                  </span>
-                  <span v-if="record.sourceText" class="text-[10px] bg-slate-200/60 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded shrink-0 max-w-[200px] truncate" :title="'来源推文: ' + record.sourceText">
-                    {{ record.sourceText }}
-                  </span>
-                </div>
+              <!-- 源文件路径行 (纯净单行，左对齐，去除右侧漂浮胶囊) -->
+              <div class="flex items-center gap-2 min-w-0 text-xs">
+                <span class="text-[11px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">源文件:</span>
                 <span
-                  class="px-2 py-0.5 rounded-full text-[11px] font-semibold border select-none shrink-0"
-                  :class="parseWashComparison(record).badgeClass"
+                  class="text-slate-600 dark:text-slate-300 font-mono select-all truncate cursor-pointer hover:text-blue-600"
+                  :title="'点击复制源文件路径: ' + (record.oldParentPath && record.oldParentPath !== '/' ? record.oldParentPath + '/' : '') + record.oldName"
+                  @click="copyText((record.oldParentPath && record.oldParentPath !== '/' ? record.oldParentPath + '/' : '') + record.oldName, '源文件路径')"
                 >
-                  {{ parseWashComparison(record).headline }}
+                  <span v-if="record.oldParentPath && record.oldParentPath !== '/'" class="text-slate-400 dark:text-slate-500">{{ record.oldParentPath }}/</span>{{ record.oldName }}
+                </span>
+                <span v-if="record.sourceText" class="text-[10px] bg-slate-200/60 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded shrink-0 max-w-[200px] truncate" :title="'来源推文: ' + record.sourceText">
+                  {{ record.sourceText }}
                 </span>
               </div>
 
-              <!-- 核心对比网格: 左右分栏 (当有旧版比对目标时) -->
-              <div v-if="parseWashComparison(record).existing" class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                <!-- 左栏: 📥 进场新版本 (新监控整理) -->
+              <!-- 垂直上下对比序列 (上面保留胜出，下面淘汰移出，自然顺畅) -->
+              <div class="space-y-2">
                 <div
-                  class="p-2.5 rounded-lg border flex flex-col justify-between gap-2 transition-colors"
-                  :class="parseWashComparison(record).actionType === 'upgrade'
-                    ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/50'
-                    : 'bg-white dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60'"
+                  v-for="row in parseWashComparison(record).comparisonRows"
+                  :key="row.role + row.name"
+                  class="p-2.5 sm:p-3 rounded-lg border transition-colors flex flex-col gap-1.5"
+                  :class="row.role === 'winner'
+                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-800/60'
+                    : (row.role === 'coexist'
+                      ? 'bg-purple-50/40 dark:bg-purple-950/20 border-purple-200/80 dark:border-purple-800/60'
+                      : 'bg-white dark:bg-slate-800/60 border-slate-200/70 dark:border-slate-700/60')"
                 >
-                  <div class="space-y-1">
-                    <div class="flex items-center justify-between gap-1.5">
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-bold text-slate-800 dark:text-slate-200">📥 进场新版</span>
-                        <span class="text-[10.5px] px-1.5 py-0.2 rounded font-medium border" :class="parseWashComparison(record).incoming.statusBadge.class">
-                          {{ parseWashComparison(record).incoming.statusBadge.text }}
-                        </span>
-                      </div>
-                      <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                        {{ parseWashComparison(record).incoming.sizeFormatted }}
+                  <!-- 头部：标志 + 角色说明 + 文件大小 -->
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="px-2 py-0.5 rounded text-[11px] font-bold" :class="row.badgeClass">
+                        {{ row.badgeText }}
+                      </span>
+                      <span
+                        class="text-xs font-semibold"
+                        :class="row.role === 'winner'
+                          ? 'text-emerald-800 dark:text-emerald-300'
+                          : (row.role === 'coexist' ? 'text-purple-800 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400')"
+                      >
+                        {{ row.sourceLabel }}
                       </span>
                     </div>
-                    <div
-                      class="text-xs font-mono text-slate-700 dark:text-slate-300 break-all select-all leading-snug cursor-pointer hover:text-blue-600 transition-colors"
-                      :title="`点击复制进场文件名: ${parseWashComparison(record).incoming.name}`"
-                      @click="copyText(parseWashComparison(record).incoming.name, '进场文件名')"
-                    >
-                      {{ parseWashComparison(record).incoming.name }}
-                    </div>
+                    <span v-if="row.sizeFormatted" class="text-xs font-mono font-medium text-slate-500 dark:text-slate-400 shrink-0">
+                      {{ row.sizeFormatted }}
+                    </span>
+                  </div>
+
+                  <!-- 文件名（全宽单行舒展，可点击复制） -->
+                  <div
+                    class="text-xs font-mono select-all break-all cursor-pointer hover:text-blue-600 transition-colors py-0.5"
+                    :class="row.role === 'winner' || row.role === 'coexist'
+                      ? 'font-medium text-slate-800 dark:text-slate-200'
+                      : 'text-slate-500 dark:text-slate-400'"
+                    :title="`点击复制文件名: ${row.name}`"
+                    @click="copyText(row.name, '文件名')"
+                  >
+                    {{ row.name }}
                   </div>
 
                   <!-- 规格胶囊序列 -->
                   <div class="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-700/50">
-                    <span class="text-[10px] text-slate-400 font-medium shrink-0">进场规格:</span>
+                    <span class="text-[10px] text-slate-400 font-medium shrink-0">
+                      {{ row.role === 'winner' ? '保留规格:' : (row.role === 'coexist' ? '版本规格:' : '淘汰规格:') }}
+                    </span>
                     <span
-                      v-for="badge in parseWashComparison(record).incoming.badges"
+                      v-for="badge in row.badges"
                       :key="badge.key"
                       class="px-1.5 py-0.5 rounded text-[10.5px] font-mono font-medium flex items-center gap-0.5 shadow-2xs"
                       :class="badge.badgeClass"
@@ -3052,99 +3193,37 @@ onUnmounted(() => {
                       <span>{{ badge.label }}</span>
                       <span v-if="badge.isWinner" class="text-amber-500 font-black text-xs leading-none">★</span>
                     </span>
-                    <span v-if="parseWashComparison(record).incoming.badges.length === 0" class="text-[10.5px] text-slate-400">
-                      未标注特殊规格
-                    </span>
-                  </div>
-                </div>
-
-                <!-- 右栏: 🏛️ 媒体库旧版本 (已有留存资产) -->
-                <div
-                  class="p-2.5 rounded-lg border flex flex-col justify-between gap-2 transition-colors"
-                  :class="parseWashComparison(record).actionType === 'skipped' || parseWashComparison(record).actionType === 'protect'
-                    ? 'bg-rose-50/30 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-800/50'
-                    : 'bg-white dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60'"
-                >
-                  <div class="space-y-1">
-                    <div class="flex items-center justify-between gap-1.5">
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-bold text-slate-800 dark:text-slate-200">🏛️ 媒体库旧版</span>
-                        <span class="text-[10.5px] px-1.5 py-0.2 rounded font-medium border" :class="parseWashComparison(record).existing.statusBadge.class">
-                          {{ parseWashComparison(record).existing.statusBadge.text }}
-                        </span>
-                      </div>
-                      <span v-if="parseWashComparison(record).existing.sizeFormatted" class="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                        {{ parseWashComparison(record).existing.sizeFormatted }}
-                      </span>
-                    </div>
-                    <div
-                      class="text-xs font-mono text-slate-700 dark:text-slate-300 break-all select-all leading-snug cursor-pointer hover:text-blue-600 transition-colors"
-                      :title="`点击复制媒体库旧版文件名: ${parseWashComparison(record).existing.name}`"
-                      @click="copyText(parseWashComparison(record).existing.name, '旧版文件名')"
-                    >
-                      {{ parseWashComparison(record).existing.name }}
-                    </div>
-                  </div>
-
-                  <!-- 规格胶囊序列 (胜出项包含 ★ 高亮) -->
-                  <div class="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-700/50">
-                    <span class="text-[10px] text-slate-400 font-medium shrink-0">旧版规格:</span>
-                    <span
-                      v-for="badge in parseWashComparison(record).existing.badges"
-                      :key="badge.key"
-                      class="px-1.5 py-0.5 rounded text-[10.5px] font-mono font-medium flex items-center gap-0.5 shadow-2xs"
-                      :class="badge.badgeClass"
-                    >
-                      <span>{{ badge.label }}</span>
-                      <span v-if="badge.isWinner" class="text-amber-500 font-black text-xs leading-none">★</span>
-                    </span>
-                    <span v-if="parseWashComparison(record).existing.badges.length === 0" class="text-[10.5px] text-slate-400">
+                    <span v-if="row.badges.length === 0" class="text-[10.5px] text-slate-400">
                       未标注特殊规格
                     </span>
                   </div>
                 </div>
               </div>
 
-              <!-- 单版回退展示 (极少数无对比目标记录) -->
-              <div v-else class="p-2.5 rounded-lg border bg-white dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60">
-                <div class="text-xs font-mono text-slate-700 dark:text-slate-300 break-all select-all">
-                  {{ parseWashComparison(record).incoming.name }}
+              <!-- 差异决胜判定栏 (单行自左向右自然阅读，彻底消除割裂) -->
+              <div class="pt-2 border-t border-slate-200/70 dark:border-slate-800 flex items-center gap-2 flex-wrap text-xs">
+                <div class="flex items-center gap-1 font-bold shrink-0 text-slate-700 dark:text-slate-300">
+                  <span>⚖️</span>
+                  <span>决胜裁决:</span>
                 </div>
-                <div class="flex items-center gap-1.5 flex-wrap pt-1.5 mt-1 border-t border-slate-100 dark:border-slate-700/50">
-                  <span
-                    v-for="badge in parseWashComparison(record).incoming.badges"
-                    :key="badge.key"
-                    class="px-1.5 py-0.5 rounded text-[10.5px] font-mono font-medium"
-                    :class="badge.badgeClass"
-                  >
-                    {{ badge.label }}
-                  </span>
-                </div>
-              </div>
-
-              <!-- 差异决胜判定栏 (Diff Verdict Banner) -->
-              <div class="pt-2 border-t border-slate-200/70 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                 <!-- 关键差异胜负项胶囊 -->
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold shrink-0">决胜关键:</span>
-                  <span
-                    v-for="diff in parseWashComparison(record).diffItems"
-                    :key="diff.key"
-                    class="px-2 py-0.5 rounded-md text-[11px] font-semibold border flex items-center gap-1"
-                    :class="diff.winner === 'existing'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'"
-                  >
-                    <span>{{ diff.label }}:</span>
-                    <span class="font-mono">{{ diff.detail }}</span>
-                  </span>
-                  <span v-if="parseWashComparison(record).diffItems.length === 0" class="text-[11px] text-slate-400 italic">
-                    核心画质技术规格相当（同规格同名或同分辨率）
-                  </span>
-                </div>
+                <span
+                  v-for="diff in parseWashComparison(record).diffItems"
+                  :key="diff.key"
+                  class="px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 shrink-0"
+                  :class="diff.winner === 'existing'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'"
+                >
+                  <span>{{ diff.label }}:</span>
+                  <span class="font-mono">{{ diff.detail }}</span>
+                </span>
+                <span v-if="parseWashComparison(record).diffItems.length === 0" class="text-[11px] text-slate-400 italic shrink-0">
+                  核心画质技术规格相当
+                </span>
 
-                <!-- 仲裁说明文本 (全宽舒展，绝不截断) -->
-                <div
+                <!-- 仲裁说明文本紧随其后，自左向右自然阅读 -->
+                <span
                   class="text-[11px] leading-relaxed font-medium"
                   :class="{
                     'text-rose-700 dark:text-rose-300': parseWashComparison(record).actionType === 'skipped',
@@ -3154,8 +3233,8 @@ onUnmounted(() => {
                     'text-slate-600 dark:text-slate-400': parseWashComparison(record).actionType === 'duplicate' || parseWashComparison(record).actionType === 'normal'
                   }"
                 >
-                  {{ parseWashComparison(record).verdictSummary }}
-                </div>
+                  — {{ parseWashComparison(record).verdictSummary }}
+                </span>
               </div>
             </div>
           </div>
@@ -3439,34 +3518,17 @@ onUnmounted(() => {
                   </span>
 
                   <span
-                    v-if="parseRecordDetails(record).episodeTitle"
-                    class="text-xs text-indigo-600 dark:text-indigo-400 font-medium truncate flex items-center gap-1 shrink-0"
-                    :title="parseRecordDetails(record).episodeTitle"
+                    v-if="parseRecordDetails(record).seasonEpisode"
+                    class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0"
                   >
-                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
-                    {{ parseRecordDetails(record).episodeTitle }}
+                    {{ parseRecordDetails(record).seasonEpisode }}
                   </span>
 
-                  <!-- 规格徽章 -->
-                  <div v-if="parseRecordDetails(record).specs.length > 0" class="flex items-center gap-1 shrink-0">
-                    <span
-                      v-for="spec in parseRecordDetails(record).specs.slice(0, 4)"
-                      :key="spec"
-                      class="px-1.5 py-0.2 rounded text-[10.5px] font-mono font-medium"
-                      :class="getSpecBadgeClass(spec)"
-                    >
-                      {{ spec }}
-                    </span>
-                  </div>
-
-                  <!-- 决胜关键差异胶囊 (若是洗版记录) -->
                   <span
-                    v-if="isWashRecord(record) && parseWashComparison(record).headerPill"
-                    class="px-2 py-0.5 rounded text-[11px] font-semibold border select-none shrink-0"
-                    :class="parseWashComparison(record).headerPill?.class"
-                    :title="parseWashComparison(record).verdictSummary"
+                    v-if="parseRecordDetails(record).episodeTitle && parseRecordDetails(record).episodeTitle !== parseRecordDetails(record).seasonEpisode"
+                    class="text-xs text-slate-500 dark:text-slate-400 truncate shrink-0"
                   >
-                    {{ parseWashComparison(record).headerPill?.text }}
+                    {{ parseRecordDetails(record).episodeTitle }}
                   </span>
                 </div>
               </div>
@@ -3493,10 +3555,10 @@ onUnmounted(() => {
                   <span>{{ record.driveType === 'cloud139' || !record.driveType ? '139云盘' : record.driveType }} · {{ formatSize(record.size) }}</span>
                 </span>
 
-                <!-- 状态单行标签 (紧凑横排胶囊) -->
+                <!-- 状态单行标签 (唯一且精确) -->
                 <span
-                  class="px-2 py-0.5 rounded-full text-[11px] font-semibold border select-none shrink-0"
-                  :class="{
+                  class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold border select-none shrink-0 shadow-2xs"
+                  :class="isWashRecord(record) ? parseWashComparison(record).mainBadge.class : {
                     'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800': record.status === 'applied',
                     'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800': record.status === 'fallback',
                     'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800': record.status === 'protected',
@@ -3505,7 +3567,7 @@ onUnmounted(() => {
                     'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800': record.status === 'failed'
                   }"
                 >
-                  {{ record.status === 'applied' ? '归档成功' : (record.status === 'fallback' ? '缺季自愈' : (record.status === 'protected' ? '原地保护' : (record.status === 'skipped' ? '洗版淘汰' : (record.status === 'reverted' ? '已撤销' : (record.status === 'failed' ? '执行失败' : record.status))))) }}
+                  {{ isWashRecord(record) ? parseWashComparison(record).mainBadge.text : (record.status === 'applied' ? '归档成功' : (record.status === 'fallback' ? '缺季自愈' : (record.status === 'protected' ? '原地保护' : (record.status === 'skipped' ? '洗版淘汰' : (record.status === 'reverted' ? '已撤销' : (record.status === 'failed' ? '执行失败' : record.status)))))) }}
                 </span>
 
                 <!-- 单项操作按键 -->
@@ -3572,62 +3634,74 @@ onUnmounted(() => {
 
                         <!-- 第二行: 若是洗版相关记录，渲染洗版规格比对面板；否则渲染标准入库流水管线 -->
             <template v-if="isWashRecord(record)">
-            <!-- 第二行: 洗版画质规格比对面板 (双版本规格对比矩阵、胜负决胜项突出、防截断全宽舒展) -->
+            <!-- 第二行: 洗版画质规格比对面板 (垂直上下流对比，彻底消灭左右分栏与东一块西一块) -->
             <div class="rounded-xl border border-slate-200/80 dark:border-slate-800/80 p-3 sm:p-3.5 space-y-2.5 bg-slate-50/60 dark:bg-slate-900/40">
-              <!-- 顶栏: 源文件路径与裁决结果 -->
-              <div class="flex items-center justify-between gap-2 flex-wrap text-xs">
-                <div class="flex items-center gap-2 min-w-0 flex-1">
-                  <span class="text-[11px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">源文件</span>
-                  <span class="text-slate-600 dark:text-slate-300 font-mono select-all truncate" :title="(record.oldParentPath && record.oldParentPath !== '/' ? record.oldParentPath + '/' : '') + record.oldName">
-                    <span v-if="record.oldParentPath && record.oldParentPath !== '/'" class="text-slate-400 dark:text-slate-500">{{ record.oldParentPath }}/</span>{{ record.oldName }}
-                  </span>
-                  <span v-if="record.sourceText" class="text-[10px] bg-slate-200/60 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded shrink-0 max-w-[200px] truncate" :title="'来源推文: ' + record.sourceText">
-                    {{ record.sourceText }}
-                  </span>
-                </div>
+              <!-- 源文件路径行 (纯净单行，左对齐，去除右侧漂浮胶囊) -->
+              <div class="flex items-center gap-2 min-w-0 text-xs">
+                <span class="text-[11px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">源文件:</span>
                 <span
-                  class="px-2 py-0.5 rounded-full text-[11px] font-semibold border select-none shrink-0"
-                  :class="parseWashComparison(record).badgeClass"
+                  class="text-slate-600 dark:text-slate-300 font-mono select-all truncate cursor-pointer hover:text-blue-600"
+                  :title="'点击复制源文件路径: ' + (record.oldParentPath && record.oldParentPath !== '/' ? record.oldParentPath + '/' : '') + record.oldName"
+                  @click="copyText((record.oldParentPath && record.oldParentPath !== '/' ? record.oldParentPath + '/' : '') + record.oldName, '源文件路径')"
                 >
-                  {{ parseWashComparison(record).headline }}
+                  <span v-if="record.oldParentPath && record.oldParentPath !== '/'" class="text-slate-400 dark:text-slate-500">{{ record.oldParentPath }}/</span>{{ record.oldName }}
+                </span>
+                <span v-if="record.sourceText" class="text-[10px] bg-slate-200/60 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded shrink-0 max-w-[200px] truncate" :title="'来源推文: ' + record.sourceText">
+                  {{ record.sourceText }}
                 </span>
               </div>
 
-              <!-- 核心对比网格: 左右分栏 (当有旧版比对目标时) -->
-              <div v-if="parseWashComparison(record).existing" class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                <!-- 左栏: 📥 进场新版本 (新监控整理) -->
+              <!-- 垂直上下对比序列 (上面保留胜出，下面淘汰移出，自然顺畅) -->
+              <div class="space-y-2">
                 <div
-                  class="p-2.5 rounded-lg border flex flex-col justify-between gap-2 transition-colors"
-                  :class="parseWashComparison(record).actionType === 'upgrade'
-                    ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/50'
-                    : 'bg-white dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60'"
+                  v-for="row in parseWashComparison(record).comparisonRows"
+                  :key="row.role + row.name"
+                  class="p-2.5 sm:p-3 rounded-lg border transition-colors flex flex-col gap-1.5"
+                  :class="row.role === 'winner'
+                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-800/60'
+                    : (row.role === 'coexist'
+                      ? 'bg-purple-50/40 dark:bg-purple-950/20 border-purple-200/80 dark:border-purple-800/60'
+                      : 'bg-white dark:bg-slate-800/60 border-slate-200/70 dark:border-slate-700/60')"
                 >
-                  <div class="space-y-1">
-                    <div class="flex items-center justify-between gap-1.5">
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-bold text-slate-800 dark:text-slate-200">📥 进场新版</span>
-                        <span class="text-[10.5px] px-1.5 py-0.2 rounded font-medium border" :class="parseWashComparison(record).incoming.statusBadge.class">
-                          {{ parseWashComparison(record).incoming.statusBadge.text }}
-                        </span>
-                      </div>
-                      <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                        {{ parseWashComparison(record).incoming.sizeFormatted }}
+                  <!-- 头部：标志 + 角色说明 + 文件大小 -->
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="px-2 py-0.5 rounded text-[11px] font-bold" :class="row.badgeClass">
+                        {{ row.badgeText }}
+                      </span>
+                      <span
+                        class="text-xs font-semibold"
+                        :class="row.role === 'winner'
+                          ? 'text-emerald-800 dark:text-emerald-300'
+                          : (row.role === 'coexist' ? 'text-purple-800 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400')"
+                      >
+                        {{ row.sourceLabel }}
                       </span>
                     </div>
-                    <div
-                      class="text-xs font-mono text-slate-700 dark:text-slate-300 break-all select-all leading-snug cursor-pointer hover:text-blue-600 transition-colors"
-                      :title="`点击复制进场文件名: ${parseWashComparison(record).incoming.name}`"
-                      @click="copyText(parseWashComparison(record).incoming.name, '进场文件名')"
-                    >
-                      {{ parseWashComparison(record).incoming.name }}
-                    </div>
+                    <span v-if="row.sizeFormatted" class="text-xs font-mono font-medium text-slate-500 dark:text-slate-400 shrink-0">
+                      {{ row.sizeFormatted }}
+                    </span>
+                  </div>
+
+                  <!-- 文件名（全宽单行舒展，可点击复制） -->
+                  <div
+                    class="text-xs font-mono select-all break-all cursor-pointer hover:text-blue-600 transition-colors py-0.5"
+                    :class="row.role === 'winner' || row.role === 'coexist'
+                      ? 'font-medium text-slate-800 dark:text-slate-200'
+                      : 'text-slate-500 dark:text-slate-400'"
+                    :title="`点击复制文件名: ${row.name}`"
+                    @click="copyText(row.name, '文件名')"
+                  >
+                    {{ row.name }}
                   </div>
 
                   <!-- 规格胶囊序列 -->
                   <div class="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-700/50">
-                    <span class="text-[10px] text-slate-400 font-medium shrink-0">进场规格:</span>
+                    <span class="text-[10px] text-slate-400 font-medium shrink-0">
+                      {{ row.role === 'winner' ? '保留规格:' : (row.role === 'coexist' ? '版本规格:' : '淘汰规格:') }}
+                    </span>
                     <span
-                      v-for="badge in parseWashComparison(record).incoming.badges"
+                      v-for="badge in row.badges"
                       :key="badge.key"
                       class="px-1.5 py-0.5 rounded text-[10.5px] font-mono font-medium flex items-center gap-0.5 shadow-2xs"
                       :class="badge.badgeClass"
@@ -3635,99 +3709,37 @@ onUnmounted(() => {
                       <span>{{ badge.label }}</span>
                       <span v-if="badge.isWinner" class="text-amber-500 font-black text-xs leading-none">★</span>
                     </span>
-                    <span v-if="parseWashComparison(record).incoming.badges.length === 0" class="text-[10.5px] text-slate-400">
-                      未标注特殊规格
-                    </span>
-                  </div>
-                </div>
-
-                <!-- 右栏: 🏛️ 媒体库旧版本 (已有留存资产) -->
-                <div
-                  class="p-2.5 rounded-lg border flex flex-col justify-between gap-2 transition-colors"
-                  :class="parseWashComparison(record).actionType === 'skipped' || parseWashComparison(record).actionType === 'protect'
-                    ? 'bg-rose-50/30 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-800/50'
-                    : 'bg-white dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60'"
-                >
-                  <div class="space-y-1">
-                    <div class="flex items-center justify-between gap-1.5">
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-xs font-bold text-slate-800 dark:text-slate-200">🏛️ 媒体库旧版</span>
-                        <span class="text-[10.5px] px-1.5 py-0.2 rounded font-medium border" :class="parseWashComparison(record).existing.statusBadge.class">
-                          {{ parseWashComparison(record).existing.statusBadge.text }}
-                        </span>
-                      </div>
-                      <span v-if="parseWashComparison(record).existing.sizeFormatted" class="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                        {{ parseWashComparison(record).existing.sizeFormatted }}
-                      </span>
-                    </div>
-                    <div
-                      class="text-xs font-mono text-slate-700 dark:text-slate-300 break-all select-all leading-snug cursor-pointer hover:text-blue-600 transition-colors"
-                      :title="`点击复制媒体库旧版文件名: ${parseWashComparison(record).existing.name}`"
-                      @click="copyText(parseWashComparison(record).existing.name, '旧版文件名')"
-                    >
-                      {{ parseWashComparison(record).existing.name }}
-                    </div>
-                  </div>
-
-                  <!-- 规格胶囊序列 (胜出项包含 ★ 高亮) -->
-                  <div class="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-700/50">
-                    <span class="text-[10px] text-slate-400 font-medium shrink-0">旧版规格:</span>
-                    <span
-                      v-for="badge in parseWashComparison(record).existing.badges"
-                      :key="badge.key"
-                      class="px-1.5 py-0.5 rounded text-[10.5px] font-mono font-medium flex items-center gap-0.5 shadow-2xs"
-                      :class="badge.badgeClass"
-                    >
-                      <span>{{ badge.label }}</span>
-                      <span v-if="badge.isWinner" class="text-amber-500 font-black text-xs leading-none">★</span>
-                    </span>
-                    <span v-if="parseWashComparison(record).existing.badges.length === 0" class="text-[10.5px] text-slate-400">
+                    <span v-if="row.badges.length === 0" class="text-[10.5px] text-slate-400">
                       未标注特殊规格
                     </span>
                   </div>
                 </div>
               </div>
 
-              <!-- 单版回退展示 (极少数无对比目标记录) -->
-              <div v-else class="p-2.5 rounded-lg border bg-white dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60">
-                <div class="text-xs font-mono text-slate-700 dark:text-slate-300 break-all select-all">
-                  {{ parseWashComparison(record).incoming.name }}
+              <!-- 差异决胜判定栏 (单行自左向右自然阅读，彻底消除割裂) -->
+              <div class="pt-2 border-t border-slate-200/70 dark:border-slate-800 flex items-center gap-2 flex-wrap text-xs">
+                <div class="flex items-center gap-1 font-bold shrink-0 text-slate-700 dark:text-slate-300">
+                  <span>⚖️</span>
+                  <span>决胜裁决:</span>
                 </div>
-                <div class="flex items-center gap-1.5 flex-wrap pt-1.5 mt-1 border-t border-slate-100 dark:border-slate-700/50">
-                  <span
-                    v-for="badge in parseWashComparison(record).incoming.badges"
-                    :key="badge.key"
-                    class="px-1.5 py-0.5 rounded text-[10.5px] font-mono font-medium"
-                    :class="badge.badgeClass"
-                  >
-                    {{ badge.label }}
-                  </span>
-                </div>
-              </div>
-
-              <!-- 差异决胜判定栏 (Diff Verdict Banner) -->
-              <div class="pt-2 border-t border-slate-200/70 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                 <!-- 关键差异胜负项胶囊 -->
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold shrink-0">决胜关键:</span>
-                  <span
-                    v-for="diff in parseWashComparison(record).diffItems"
-                    :key="diff.key"
-                    class="px-2 py-0.5 rounded-md text-[11px] font-semibold border flex items-center gap-1"
-                    :class="diff.winner === 'existing'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'"
-                  >
-                    <span>{{ diff.label }}:</span>
-                    <span class="font-mono">{{ diff.detail }}</span>
-                  </span>
-                  <span v-if="parseWashComparison(record).diffItems.length === 0" class="text-[11px] text-slate-400 italic">
-                    核心画质技术规格相当（同规格同名或同分辨率）
-                  </span>
-                </div>
+                <span
+                  v-for="diff in parseWashComparison(record).diffItems"
+                  :key="diff.key"
+                  class="px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 shrink-0"
+                  :class="diff.winner === 'existing'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'"
+                >
+                  <span>{{ diff.label }}:</span>
+                  <span class="font-mono">{{ diff.detail }}</span>
+                </span>
+                <span v-if="parseWashComparison(record).diffItems.length === 0" class="text-[11px] text-slate-400 italic shrink-0">
+                  核心画质技术规格相当
+                </span>
 
-                <!-- 仲裁说明文本 (全宽舒展，绝不截断) -->
-                <div
+                <!-- 仲裁说明文本紧随其后，自左向右自然阅读 -->
+                <span
                   class="text-[11px] leading-relaxed font-medium"
                   :class="{
                     'text-rose-700 dark:text-rose-300': parseWashComparison(record).actionType === 'skipped',
@@ -3737,8 +3749,8 @@ onUnmounted(() => {
                     'text-slate-600 dark:text-slate-400': parseWashComparison(record).actionType === 'duplicate' || parseWashComparison(record).actionType === 'normal'
                   }"
                 >
-                  {{ parseWashComparison(record).verdictSummary }}
-                </div>
+                  — {{ parseWashComparison(record).verdictSummary }}
+                </span>
               </div>
             </div>
             </template>
