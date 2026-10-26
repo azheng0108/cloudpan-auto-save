@@ -2,7 +2,7 @@
 
 多云盘自动转存系统，支持 **移动云盘（139）**，自动监控分享链接更新并转存文件，支持 Telegram 机器人操作。
 
-> Fork 自 [1307super/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)，在原版基础上新增移动云盘（139）完整支持。**当前版本聚焦移动云盘（139）能力。**
+> 本项目是一套专注于 **中国移动云盘（139）** 及多网盘生态的自动化追更转存与媒体资产管理系统。全面重构 Vue3 前端并内置 302 直链 STRM 播放与治理功能。
 
 ---
 
@@ -47,4 +47,3 @@ docker run -d \
 ## 🔗 相关链接
 
 - GitHub 源码：[azheng0108/cloudpan-auto-save](https://github.com/azheng0108/cloudpan-auto-save)
-- 上游项目：[1307super/cloud189-auto-save](https://github.com/1307super/cloud189-auto-save)

@@ -81,7 +81,7 @@ let rawConfig: Record<string, any> = {};
 
 // 表单响应式数据
 const form = reactive({
-  // 本地 STRM 与直链播放配置 (ttd 规范)
+  // 本地 STRM 与直链播放配置
   strm: {
     enable: false,
     streamMode: 'direct302', // 'direct302' | 'custom'
@@ -409,16 +409,16 @@ onUnmounted(() => {
       </div>
 
       <template v-else>
-      <!-- ================= Tab 1: 本地 STRM 与 302 直链播放配置 (ttd 规范) ================= -->
+      <!-- ================= Tab 1: 本地 STRM 与 302 直链播放配置 ================= -->
       <div v-if="activeTab === 'strm'" class="space-y-6">
-      <!-- ================= 模块 1: 本地 STRM 与 302 直链播放配置 (ttd 规范) ================= -->
+      <!-- ================= 模块 1: 本地 STRM 与 302 直链播放配置 ================= -->
       <div class="settings-card">
         <div class="flex items-center gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
           <div class="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
             <FileVideo class="w-5 h-5" />
           </div>
           <div>
-            <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">本地 STRM 与直链播放配置 (ttd 规范)</h3>
+            <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">本地 STRM 与直链播放配置</h3>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               直接生成轻量 .strm 媒体映射文件，直连 139 CDN 满速拉流，零服务器中转带宽消耗
             </p>

@@ -493,7 +493,7 @@ class StrmService {
 
     /**
      * 为 TMDB 规范整理归档后的文件列表批量生成本地 .strm 文件
-     * 采用与 TgtoDrive (ttd) 相同的一致性技术：
+     * 采用一致性直链封装技术：
      * 1. 物理目录结构 100% 镜像媒体库层级（如：剧集/国漫/片名 (年份) {tmdb-id}/Season 01/）
      * 2. 播放流支持两种模式：
      *    - direct302 (默认推荐): 139 官方 CDN 302 原生直链（免中间件，零宿主机带宽消耗）
@@ -622,7 +622,7 @@ class StrmService {
                 const fileId = file.fileId || file.id;
 
                 if (streamMode === 'direct302' || !cloudStrmPrefix) {
-                    // ttd 原生 302 直链模式 (免 AList，零宿主机流量)
+                    // 原生 302 直链模式 (免 AList，零宿主机流量)
                     const queryParams = [];
                     if (accountId) queryParams.push(`accountId=${accountId}`);
                     const queryStr = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';

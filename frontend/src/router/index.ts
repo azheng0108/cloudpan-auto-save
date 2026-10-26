@@ -135,7 +135,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: '媒体挂载',
           badge: '本地直链',
-          desc: 'STRM 302 原生直链 (ttd 规范)、Emby 双向联动与 AList 外部挂载',
+          desc: 'STRM 302 原生直链 、Emby 双向联动与 AList 外部挂载',
           showSaveBtn: true,
           saveBtnText: '保存挂载配置',
         },
