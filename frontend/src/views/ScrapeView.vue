@@ -1162,21 +1162,22 @@ const targetEpisodeTitleOverrides = ref<Record<string, string>>({});
 const resolvingNow = ref(false);
 const cleanEmptySourceDirOnResolve = ref(true);
 
-// 过滤后的未识别文件列表
+// 过滤后的未识别文件列表 (铁律：只展示真正未识别/需治理的文件，绝不混入全局正常排队文件)
 const filteredUnrecognizedFiles = computed(() => {
-  const source = filterOnlyUnrecognized.value ? unrecognizedFiles.value : allScannedFiles.value;
+  const source = unrecognizedFiles.value;
   const q = unrecognizedSearchQuery.value.trim().toLowerCase();
   if (!q) return source;
   return source.filter((f: any) =>
     (f.name && f.name.toLowerCase().includes(q)) ||
-    (f.cleanTitle && f.cleanTitle.toLowerCase().includes(q))
+    (f.cleanTitle && f.cleanTitle.toLowerCase().includes(q)) ||
+    (f.folderPath && f.folderPath.toLowerCase().includes(q)) ||
+    (f.relativePath && f.relativePath.toLowerCase().includes(q))
   );
 });
 
 // 已选中的文件完整对象清单
 const selectedFilesList = computed(() => {
-  const all = allScannedFiles.value.length > 0 ? allScannedFiles.value : unrecognizedFiles.value;
-  return all.filter((f: any) => selectedUnrecognizedIds.value.has(String(f.id)));
+  return unrecognizedFiles.value.filter((f: any) => selectedUnrecognizedIds.value.has(String(f.id)));
 });
 
 // 选定候选与季集后的重命名实时推演列表
@@ -2573,28 +2574,13 @@ onUnmounted(() => {
             <div class="flex items-center justify-between pb-2.5 border-b border-gray-100 dark:border-gray-800">
               <div class="flex items-center gap-2">
                 <FileVideo class="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                <h4 class="text-xs font-bold text-gray-900 dark:text-white">待处理视频清单</h4>
+                <h4 class="text-xs font-bold text-gray-900 dark:text-white">待治理视频清单</h4>
               </div>
 
-              <!-- 切换模式：仅未识别 vs 全部 -->
-              <div class="inline-flex rounded-lg p-0.5 bg-slate-100 dark:bg-slate-800 text-[11px]">
-                <button
-                  type="button"
-                  @click="filterOnlyUnrecognized = true"
-                  class="px-2 py-0.5 rounded-md transition-all cursor-pointer font-medium"
-                  :class="filterOnlyUnrecognized ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
-                >
-                  未识别 ({{ unrecognizedFiles.length }})
-                </button>
-                <button
-                  type="button"
-                  @click="filterOnlyUnrecognized = false"
-                  class="px-2 py-0.5 rounded-md transition-all cursor-pointer font-medium"
-                  :class="!filterOnlyUnrecognized ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
-                >
-                  全部 ({{ allScannedFiles.length }})
-                </button>
-              </div>
+              <!-- 待处理条目数量胶囊 (铁律：只治理真正未识别/异常/缺单集的文件) -->
+              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900 font-mono shadow-2xs">
+                共 {{ unrecognizedFiles.length }} 项待处理
+              </span>
             </div>
 
             <!-- 本地搜索与全选控制 -->
@@ -2603,14 +2589,14 @@ onUnmounted(() => {
                 <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   v-model="unrecognizedSearchQuery"
-                  class="input-base text-xs pl-8 py-1.5 h-8 w-full bg-slate-50 dark:bg-slate-800/60"
-                  placeholder="过滤待处理文件名..."
+                  class="input-base text-xs pl-8 py-1 !h-8 w-full bg-slate-50 dark:bg-slate-800/60 rounded-lg"
+                  placeholder="过滤待处理文件名或子目录路径..."
                 />
               </div>
               <button
                 type="button"
                 @click="toggleSelectAllUnrecognized"
-                class="btn-default text-xs h-8 px-2.5 shrink-0 flex items-center gap-1 cursor-pointer"
+                class="btn-default text-xs !h-8 px-2.5 shrink-0 flex items-center gap-1 cursor-pointer rounded-lg"
                 :title="selectedUnrecognizedIds.size > 0 ? '反选/清空' : '全选所有'"
               >
                 <Check class="w-3.5 h-3.5" />
@@ -2644,7 +2630,7 @@ onUnmounted(() => {
                 {{ unrecognizedSearchQuery ? '未找到符合条件的待处理文件' : '太棒了！当前暂存区没有未识别视频' }}
               </h5>
               <p class="text-[11px] text-slate-400 max-w-xs mx-auto">
-                {{ unrecognizedSearchQuery ? '请尝试修改搜索词，或清空筛选' : '所有转存入库的视频文件均已被自动识别归档，暂无需要人工治理的疑难项' }}
+                {{ unrecognizedSearchQuery ? '请尝试修改搜索词，或清空筛选' : '暂存区内所有视频文件均已由自动流水线成功识别归档，暂无需要人工治理的疑难项' }}
               </p>
             </div>
 
@@ -2669,6 +2655,14 @@ onUnmounted(() => {
                       {{ item.name }}
                     </h5>
                   </div>
+                </div>
+
+                <!-- 所在完整文件夹路径展示 -->
+                <div class="flex items-center gap-1.5 text-[10.5px] text-slate-400 dark:text-slate-500 font-mono pl-5.5 -mt-0.5">
+                  <Folder class="w-3 h-3 shrink-0 text-amber-500/80" />
+                  <span class="truncate" :title="'所在目录: ' + (item.folderPath || (item.relativePath && item.relativePath.includes('/') ? item.relativePath.substring(0, item.relativePath.lastIndexOf('/')) : (item.parentFolderName || '暂存区根目录')))">
+                    {{ item.folderPath || (item.relativePath && item.relativePath.includes('/') ? item.relativePath.substring(0, item.relativePath.lastIndexOf('/')) : (item.parentFolderName || '暂存区根目录')) }}
+                  </span>
                 </div>
 
                 <!-- 标签流与卡点提示 -->
@@ -2744,18 +2738,18 @@ onUnmounted(() => {
                 </span>
               </div>
 
-              <!-- 搜索表单 -->
+              <!-- 搜索表单 (严格统一控件高度 !h-8.5，比例协调，消除过大与突兀) -->
               <div class="flex items-center gap-2">
                 <div class="relative flex-1">
                   <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                   <input
                     v-model="tmdbSearchQuery"
                     @keyup.enter="doSearchTmdb"
-                    class="input-base text-xs pl-8 py-2 w-full"
+                    class="input-base text-xs pl-8 !h-8.5 !py-1 w-full rounded-lg bg-slate-50 dark:bg-slate-800/60"
                     placeholder="输入影视中文名、拼音、原名或直接输入 TMDB ID (回车检索)..."
                   />
                 </div>
-                <select v-model="tmdbSearchMediaType" class="input-base text-xs w-28 shrink-0">
+                <select v-model="tmdbSearchMediaType" class="input-base text-xs !h-8.5 !py-1 w-24 shrink-0 rounded-lg bg-slate-50 dark:bg-slate-800/60">
                   <option value="">全部类型</option>
                   <option value="tv">电视剧</option>
                   <option value="movie">电影</option>
@@ -2764,11 +2758,11 @@ onUnmounted(() => {
                   type="button"
                   :disabled="isSearchingTmdb"
                   @click="doSearchTmdb"
-                  class="btn-primary text-xs h-[38px] px-4 shrink-0 flex items-center gap-1.5 cursor-pointer font-semibold"
+                  class="btn-primary text-xs !h-8.5 px-3.5 shrink-0 flex items-center gap-1.5 cursor-pointer font-semibold rounded-lg"
                 >
                   <RotateCw v-if="isSearchingTmdb" class="w-3.5 h-3.5 animate-spin" />
                   <Search v-else class="w-3.5 h-3.5" />
-                  <span>{{ isSearchingTmdb ? '检索中...' : '搜索 TMDB' }}</span>
+                  <span>{{ isSearchingTmdb ? '检索中...' : '搜索' }}</span>
                 </button>
               </div>
 
@@ -2843,12 +2837,12 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- 参数调整网格 -->
+              <!-- 参数调整网格 (尺寸紧凑统一 !h-8.5) -->
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <!-- 目标大类 -->
                 <div>
                   <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">媒体归档分类</label>
-                  <select v-model="targetCategory" class="input-base text-xs w-full">
+                  <select v-model="targetCategory" class="input-base text-xs !h-8.5 !py-1 w-full rounded-lg bg-slate-50 dark:bg-slate-800/60">
                     <option v-for="cat in availableCategories" :key="cat" :value="cat">{{ cat }}</option>
                   </select>
                 </div>
@@ -2862,7 +2856,7 @@ onUnmounted(() => {
                       type="number"
                       min="1"
                       max="99"
-                      class="input-base text-xs w-full font-mono text-center"
+                      class="input-base text-xs !h-8.5 !py-1 w-full font-mono text-center rounded-lg bg-slate-50 dark:bg-slate-800/60"
                     />
                     <span class="text-xs text-slate-400 shrink-0 font-mono">第 {{ targetSeason }} 季</span>
                   </div>
