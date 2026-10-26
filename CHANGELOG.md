@@ -107,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### 彻底消除多余 STRM 模式，纯粹收敛为本项目原生 302 直链生成 (Native 302 STRM Streamlining)
 - **彻底移除外部 AList/WebDAV 挂载前缀模式**：全面删除「播放直链模式」单选切换以及「自定义 AList / WebDAV 挂载前缀」相关前缀配置项，杜绝配置繁杂与额外中间件依赖；
-- **全系统纯粹收敛为本项目原生 302 直链**：系统 100% 默认采用 ttd 工业级规范的原生 302 直链生成方式，STRM 文件直接写入由本项目实时向 139 换取官方 CDN 高速直链的重定向 URL；
+- **全系统纯粹收敛为本项目原生 302 直链**：系统 100% 默认采用 本项目原生 302 直链生成方式，STRM 文件直接写入由本项目实时向 139 换取官方 CDN 高速直链的重定向 URL；
 - **零服务端中转与零反代组件**：客户端直连 139 官方 CDN 满速拉流，零宿主机带宽消耗，彻底免除部署 Nginx / emby2Alist 等反代层；
 - **界面极致简化**：本地 STRM 配置卡片大幅瘦身，仅保留「启用本地 STRM 生成」、「本地 STRM 保存根目录」、「自动剥离顶层目标目录名」及「全量重新生成 STRM 映射」，操作逻辑清晰聚焦。
 
@@ -157,7 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 新增
 
 #### 独立「媒体挂载」Tab 视图上线，彻底解耦全局设置 (Dedicated Media Mount & STRM Tab)
-- **独立导航页面 (`/mount`) 全面落地**：将「本地 STRM 生成与 302 直链播放配置 (ttd 规范)」、「Emby 增量媒体库更新通知」、「Emby 媒体删除双向联动 (入站 Webhook)」以及「AList / OpenList 外部挂载管理」从「全局设置」彻底剥离，独立设立于左侧导航「影视与媒体中心 -> 媒体挂载」页面；
+- **独立导航页面 (`/mount`) 全面落地**：将「本地 STRM 生成与 302 直链播放配置」、「Emby 增量媒体库更新通知」、「Emby 媒体删除双向联动 (入站 Webhook)」以及「AList / OpenList 外部挂载管理」从「全局设置」彻底剥离，独立设立于左侧导航「影视与媒体中心 -> 媒体挂载」页面；
 - **全量 STRM 映射一键生成与执行监控**：在「媒体挂载」视图内集成 `POST /api/strm/generate-organized` 一键扫描触发与执行统计面板（扫描总数、生成数、跳过数、失败数），支持快速对已有 139 媒体库生成本地 `.strm` 文件；
 - **全局设置页面瘦身聚焦**：全面清除「全局设置」中冗余堆砌的挂载与播放选项，保持全局设置聚焦于网络与代理、TMDB API、Telegram Bot、任务策略、定时与清理等系统核心配置。
 
@@ -165,12 +165,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 新增
 
-#### 全流程工业级本地 STRM 文件生成与 139 CDN 原生 302 直链播放引擎 (TgtoDrive / ttd 工业级规范)
-- **100% 镜像媒体库目录层级 (ttd 范式)**：媒体归档入库后，本地 STRM 保存目录完整镜像 139 网盘媒体库层级（如 `剧集/国漫/片名 (年份) {tmdb-id}/Season 01/xxx.strm`），并支持自动剥离顶层目标目录名，便于 Emby、Jellyfin、Infuse 等媒体服务器瞬间扫库；
-- **139 官方 CDN 原生 302 直链反代 (`/api/strm/stream/:fileId`)**：完全复刻 ttd 原生流控技术，播放时由系统实时向 139 获取官方 CDN 高速直链并 302 重定向至播放端，免去搭建 AList 或外部网盘中间件的繁琐步骤，0 宿主机中转流量与内存占用，全速直连串流；
+#### 全流程工业级本地 STRM 文件生成与 139 CDN 原生 302 直链播放引擎
+- **100% 镜像媒体库目录层级**：媒体归档入库后，本地 STRM 保存目录完整镜像 139 网盘媒体库层级（如 `剧集/国漫/片名 (年份) {tmdb-id}/Season 01/xxx.strm`），并支持自动剥离顶层目标目录名，便于 Emby、Jellyfin、Infuse 等媒体服务器瞬间扫库；
+- **139 官方 CDN 原生 302 直链反代 (`/api/strm/stream/:fileId`)**：基于 139 原生流控技术，播放时由系统实时向 139 获取官方 CDN 高速直链并 302 重定向至播放端，免去搭建 AList 或外部网盘中间件的繁琐步骤，0 宿主机中转流量与内存占用，全速直连串流；
 - **自定义 AList / WebDAV 挂载前缀兼容**：自由支持配置 AList、OpenList 或 WebDAV URL 前缀（如 `http://192.168.1.100:5244/d/139云盘`），满足多种媒体挂载拓扑；
 - **媒体整理全自动无缝联动**：无论是在 Telegram 频道监控自动定时归档，还是在「手动双栏整理」中执行整理入库，归档落盘后自动在本地写入对应的 `.strm` 文件，并支持向 Telegram 推送 STRM 写入统计明细（成功/跳过/失败数）；
-- **Web 控制台配置面板全景上线**：在「全局设置」提供专属「本地 STRM 与直链播放配置 (ttd 规范)」卡片，在「媒体整理配置」提供「整理入库后自动生成 STRM 文件」快捷联动开关。
+- **Web 控制台配置面板全景上线**：在「全局设置」提供专属「本地 STRM 与直链播放配置」卡片，在「媒体整理配置」提供「整理入库后自动生成 STRM 文件」快捷联动开关。
 
 ## [2.4.1] - 2026-10-14
 
@@ -304,7 +304,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 频道监控列表、立即检查、新建/编辑 Modal、抓取流水 Drawer（`#channelHistoryModal`）与重试；
   - RESTful API：`/api/channel-monitors`（CRUD + scan）与 `/api/channel-monitors/history`。
 
-#### Telegram 频道集中控制中心与 TMDB 规则工作台 (TgtoDrive 工业级范式)
+#### Telegram 频道集中控制中心与 TMDB 规则工作台
 - **多频道池化集中配置与二次分流路由引擎 (`TgChannelMonitorService`)**：
   - 支持多频道集中池化监听，解耦“数据源”与“业务策略”；
   - 新增【二次分流规则引擎】（`dispatchRules`）：支持设置匹配关键词（如 `4K`、`动漫`）自动分发到指定云盘目录 ID；

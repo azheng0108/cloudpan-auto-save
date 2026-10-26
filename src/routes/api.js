@@ -502,7 +502,7 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // 网络代理与关键外部服务连通性诊断测试 (严格复刻 TgtoDrive / ttd 9大核心域名测速矩阵)
+    // 网络代理与关键外部服务连通性诊断测试
     app.post('/api/settings/test-proxy', async (req, res) => {
         try {
             const { proxyUrl = '' } = req.body || {};
@@ -575,7 +575,7 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // 主机器人连通性与发送测试消息 (参考 TgtoDrive / ttd)
+    // 主机器人连通性与发送测试消息
     app.post('/api/settings/test-telegram', async (req, res) => {
         try {
             const { botToken = '', chatId = '', proxyUrl = '' } = req.body || {};
@@ -1912,7 +1912,7 @@ const registerApiRoutes = (app, deps) => {
     });
 
     // ═════════════════════════════════════════════════════════════════════
-    // STRM 文件生成与 302 直链播放服务 (采用与 TgtoDrive / ttd 相同技术规范)
+    // STRM 文件生成与 302 直链播放服务
     // ═════════════════════════════════════════════════════════════════════
 
     // 1. 原生 302 直链反代流播放接口 (支持 Emby / Jellyfin / Infuse / 播放器直连，零服务器中转带宽)

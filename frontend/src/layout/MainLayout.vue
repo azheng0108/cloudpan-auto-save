@@ -23,12 +23,15 @@ import {
   Tv,
 } from 'lucide-vue-next';
 import { isDark, toggleTheme, initTheme } from '../composables/useTheme';
+import NoticeModal from '../components/NoticeModal.vue';
+import { HelpCircle } from 'lucide-vue-next';
 
 const route = useRoute();
 const router = useRouter();
 
 // 移动端侧边栏展开状态
 const sidebarOpen = ref(false);
+const showNoticeModal = ref(false);
 
 // 手风琴折叠状态 (使用 reactive 保证双向绑定与持久化)
 const groupCollapsed = reactive({
@@ -47,6 +50,13 @@ function toggleGroup(groupId: 'system' | 'cloud139' | 'media') {
 onMounted(() => {
   // 初始化暗黑/亮色主题
   initTheme();
+
+  // 登录进入控制台后，若尚未确认过 v2.4.15 更新规范则自动弹出须知弹窗
+  try {
+    if (localStorage.getItem('cloudpan_v2415_notice_ack') !== 'true') {
+      showNoticeModal.value = true;
+    }
+  } catch (err) {}
 
   // 恢复本地存储的手风琴折叠偏好
   (['system', 'cloud139', 'media'] as const).forEach((gid) => {
@@ -380,7 +390,8 @@ function handleHeaderSaveClick() {
       </main>
     </div>
   </div>
-</template>
+    <NoticeModal v-model="showNoticeModal" />
+  </template>
 
 <style scoped>
 </style>

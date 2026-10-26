@@ -107,7 +107,7 @@ class ConfigService {
         syncDeleteTask: true,
         protectedPaths: ['/', '/媒体库', '/media', '/strm', '/公共目录']
       },
-      // 本地 STRM 文件生成配置 (兼容 ttd 302 原生直链与 AList/WebDAV 模式)
+      // 本地 STRM 文件生成配置 (支持 302 原生直链与 AList/WebDAV 模式)
       strm: {
         enable: false,
         outputDir: '',
