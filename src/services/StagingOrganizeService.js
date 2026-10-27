@@ -207,7 +207,9 @@ class StagingOrganizeService {
                 continue;
             }
 
+            let lastErr = null;
             const res = await cloud139.createFolderHcy(currentId, seg).catch(err => {
+                lastErr = err;
                 logger.warn(`[暂存整理-建目录] 创建目录 "${seg}" 失败: ${err.message}`);
                 return null;
             });
@@ -219,6 +221,14 @@ class StagingOrganizeService {
                 if (matched) {
                     this._dirCache.set(stepKey, matched);
                     currentId = matched;
+                } else {
+                    // 若在基准目录下创建首段就遇到 04000010（资源不存在），说明 baseFolderId 已在云盘端被删除或失效！自动自愈回退至根目录重新建链
+                    if (currentId === baseFolderId && baseFolderId !== '/' && lastErr?.message?.includes('04000010')) {
+                        logger.warn(`[暂存整理-自愈] 基准目录 (ID: ${baseFolderId}) 在云端不存在(04000010)，自动回退至根目录重新构建全量层级...`);
+                        this._dirCache.delete(cacheKey);
+                        return this.ensureFolderPath(cloud139, folderPath, '/', '');
+                    }
+                    throw new Error(`创建网盘目录失败: "${seg}" (父目录ID: ${currentId}): ${lastErr?.message || '无法获取或创建目录节点'}`);
                 }
             }
         }
