@@ -3460,11 +3460,15 @@ const TaskManager = {
                             successCount++;
                         });
                     } catch (e) {
-                        Logger.error(`[TMDB整理] 批量移动至 ${folderPath} 失败: ${e.message}`);
+                        const isMissingResource = String(e.message || '').includes('04000010');
+                        const errorMsg = isMissingResource
+                            ? `批量移动失败: 目标目录或待移动文件在 139 云盘中已不存在(04000010)，请重新选定归档目标目录: ${e.message}`
+                            : `批量移动失败: ${e.message}`;
+                        Logger.error(`[TMDB整理] 批量移动至 ${folderPath} 失败: ${errorMsg}`);
                         // 移动失败：将移动项确立为 failed，绝不虚假上报成功
                         folderTasks.filter(t => moveIds.includes(t.fileId) && t.status !== 'failed').forEach(t => {
                             t.status = 'failed';
-                            t.error = `批量移动失败: ${e.message}`;
+                            t.error = errorMsg;
                             failCount++;
                         });
                     }
