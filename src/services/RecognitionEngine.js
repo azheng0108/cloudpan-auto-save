@@ -905,18 +905,68 @@ class RecognitionEngine {
          */
         static sanitizeMediaTitle(raw) {
             if (!raw) return '';
-            let s = String(raw).trim();
-            // 1. 去除无意义的外层括号与引流前缀 (如 【4K国漫】、【最新更新】、[4K修复] 等)
-            s = s.replace(/^[\[【（\(](?:4k|1080p|国漫|国漫4k|动漫|连续剧|美剧|韩剧|日剧|短剧|电影|高清|首发|独家|合集|全集|最新|更新|超清)[\]】）\)]\s*/i, '');
-            // 2. 剥离常见网盘宣传与广告后缀 (如 "每周日更新", "139网盘", "夸克网盘", "关注防封", "未删减", "更新至xx集", "持续更新", "全集打包")
-            s = s.replace(/(?:[._\-\s])?(?:每周[一二三四五六日天]?更[新]?|139网盘|移动云盘|夸克网盘|百度网盘|阿里网盘|关注[^\s._\-]+|防封[^\s._\-]*|未删减[^\s._\-]*|持续更新|更新至\s*\d+\s*[集话]?|全\s*\d+\s*[集话]|全集(?:打包)?|官方原盘|内封字幕|4K超清|HDR版本).*/i, '');
-            // 3. 核心防封字符剥离：汉字之间夹带的竖线、全角竖线、斜线、反斜线、点号、顿号、音符等防封干扰符
+            let s = String(raw).trim().replace(/.(?:mkv|mp4|iso|avi|rmvb|flv|ts|webm|m4v)$/i, '').trim();
+
+            // 1. 如果整体被外层括号包裹，如【遮天】，先解构
+            s = s.replace(/^[【\[（\(]([^【】\[\]（）()]+)[】\]）\)]$/, '$1').trim();
+
+            // 2. 剥离前缀宣传标签，如【4K国漫】、【最新更新】、[1080P]、[国漫] 等
+            while (/^[【\[（\(][^】\]）\)]+[】\]）\)]\s*/.test(s)) {
+                const next = s.replace(/^[【\[（\(][^】\]）\)]+[】\]）\)]\s*/, '').trim();
+                if (next) s = next;
+                else break;
+            }
+
+            // 3. 剥离括号包裹的年份 (如 "(2023)", "（2023）", "[2024]")
+            s = s.replace(/[\(\[（【]\s*(?:19\d\d|20[0-3]\d)\s*[\)\]）】]/g, ' ');
+
+            // 4. 剥离更新状态、集数后缀与引流宣传 (如 "更新到166集", "更至18集", "全36集", "完结", "持续更新", "139网盘" 等)
+            s = s.replace(/(?:[._\-\s/]+)?(?:更新[到至中]|更[到至]|连载[到至中]|完结|已完结|全\s*\d+\s*[集话期全]|第\s*\d+\s*[集话期全]|每周[一二三四五六日天周]?\s*更[新]?|持续更新|139网盘|移动云盘|夸克网盘|夸克|百度网盘|百度云|阿里网盘|阿里云盘|天翼云盘|迅雷网盘|关注[^\s._\-]+|防封[^\s._\-]*|未删减[^\s._\-]*|内封字幕|官方原盘|4K超清|HDR版本).*/i, '');
+
+            // 5. 剥离技术规格词与画质
+            s = s.replace(/\b(?:4K|2160[pi]?|1080[pi]?|720[pi]?|480[pi]?|HD|BD|UHD|HDR\d*|DV|WEB-?DL|WEBRip|BDRip|Remux|HEVC|H\.?26[45]|x26[45]|60fps|120fps|60帧|120帧|高码率|无损|自压|S\d+(?:E\d+)?|EP?\d+)\b/gi, ' ');
+            s = s.replace(/(?:[._\-\s]+)?(?:4K超清|超清4K|1080P超清|蓝光|高码率|60帧|120帧|国漫|动漫|连续剧|电影)[\s._\-]*/gi, ' ');
+
+            // 6. 提取并清理点号/空格分隔的年份 (如 "白夜破晓.2024" -> "白夜破晓", 但保留纯片名如 "1917")
+            s = s.replace(/(?<=[\u4e00-\u9fffA-Za-z])[._\-\s]+(19\d\d|20[0-3]\d)(?=[._\-\s]|$)/g, ' ');
+
+            // 7. 剥离末尾残留的括号标签，如 [1080P/60帧]
+            s = s.replace(/[\(\[（【][^）\]）】]*[）\]）】]$/g, ' ');
+
+            // 8. 汉字间防封混淆字符处理
             s = s.replace(/([\u4e00-\u9fff])\s*[丨|｜/\\丿丶•·~～]\s*([\u4e00-\u9fff])/g, '$1$2');
             s = s.replace(/([\u4e00-\u9fff])\s*[丨|｜/\\丿丶•·~～]\s*([\u4e00-\u9fff])/g, '$1$2');
             s = s.replace(/[丨|｜丶]/g, '');
-            // 4. 清洗普通标点与多余空白
-            s = s.replace(/^[._\-\s]+|[._\-\s]+$/g, '').trim();
+
+            // 9. 首尾符号清理与空格压缩
+            s = s.replace(/^[^a-zA-Z0-9\u4e00-\u9fff]+|[^a-zA-Z0-9\u4e00-\u9fff]+$/g, '').replace(/\s+/g, ' ').trim();
+
+            // 10. 停用词校验 (若纯为画质、修饰词或格式水印则返回空)
+            if (/^(?:4k|1080p|720p|hd|bd|web-?dl|hdr|全集|合集|短剧|电影|动漫|国漫|原盘|自压|修复|重制|精选|典藏|无损|更新|连载|高清|超清|标清|蓝光|原画|高码|高码率|抢先版|国语|粤语|台配|英语|日语|中字|中文字幕|双语字幕|简繁双字)+$/i.test(s)) {
+                return '';
+            }
+
             return s;
+        }
+
+        /**
+         * 结构化提取影视标题、年份与集数元数据
+         * @param {string} raw
+         * @returns {{ title: string, year: string, episode: number }}
+         */
+        static extractMediaTitleMeta(raw) {
+            if (!raw) return { title: '', year: '', episode: 0 };
+            const clean = this.sanitizeMediaTitle(raw);
+            const year = this.extractYear(raw);
+            let episode = 0;
+            const epMatch = String(raw).match(/(?:更新[到至]|更[到至]|连载[到至]|全|第)\s*(\d+)\s*[集话期]/i) || String(raw).match(/(\d+)\s*[集话期]/i);
+            if (epMatch) {
+                const num = parseInt(epMatch[1], 10);
+                if (!isNaN(num) && num > 0 && num < 5000) {
+                    episode = num;
+                }
+            }
+            return { title: clean, year, episode };
         }
 
         static tmdbSearchQueries(title, rawName = '', englishTitle = '') {
@@ -3483,10 +3533,11 @@ class RecognitionEngine {
                 case 'fileSize': {
                     const sizeA = Number(a.size || 0);
                     const sizeB = Number(b.size || 0);
-                    if (sizeA > 0 && sizeB > 0 && Math.abs(sizeA - sizeB) > 50 * 1024 * 1024) {
+                    const threshold = Math.max(sizeA, sizeB) > 100 * 1024 * 1024 ? 50 * 1024 * 1024 : 0;
+                    if (sizeA > 0 && sizeB > 0 && Math.abs(sizeA - sizeB) > threshold) {
                         const aBetter = policy.conflictMode === 0 ? sizeA < sizeB : sizeA > sizeB;
-                        const sizeStrA = (sizeA / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-                        const sizeStrB = (sizeB / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+                        const sizeStrA = sizeA >= 1024 * 1024 * 1024 ? (sizeA / (1024 * 1024 * 1024)).toFixed(2) + ' GB' : (sizeA >= 1024 * 1024 ? (sizeA / (1024 * 1024)).toFixed(2) + ' MB' : sizeA + ' B');
+                        const sizeStrB = sizeB >= 1024 * 1024 * 1024 ? (sizeB / (1024 * 1024 * 1024)).toFixed(2) + ' GB' : (sizeB >= 1024 * 1024 ? (sizeB / (1024 * 1024)).toFixed(2) + ' MB' : sizeB + ' B');
                         return {
                             cmp: aBetter ? -1 : 1,
                             winner: aBetter ? 'a' : 'b',

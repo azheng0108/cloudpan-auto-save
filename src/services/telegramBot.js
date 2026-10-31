@@ -8,6 +8,55 @@ const path = require('path');
 const ProxyUtil = require('../utils/ProxyUtil');
 const Cloud139Utils = require('../utils/Cloud139Utils');
 const logger = require('../utils/logger');
+const MessageService = require('./message/MessageService');
+
+/**
+ * 指令注册表：在役指令全集的单一事实来源。
+ * 菜单注册（start→setMyCommands）、指令监听（initCommands→onText）、
+ * 帮助文本（buildHelpText）三处均由本常量同源派生，消除清单漂移。
+ */
+const COMMANDS = Object.freeze([
+    Object.freeze({ name: 'help', aliases: [], group: '基础命令', description: '显示帮助信息', pattern: /^\/help$/, handler: 'showHelp', registerMenu: true, requireAccount: false }),
+    Object.freeze({ name: 'accounts', aliases: [], group: '基础命令', description: '账号列表与切换', pattern: /^\/accounts$/, handler: 'showAccounts', registerMenu: true, requireAccount: false }),
+    Object.freeze({ name: 'tasks', aliases: [], group: '基础命令', description: '显示下载任务列表', pattern: /^\/tasks$/, handler: 'showTasks', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'fl', aliases: [], group: '基础命令', description: '常用目录列表', pattern: /^\/fl$/, handler: 'showCommonFolders', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'fs', aliases: [], group: '基础命令', description: '添加常用目录', pattern: /^\/fs$/, handler: 'showFolderTree', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'cancel', aliases: [], group: '基础命令', description: '取消当前操作', pattern: /^\/cancel$/, handler: 'cancelOperation', registerMenu: true, requireAccount: false }),
+    Object.freeze({ name: 'execute', aliases: [], group: '任务操作', description: '执行指定任务', pattern: /^\/execute_(\d+)$/, paramHint: '[ID]', handler: 'executeTask', registerMenu: false, requireAccount: false }),
+    Object.freeze({ name: 'execute_all', aliases: [], group: '任务操作', description: '执行所有任务', pattern: /^\/execute_all$/, handler: 'executeAllTasks', registerMenu: true, requireAccount: false }),
+    Object.freeze({ name: 'dt', aliases: [], group: '任务操作', description: '删除指定任务', pattern: /^\/dt_(\d+)$/, paramHint: '[ID]', handler: 'deleteTaskPrompt', registerMenu: false, requireAccount: false }),
+    Object.freeze({ name: 'scan_banned', aliases: [], group: '云盘运维', description: '违规死链全盘巡检', pattern: /^\/scan_banned$/, handler: 'handleScanBanned', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'clean_banned', aliases: [], group: '云盘运维', description: '一键清理违规死链', pattern: /^\/clean_banned$/, handler: 'handleCleanBanned', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'clean_empty', aliases: ['sweep_empty'], group: '云盘运维', description: '修剪空文件夹', pattern: /^\/(?:clean_empty|sweep_empty)$/, handler: 'handleSweepEmpty', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'dedup', aliases: ['dedup_scan'], group: '云盘运维', description: '多版本资产去重巡检', pattern: /^\/(?:dedup|dedup_scan)$/, handler: 'handleScanDedup', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'dedup_clean', aliases: [], group: '云盘运维', description: '一键清理冗余多版本', pattern: /^\/dedup_clean$/, handler: 'handleCleanDedup', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'tmdb', aliases: [], group: '媒体查询', description: 'TMDB 影视信息查询', pattern: /^\/tmdb(?:\s+(.+))?$/, paramHint: '[片名] [年份]', handler: 'handleTmdb', registerMenu: true, requireAccount: false }),
+]);
+
+const COMMAND_GROUP_ORDER = ['基础命令', '任务操作', '云盘运维', '媒体查询'];
+const COMMAND_GROUP_ICONS = { '基础命令': '📋', '任务操作': '📝', '云盘运维': '🛠', '媒体查询': '🎬' };
+
+// 指令挂载时仅需要 chatId 的 handler（其第二参数为按钮回调场景专用，指令场景不传）
+const CHAT_ONLY_HANDLERS = new Set(['showAccounts', 'showTasks', 'showCommonFolders', 'showFolderTree']);
+
+/**
+ * 由 COMMANDS 注册表按分组模板化生成帮助文本：条目全局连续编号，
+ * 含参数格式说明，末尾保留"发送 139 分享链接创建任务"引导段
+ * @returns {string}
+ */
+function buildHelpText() {
+    let index = 0;
+    const sections = COMMAND_GROUP_ORDER.map((group) => {
+        const items = COMMANDS.filter(cmd => cmd.group === group).map((cmd) => {
+            index += 1;
+            const paramHint = cmd.paramHint ? ` ${cmd.paramHint}` : '';
+            return `${index}. /${cmd.name}${paramHint} - ${cmd.description}`;
+        });
+        return `${COMMAND_GROUP_ICONS[group]} ${group}：\n${items.join('\n')}`;
+    });
+    return '🤖 云盘机器人使用指南\n\n' + sections.join('\n\n') +
+        '\n\n📥 创建任务：\n直接发送移动云盘(139)分享链接即可创建任务\n格式：链接（支持访问码的链接）';
+}
 
 class TelegramBotService {
     constructor(token, chatId) {
@@ -32,8 +81,12 @@ class TelegramBotService {
         // 全局任务列表消息id
         this.globalTaskListMessageId = null;
         // 全局常用目录列表消息id
-        this.globalCommonFolderListMessageId = null;        this.isSearchMode = false;
-        this.searchModeTimeout = null;  // 搜索模式超时计时器
+        this.globalCommonFolderListMessageId = null;
+        // 巡检结果缓存（供对应清理指令复用，stop() 时清理）
+        this._lastBannedFiles = null;
+        this._lastDedupPlan = null;
+        // 下线/未知指令引导的会话内节流时间戳（60 秒窗口）
+        this._lastPlainGuideAt = 0;
         this.tmdbService = new TMDBService();
     }
 
@@ -67,15 +120,13 @@ class TelegramBotService {
             logger.error('Telegram Bot error', { error: error.message, stack: error.stack });
         });
         
-        // 设置命令菜单
-        await this.bot.setMyCommands([
-            { command: 'help', description: '帮助信息' },            { command: 'accounts', description: '账号列表' },
-            { command: 'tasks', description: '任务列表' },
-            { command: 'execute_all', description: '执行所有任务' },
-            { command: 'fl', description: '常用目录列表' },
-            { command: 'fs', description: '添加常用目录' },
-            { command: 'cancel', description: '取消当前操作' }
-        ]);
+        // 设置命令菜单：由 COMMANDS 注册表派生（registerMenu=true 的主指令子集）
+        await this.bot.setMyCommands(
+            COMMANDS.filter(cmd => cmd.registerMenu).map(cmd => ({
+                command: cmd.name,
+                description: cmd.description,
+            }))
+        );
         // 从数据库中加载默认的账号
         const account = await this.accountRepo.findOne({
             where: { tgBotActive: true }
@@ -94,18 +145,21 @@ class TelegramBotService {
             // 发送机器人停止消息
             await this.bot.stopPolling();
             this.bot = null;
-            // 清理状态
+            // 清理状态（全量：含巡检缓存、引导节流与目录导航缓存，保证无感重建后全新状态）
             this.currentAccountId = null;
             this.currentAccount = null;
             this.currentShareLink = null;
             this.currentAccessCode = null;
             this.lastButtonMessageId = null;
             this.currentFolderPath = '';
-            this.currentFolderId = '-11';
+            this.currentFolderId = '/';
             this.folders.clear();
             this.parentFolderIds.clear();
             this.globalTaskListMessageId = null;
             this.globalCommonFolderListMessageId = null;
+            this._lastBannedFiles = null;
+            this._lastDedupPlan = null;
+            this._lastPlainGuideAt = 0;
             return true;
         } catch (error) {
             logger.error('停止机器人失败', { error: error.message, stack: error.stack });
@@ -114,80 +168,29 @@ class TelegramBotService {
     }
 
     initCommands() {
-        this.bot.onText(/\/help/, async (msg) => {
-            const helpText = 
-                '🤖 云盘机器人使用指南\n\n' +
-                '📋 基础命令：\n' +
-                '/help - 显示帮助信息\n' +
-                '/accounts - 账号列表与切换\n' +
-                '/tasks - 显示下载任务列表\n' +
-                '/fl - 显示常用目录列表\n' +
-                '/fs - 添加常用目录\n' +
-                '/cancel - 取消当前操作\n\n' +
-                '📥 创建任务：\n' +
-                '直接发送移动云盘(139)分享链接即可创建任务\n' +
-                '格式：链接（支持访问码的链接）\n\n' +
-                '📝 任务操作：\n' +
-                '/execute_[ID] - 执行指定任务\n' +
-                '/execute_all - 执行所有任务\n' +
-                '/dt_[ID] - 删除指定任务\n' +
-
-                '🔍 资源搜索：\n' +
-                '2. 直接输入关键字搜索资源\n' +
-                '3. 点击搜索结果中的链接可复制\n' +
-                '4. 输入 /cancel 退出搜索模式';
-
-            await this.bot.sendMessage(msg.chat.id, helpText);
-        });
-
-
-        this.bot.on('message', async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)){
-                return;
-            }
-            // 忽略命令消息
-            if (msg.text?.startsWith('/')) return;
-            // 搜索模式下处理消息
-            if (this.isSearchMode) {
-                const input = msg.text?.trim();
-                // 判断是否为纯数字
-                if (/^\d+$/.test(input)) {
-                    const index = parseInt(input);
-                    const cacheShareLink = this.cloudSaverSearchMap.get(index);
-                    if (!cacheShareLink) {
-                        this.bot.sendMessage(chatId, '无效的编号');
-                        return;
+        // 指令注册表驱动挂载：主指令与别名经同一 pattern 命中同一 handler，行为完全等价
+        for (const cmd of COMMANDS) {
+            this.bot.onText(cmd.pattern, async (msg, match) => {
+                const chatId = msg.chat.id;
+                if (!this._checkChatId(chatId)) return;
+                if (cmd.requireAccount && !this._checkUserId(chatId)) return;
+                try {
+                    if (CHAT_ONLY_HANDLERS.has(cmd.handler)) {
+                        await this[cmd.handler](chatId);
+                    } else {
+                        await this[cmd.handler](chatId, match, msg);
                     }
-                    try {
-                        let shareLink, accessCode;
-                        if (/(?:yun|caiyun)\.139\.com/i.test(cacheShareLink)) {
-                            const extracted = Cloud139Utils.extractFromShareText(cacheShareLink);
-                            shareLink = extracted ? extracted.url : cacheShareLink;
-                            accessCode = extracted?.passwd || '';
-                        } else {
-                            // 其他来源链接，直接发送给用户
-                            await this.bot.sendMessage(chatId, `🔗 资源链接（非139云盘，请手动处理）:\n${cacheShareLink}`);
-                            return;
-                        }
-                        // 处理分享链接
-                        await this.handleFolderSelection(chatId, shareLink, null, accessCode);
-                        return
-                    }catch(e){
-                        this.bot.sendMessage(chatId, `处理失败: ${e.message}`);
-                        return;
-                    }
+                } catch (error) {
+                    logger.error(`指令 /${cmd.name} 处理异常`, { error: error.message, stack: error.stack });
+                    await this._safeSendMessage(chatId, `处理失败: ${error.message}`).catch(() => {});
                 }
-                this.cloudSaverSearch(chatId, msg)
-            }
-        });
+            });
+        }
 
-        // 139 移动云盘分享链接直接识别
-        this.bot.onText(/(?:yun|caiyun)\.139\.com/, async (msg) => {
+        // 139 移动云盘分享链接直接识别（消息任意位置含链接即触发）
+        this.bot.onText(/(?:yun|caiyun)\.139\.com/i, async (msg) => {
             const chatId = msg.chat.id;
             if (!this._checkChatId(chatId)) return;
-            // 如果处于搜索模式，则不处理
-            if (this.isSearchMode) return;
             try {
                 if (!this._checkUserId(chatId)) return;
                 if (!await this._ensureAccountType(chatId, 'cloud139')) return;
@@ -197,151 +200,26 @@ class TelegramBotService {
                 await this.handleFolderSelection(chatId, shareLink, null, accessCode);
             } catch (error) {
                 logger.error('处理139分享链接失败', { error: error.message, stack: error.stack });
-                this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
+                await this._safeSendMessage(chatId, `处理失败: ${error.message}`).catch(() => {});
             }
         });
 
-
-        // 添加账号列表命令
-        this.bot.onText(/\/accounts/, async (msg) => {
-            await this.showAccounts(msg.chat.id);
-        });
-
-        // 添加任务列表命令
-        this.bot.onText(/\/tasks/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return
-            if (!this._checkUserId(chatId)) return
-            await this.showTasks(msg.chat.id);
-        });
-
-        // 添加常用目录查询命令
-        this.bot.onText(/\/fl$/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return
-            if (!this._checkUserId(chatId)) return
-            await this.showCommonFolders(chatId);
-        });
-
-        this.bot.onText(/\/fs$/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return
-            if (!this._checkUserId(chatId)) return
-            await this.showFolderTree(chatId);
-        });
-
-        // 违规文件全盘巡检命令
-        this.bot.onText(/\/scan_banned$/, async (msg) => {
+        // 普通消息：旧"资源搜索"模式已下线，给出引导提示（60 秒节流防轰炸）；未知指令引导
+        this.bot.on('message', async (msg) => {
             const chatId = msg.chat.id;
             if (!this._checkChatId(chatId)) return;
-            if (!this._checkUserId(chatId)) return;
-            await this.handleScanBanned(chatId);
-        });
-
-        // 违规文件一键清理命令
-        this.bot.onText(/\/clean_banned$/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return;
-            if (!this._checkUserId(chatId)) return;
-            await this.handleCleanBanned(chatId);
-        });
-
-        // 空文件夹修剪命令
-        this.bot.onText(/\/(?:clean_empty|sweep_empty)$/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return;
-            if (!this._checkUserId(chatId)) return;
-            await this.handleSweepEmpty(chatId);
-        });
-
-        // 多版本资产去重巡检命令
-        this.bot.onText(/\/(?:dedup|dedup_scan)$/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return;
-            if (!this._checkUserId(chatId)) return;
-            await this.handleScanDedup(chatId);
-        });
-
-        // 多版本资产去重一键清理命令
-        this.bot.onText(/\/dedup_clean$/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return;
-            if (!this._checkUserId(chatId)) return;
-            await this.handleCleanDedup(chatId);
-        });
-
-        // 执行任务
-        this.bot.onText(/^\/execute_(\d+)$/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const taskId = match[1];
-            if (!this._checkChatId(chatId)) return
-            if(!this._checkTaskId(taskId)) return;
-            const message = await this.bot.sendMessage(chatId, `任务开始执行`);
-            try{
-                await this.taskService.processAllTasks(true, [taskId])   
-                this.bot.deleteMessage(chatId, message.message_id);
-                await this.bot.sendMessage(chatId, `任务执行完成`);
-            }catch(e){
-                await this.bot.editMessageText(`任务执行失败: ${e.message}`, {
-                    chat_id: chatId,
-                    message_id: message.message_id
-                });
+            const text = typeof msg.text === 'string' ? msg.text : '';
+            if (!text) return;
+            // 指令消息由注册表 onText 分发处理
+            if (text.startsWith('/')) {
+                if (this._isUnknownCommand(text)) {
+                    this._throttledGuide(chatId, '未知指令，发送 /help 查看可用指令');
+                }
                 return;
             }
-        })
-
-        // 执行所有任务
-        this.bot.onText(/^\/execute_all$/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return
-            const message = await this.bot.sendMessage(chatId, `开始执行所有任务...`);
-            try {
-                await this.taskService.processAllTasks(true);
-                this.bot.editMessageText("所有任务执行完成", {
-                    chat_id: chatId,
-                    message_id: message.message_id
-                });
-            } catch(e) {
-                await this.bot.editMessageText(`任务执行失败: ${e.message}`, {
-                    chat_id: chatId,
-                    message_id: message.message_id
-                });
-            }
-        });
-
-        // 添加删除任务命令
-        this.bot.onText(/\/dt_(\d+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const taskId = match[1];
-            if (!this._checkChatId(chatId)) return
-            const keyboard = [
-                [
-                    { text: '是', callback_data: JSON.stringify({ t: 'dt', i: taskId, c: true, df: true }) },
-                    { text: '否', callback_data: JSON.stringify({ t: 'dt', i: taskId, c: true, df: false }) }
-                ],
-                [{ text: '取消', callback_data: JSON.stringify({ t: 'dt', c: false }) }]
-            ];
-            await this.bot.sendMessage(chatId, '是否同步删除网盘文件？', {
-                reply_markup: { inline_keyboard: keyboard }
-            });
-        });
-        this.bot.onText(/\/cancel/, async (msg) => {
-            const chatId = msg.chat.id;
-            if (!this._checkChatId(chatId)) return
-            // 清除缓存
-            this.currentShareLink = null;
-            this.currentAccessCode = null;
-            this.isSearchMode = false;  // 退出搜索模式
-            try {
-                if (this.lastButtonMessageId) {
-                    await this.bot.deleteMessage(chatId, this.lastButtonMessageId);
-                    this.lastButtonMessageId = null;
-                }
-            } catch (error) {
-                logger.warn('删除消息失败', { error: error.message, stack: error.stack });
-            }
-            
-            await this.bot.sendMessage(chatId, '已取消当前操作');
+            // 含 139 分享链接的混合消息由链接识别分支处理，避免双重响应
+            if (/(?:yun|caiyun)\.139\.com/i.test(text)) return;
+            this._throttledGuide(chatId, '🔍 资源搜索功能已下线。\n发送 /help 查看可用指令，或直接发送 139 分享链接创建任务');
         });
 
         // 修改回调处理
@@ -357,10 +235,7 @@ class TelegramBotService {
                         break;
                     case 'of': // 覆盖文件夹
                         if (!data.o) {
-                            await this.bot.editMessageText("已取消任务创建",{
-                                chat_id: chatId,
-                                message_id: messageId
-                            });
+                            await this._safeEditMessageText(chatId, messageId, '已取消任务创建');
                             return;
                         }
                         await this.createTask(chatId, data, messageId);
@@ -373,10 +248,7 @@ class TelegramBotService {
                         break;
                     case 'dt': // 删除任务
                         if (!data.c) {
-                            await this.bot.editMessageText("已取消删除",{
-                                chat_id: chatId,
-                                message_id: messageId
-                            });
+                            await this._safeEditMessageText(chatId, messageId, '已取消删除');
                             return;
                         }
                         await this.deleteTask(chatId, data, messageId);
@@ -385,7 +257,7 @@ class TelegramBotService {
                         await this.showFolderTree(chatId, data, messageId);
                         break;
                     case 'fc': // 取消操作
-                        await this.bot.deleteMessage(chatId, messageId);
+                        await this.bot.deleteMessage(chatId, messageId).catch(() => {});
                         break;
                     case 'fs': // 保存当前目录
                         await this.saveFolderAsFavorite(chatId, data, messageId);
@@ -405,80 +277,150 @@ class TelegramBotService {
                         break;
                 }
             } catch (error) {
-                this.bot.sendMessage(chatId, `处理失败: ${error.message}`);
+                logger.error('回调处理异常', { error: error.message, stack: error.stack });
+                await this._safeSendMessage(chatId, `处理失败: ${error.message}`).catch(() => {});
             }
         });
+    }
 
+    async showHelp(chatId) {
+        await this._safeSendMessage(chatId, buildHelpText());
+    }
 
-
-        // 添加TMDB搜索命令
-        this.bot.onText(/\/tmdb (.+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const input = match[1];
-            if (!this._checkChatId(chatId)) return
-            let title, year;
-
-            // 解析输入的标题和年份
-            const yearMatch = input.match(/^(.+?)(?:\s+(\d{4}))?$/);
-            if (yearMatch) {
-                title = yearMatch[1].trim();
-                year = yearMatch[2];
+    async cancelOperation(chatId) {
+        // 清除缓存
+        this.currentShareLink = null;
+        this.currentAccessCode = null;
+        try {
+            if (this.lastButtonMessageId) {
+                await this.bot.deleteMessage(chatId, this.lastButtonMessageId);
+                this.lastButtonMessageId = null;
             }
+        } catch (error) {
+            logger.warn('删除消息失败', { error: error.message, stack: error.stack });
+        }
+        await this._safeSendMessage(chatId, '已取消当前操作');
+    }
 
-            const message = await this.bot.sendMessage(chatId, '正在搜索...');
-            try {
-                const results = await this.tmdbService.search(title, year);
-                let responseText = '';
-                logger.info('搜索结束')
-                // 先发送海报图片
-                const firstPoster = results.movies[0]?.posterPath || results.tvShows[0]?.posterPath;
+    async executeTask(chatId, match) {
+        const taskId = match[1];
+        const message = await this._safeSendMessage(chatId, '任务开始执行');
+        if (!message) return;
+        try {
+            await this.taskService.processAllTasks(true, [taskId]);
+            await this.bot.deleteMessage(chatId, message.message_id).catch(() => {});
+            await this._safeSendMessage(chatId, '任务执行完成');
+        } catch (e) {
+            await this._safeEditMessageText(chatId, message.message_id, `任务执行失败: ${e.message}`);
+        }
+    }
 
-                if (results.movies.length > 0) {
-                    responseText += '📽 电影：\n\n';
-                    results.movies.forEach(movie => {
-                        const shortOverview = movie.overview ? 
-                            (movie.overview.length > 20 ? movie.overview.substring(0, 20) + '...' : movie.overview) : 
-                            '暂无';
-                        
-                        responseText += `标题：${movie.title}\n` +
-                            `原标题：${movie.originalTitle}\n` +
-                            `上映日期：${movie.releaseDate}\n` +
-                            `评分：${movie.voteAverage}\n` +
-                            `简介：${shortOverview}\n\n`;
-                    });
-                }
+    async executeAllTasks(chatId) {
+        const message = await this._safeSendMessage(chatId, '开始执行所有任务...');
+        if (!message) return;
+        try {
+            await this.taskService.processAllTasks(true);
+            await this._safeEditMessageText(chatId, message.message_id, '所有任务执行完成');
+        } catch (e) {
+            await this._safeEditMessageText(chatId, message.message_id, `任务执行失败: ${e.message}`);
+        }
+    }
 
-                if (results.tvShows.length > 0) {
-                    responseText += '📺 剧集：\n\n';
-                    results.tvShows.forEach(show => {
-                        const shortOverview = show.overview ? 
-                            (show.overview.length > 20 ? show.overview.substring(0, 20) + '...' : show.overview) : 
-                            '暂无';
-
-                        responseText += `标题：${show.title}\n` +
-                            `原标题：${show.originalTitle}\n` +
-                            `首播日期：${show.releaseDate}\n` +
-                            `评分：${show.voteAverage}\n` +
-                            `简介：${shortOverview}\n\n`;
-                    });
-                }
-
-                if (!results.movies.length && !results.tvShows.length) {
-                    responseText = '未找到相关影视信息';
-                }
-                logger.info('获取到的海报', { firstPoster })
-                this.bot.deleteMessage(chatId, message.message_id);
-                this.bot.sendPhoto(chatId, firstPoster, {
-                    caption: responseText,
-                    parse_mode: 'HTML'
-                });
-            } catch (error) {
-                await this.bot.editMessageText(`搜索失败: ${error.message}`, {
-                    chat_id: chatId,
-                    message_id: message.message_id
-                });
-            }
+    async deleteTaskPrompt(chatId, match) {
+        const taskId = match[1];
+        const keyboard = [
+            [
+                { text: '是', callback_data: JSON.stringify({ t: 'dt', i: taskId, c: true, df: true }) },
+                { text: '否', callback_data: JSON.stringify({ t: 'dt', i: taskId, c: true, df: false }) }
+            ],
+            [{ text: '取消', callback_data: JSON.stringify({ t: 'dt', c: false }) }]
+        ];
+        await this._safeSendMessage(chatId, '是否同步删除网盘文件？', {
+            replyMarkup: { inline_keyboard: keyboard }
         });
+    }
+
+    // TMDB 影视信息查询：/tmdb [片名] [年份]
+    async handleTmdb(chatId, match) {
+        const input = match && match[1] ? String(match[1]).trim() : '';
+        if (!input) {
+            await this._safeSendMessage(chatId, '用法：/tmdb [片名] [年份]\n示例：/tmdb 星际穿越 2014');
+            return;
+        }
+        let title, year;
+
+        // 解析输入的标题和年份
+        const yearMatch = input.match(/^(.+?)(?:\s+(\d{4}))?$/);
+        if (yearMatch) {
+            title = yearMatch[1].trim();
+            year = yearMatch[2];
+        }
+
+        const placeholder = await this._safeSendMessage(chatId, '正在搜索...');
+        try {
+            const results = await this.tmdbService.search(title, year);
+            let responseText = '';
+            logger.info('搜索结束')
+            // 先发送海报图片
+            const firstPoster = results.movies[0]?.posterPath || results.tvShows[0]?.posterPath;
+
+            if (results.movies.length > 0) {
+                responseText += '📽 电影：\n\n';
+                results.movies.forEach(movie => {
+                    const shortOverview = movie.overview ? 
+                        (movie.overview.length > 20 ? movie.overview.substring(0, 20) + '...' : movie.overview) : 
+                        '暂无';
+                    
+                    responseText += `标题：${movie.title}\n` +
+                        `原标题：${movie.originalTitle}\n` +
+                        `上映日期：${movie.releaseDate}\n` +
+                        `评分：${movie.voteAverage}\n` +
+                        `简介：${shortOverview}\n\n`;
+                });
+            }
+
+            if (results.tvShows.length > 0) {
+                responseText += '📺 剧集：\n\n';
+                results.tvShows.forEach(show => {
+                    const shortOverview = show.overview ? 
+                        (show.overview.length > 20 ? show.overview.substring(0, 20) + '...' : show.overview) : 
+                        '暂无';
+
+                    responseText += `标题：${show.title}\n` +
+                        `原标题：${show.originalTitle}\n` +
+                        `首播日期：${show.releaseDate}\n` +
+                        `评分：${show.voteAverage}\n` +
+                        `简介：${shortOverview}\n\n`;
+                });
+            }
+
+            if (!results.movies.length && !results.tvShows.length) {
+                responseText = '未找到相关影视信息';
+            }
+            logger.info('获取到的海报', { firstPoster })
+            if (firstPoster) {
+                // caption 独立上限 1024：转义 + 截断后以 HTML 模式发送图片卡片
+                const caption = MessageService.truncateForTelegram(
+                    MessageService.escapeHtmlEntities(responseText), 1024);
+                try {
+                    await this.bot.sendPhoto(chatId, firstPoster, {
+                        caption: caption,
+                        parse_mode: 'HTML'
+                    });
+                    await this.bot.deleteMessage(chatId, placeholder?.message_id).catch(() => {});
+                } catch (photoError) {
+                    // 海报发送失败（含格式被拒）：降级编辑占位消息为纯文本卡片，禁止整体失败
+                    logger.warn('TMDB 海报发送失败，降级为文本卡片', { error: photoError.message });
+                    await this._safeEditMessageText(chatId, placeholder?.message_id, responseText);
+                }
+            } else {
+                // 无海报结果：编辑占位消息为纯文本卡片（禁止 sendPhoto(chatId, undefined)）
+                await this._safeEditMessageText(chatId, placeholder?.message_id, responseText);
+            }
+        } catch (error) {
+            // 异常分支：编辑未删除的占位消息为失败原因（而非先删后编导致二次失败）
+            await this._safeEditMessageText(chatId, placeholder?.message_id, `搜索失败: ${error.message}`);
+        }
     }
 
     async showAccounts(chatId, messageId = null) {
@@ -487,20 +429,18 @@ class TelegramBotService {
         }
         const accounts = await this.accountRepo.find();
         const keyboard = accounts.map(account => [{
-            text: `${account.username.slice(0, 3)}***${account.username.slice(-3)} ${account.id === this.currentAccountId ? '✅' : ''}`,
-            callback_data: JSON.stringify({ t: 'sa', i: account.id, a: `${account.username.slice(0, 3)}***${account.username.slice(-3)}` })
+            text: `${this._desensitizeUsername(account.username)} ${account.id === this.currentAccountId ? '✅' : ''}`.trim(),
+            callback_data: JSON.stringify({ t: 'sa', i: account.id, a: this._desensitizeUsername(account.username) })
         }]);
 
         const message = '账号列表 (✅表示当前选中账号):';
         if (messageId) {
-            await this.bot.editMessageText(message, {
-                chat_id: chatId,
-                message_id: messageId,
-                reply_markup: { inline_keyboard: keyboard }
+            await this._safeEditMessageText(chatId, messageId, message, {
+                replyMarkup: { inline_keyboard: keyboard }
             });
         } else {
-            await this.bot.sendMessage(chatId, message, {
-                reply_markup: { inline_keyboard: keyboard }
+            await this._safeSendMessage(chatId, message, {
+                replyMarkup: { inline_keyboard: keyboard }
             });
         }
     }
@@ -555,22 +495,18 @@ class TelegramBotService {
             '📭 暂无任务';
 
         if (messageId) {
-            await this.bot.editMessageText(message, {
-                chat_id: chatId,
-                message_id: messageId,
-                parse_mode: 'HTML',
-                reply_markup: { inline_keyboard: keyboard }
+            await this._safeEditMessageText(chatId, messageId, message, {
+                replyMarkup: { inline_keyboard: keyboard }
             });
         } else {
             // 先删除之前的消息
             if (this.globalTaskListMessageId) {
-                await this.bot.deleteMessage(chatId, this.globalTaskListMessageId);
+                await this.bot.deleteMessage(chatId, this.globalTaskListMessageId).catch(() => {});
             }
-            const newMessage = await this.bot.sendMessage(chatId, message, {
-                parse_mode: 'HTML',
-                reply_markup: { inline_keyboard: keyboard }
+            const newMessage = await this._safeSendMessage(chatId, message, {
+                replyMarkup: { inline_keyboard: keyboard }
             });
-            this.globalTaskListMessageId = newMessage.message_id;
+            this.globalTaskListMessageId = newMessage ? newMessage.message_id : null;
         }
     }
 
@@ -593,7 +529,7 @@ class TelegramBotService {
         const accounts = await this.accountRepo.find({ where: { accountType: requiredType } });
         if (accounts.length === 0) {
             const label = '移动云盘(139)';
-            await this.bot.sendMessage(chatId, `当前没有可用的 ${label} 账号，请先在账号页面添加对应账号`);
+            await this._safeSendMessage(chatId, `当前没有可用的 ${label} 账号，请先在账号页面添加对应账号`);
             return false;
         }
         const account = accounts[0];
@@ -606,25 +542,26 @@ class TelegramBotService {
         try {
             const accountId = data.i;
             if (this.currentAccountId == accountId) {
-                await this.bot.sendMessage(chatId, `账号[${data.a}]已被选中`);
-                await this.bot.deleteMessage(chatId, messageId);
+                await this._safeSendMessage(chatId, `账号[${data.a}]已被选中`);
+                await this.bot.deleteMessage(chatId, messageId).catch(() => {});
                 return;
             } 
             this.currentAccountId = accountId;
             // 获取账号信息
             const account = await this.accountRepo.findOneBy({ id: accountId });
             if (!account) {
-                await this.bot.sendMessage(chatId, '未找到该账号');
+                await this._safeSendMessage(chatId, '未找到该账号');
             }
             this.currentAccount = account;
             account.tgBotActive = true;
             this.accountRepo.save(account);
             // 删除原消息
-            await this.bot.deleteMessage(chatId, messageId);
-            await this.bot.sendMessage(chatId, `已选择账号: ${this._getDesensitizedUserName()}`);
+            await this.bot.deleteMessage(chatId, messageId).catch(() => {});
+            await this._safeSendMessage(chatId, `已选择账号: ${this._getDesensitizedUserName()}`);
 
         } catch (error) {
-            this.bot.sendMessage(chatId, `设置当前账号失败: ${error.message}`);
+            logger.error('设置当前账号失败', { error: error.message, stack: error.stack });
+            await this._safeSendMessage(chatId, `设置当前账号失败: ${error.message}`).catch(() => {});
         }
     }
 
@@ -639,14 +576,12 @@ class TelegramBotService {
             }]];
             const message = `当前账号: ${this._getDesensitizedUserName()} \n 未找到常用目录，请添加常用目录`;
             if (messageId) {
-                await this.bot.editMessageText(message, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    reply_markup: { inline_keyboard: keyboard }
+                await this._safeEditMessageText(chatId, messageId, message, {
+                    replyMarkup: { inline_keyboard: keyboard }
                 });
                 this.globalCommonFolderListMessageId = null
             } else {
-                await this.bot.sendMessage(chatId, message, {reply_markup: { inline_keyboard: keyboard }});
+                await this._safeSendMessage(chatId, message, {replyMarkup: { inline_keyboard: keyboard }});
             }
             return;
         }
@@ -659,7 +594,7 @@ class TelegramBotService {
             const shareFolders = await this.taskService.parseShareFolderByShareLink(shareLink, this.currentAccountId, accessCode);
             taskName = shareFolders[0].name;
         }catch(e){
-            await this.bot.sendMessage(chatId, `解析分享链接失败: ${e.message}`);
+            await this._safeSendMessage(chatId, `解析分享链接失败: ${e.message}`);
             return;
         }
     
@@ -675,21 +610,19 @@ class TelegramBotService {
 
         const message = `当前账号: ${this._getDesensitizedUserName()} \n资源名称: ${taskName}\n请选择保存目录:`;
         if (messageId) {
-            await this.bot.editMessageText(message, {
-                chat_id: chatId,
-                message_id: messageId,
-                reply_markup: {
+            await this._safeEditMessageText(chatId, messageId, message, {
+                replyMarkup: {
                     inline_keyboard: keyboard
                 }
             });
             this.lastButtonMessageId = messageId;
         } else {
-            const msg = await this.bot.sendMessage(chatId, message, {
-                reply_markup: {
+            const msg = await this._safeSendMessage(chatId, message, {
+                replyMarkup: {
                     inline_keyboard: keyboard
                 }
             });
-            this.lastButtonMessageId = msg.message_id;
+            this.lastButtonMessageId = msg ? msg.message_id : null;
         }
     }
 
@@ -699,14 +632,11 @@ class TelegramBotService {
             // 根据targetFolderId查询出folderName
             const targetFolder = await this.commonFolderRepo.findOne({ where: { id: targetFolderId } });
             if (!targetFolder) {
-                await this.bot.sendMessage(chatId, '未找到该目录');
+                await this._safeSendMessage(chatId, '未找到该目录');
                 return
             }
             // 发送任务创建中消息
-            const message = await this.bot.editMessageText('任务创建中...',{
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await this._safeEditMessageText(chatId, messageId, '任务创建中...');
             const taskDto = {
                 accountId: this.currentAccountId,
                 shareLink: this.currentShareLink,
@@ -719,16 +649,13 @@ class TelegramBotService {
             const tasks = await this.taskService.createTask(taskDto);
             // 遍历获取task.id
             const taskIds = tasks.map(task => task.id);
-            this.bot.editMessageText('任务创建成功, 执行中...', {
-                chat_id: chatId,
-                message_id: message.message_id
-            });
+            await this._safeEditMessageText(chatId, messageId, '任务创建成功, 执行中...');
             if(taskIds.length > 0) {
                 await this.taskService.processAllTasks(true, taskIds)   
             }
-            this.bot.deleteMessage(chatId, message.message_id);
+            await this.bot.deleteMessage(chatId, messageId).catch(() => {});
             // 发送任务执行完成消息
-            this.bot.sendMessage(chatId, '任务执行完成');
+            await this._safeSendMessage(chatId, '任务执行完成');
             // 清空缓存
             this.currentShareLink = null;
             this.currentAccessCode = null;
@@ -739,19 +666,14 @@ class TelegramBotService {
                     [{ text: '是', callback_data: JSON.stringify({ t: 'of', f: data.f, o: true }) }],
                     [{ text: '否', callback_data: JSON.stringify({ t: 'of', f: data.f, o: false }) }]
                 ];
-                await this.bot.editMessageText('该目录下已有同名文件夹，是否覆盖？', {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    reply_markup: {
+                await this._safeEditMessageText(chatId, messageId, '该目录下已有同名文件夹，是否覆盖？', {
+                    replyMarkup: {
                         inline_keyboard: keyboard
                     }
                 });
                 return;
             }else{
-                await this.bot.editMessageText(`任务创建失败: ${error.message}`, {
-                    chat_id: chatId,
-                    message_id: messageId
-                });
+                await this._safeEditMessageText(chatId, messageId, `任务创建失败: ${error.message}`);
                 // 清空缓存
                 this.currentShareLink = null;
                 this.currentAccessCode = null;
@@ -764,30 +686,18 @@ class TelegramBotService {
         try{
             // 判断data.i是否为数字
             if(isNaN(data.i)) {
-                await this.bot.editMessageText('任务ID无效', {
-                    chat_id: chatId,
-                    message_id: messageId
-                });
+                await this._safeEditMessageText(chatId, messageId, '任务ID无效');
                 return;
             }
             // 发送任务删除中消息
-            await this.bot.editMessageText('任务删除中...',{
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await this._safeEditMessageText(chatId, messageId, '任务删除中...');
 
             await this.taskService.deleteTask(parseInt(data.i), data.df);
-            await this.bot.editMessageText('任务删除成功', {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await this._safeEditMessageText(chatId, messageId, '任务删除成功');
             // 刷新任务列表
             setTimeout(() => this.showTasks(chatId, 1), 800);
         }catch(e) {
-            this.bot.editMessageText(`任务删除失败: ${e.message}`, {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await this._safeEditMessageText(chatId, messageId, `任务删除失败: ${e.message}`);
         }
     }
 
@@ -808,18 +718,16 @@ class TelegramBotService {
         if (folders.length === 0) {
             const message = `当前账号: ${this._getDesensitizedUserName()} \n 未找到常用目录，请先添加常用目录`;
             if (messageId) {
-                await this.bot.editMessageText(message, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    reply_markup: { inline_keyboard: keyboard }
+                await this._safeEditMessageText(chatId, messageId, message, {
+                    replyMarkup: { inline_keyboard: keyboard }
                 });
                 this.globalCommonFolderListMessageId = null
             } else { 
                 if (this.globalCommonFolderListMessageId) {
-                    await this.bot.deleteMessage(chatId, this.globalCommonFolderListMessageId);
+                    await this.bot.deleteMessage(chatId, this.globalCommonFolderListMessageId).catch(() => {});
                     this.globalCommonFolderListMessageId = null;
                 }
-                await this.bot.sendMessage(chatId, message,{reply_markup: { inline_keyboard: keyboard }});
+                await this._safeSendMessage(chatId, message,{replyMarkup: { inline_keyboard: keyboard }});
             }
             return;
         }
@@ -836,25 +744,23 @@ class TelegramBotService {
 
         const message = `当前账号: ${this._getDesensitizedUserName()} \n 常用目录列表:\n\n${folderList}`;
         if (messageId) {
-            await this.bot.editMessageText(message, {
-                chat_id: chatId,
-                message_id: messageId,
-                reply_markup: { inline_keyboard: keyboard }
+            await this._safeEditMessageText(chatId, messageId, message, {
+                replyMarkup: { inline_keyboard: keyboard }
             });
             this.globalCommonFolderListMessageId = null
         } else {
             if (this.globalCommonFolderListMessageId) {
-                await this.bot.deleteMessage(chatId, this.globalCommonFolderListMessageId);
+                await this.bot.deleteMessage(chatId, this.globalCommonFolderListMessageId).catch(() => {});
             }
-            const newMessage = await this.bot.sendMessage(chatId, message, { reply_markup: { inline_keyboard: keyboard } });
-            this.globalCommonFolderListMessageId = newMessage.message_id;
+            const newMessage = await this._safeSendMessage(chatId, message, { replyMarkup: { inline_keyboard: keyboard } });
+            this.globalCommonFolderListMessageId = newMessage ? newMessage.message_id : null;
         }
     }
 
     async showFolderTree(chatId, data, messageId = null) {
         try {
             if (!this.currentAccount) {
-                await this.bot.sendMessage(chatId, '未选择账号，请先使用 /accounts 选择账号');
+                await this._safeSendMessage(chatId, '未选择账号，请先使用 /accounts 选择账号');
                 return;
             }
             const isCloud139 = this.currentAccount.accountType === 'cloud139';
@@ -864,12 +770,12 @@ class TelegramBotService {
             if (data?.r) {
                // 返回上一级目录，从记录的父级ID中获取
                const parentId = Array.from(this.parentFolderIds).pop() || ROOT_ID;
-               this.parentFolderIds.delete(parentId);
-               const path = this.currentFolderPath.split('/').filter(Boolean);
-               path.pop();
-               path.pop();
-               this.currentFolderPath = path.join('/');
-               folderId = parentId;
+                this.parentFolderIds.delete(parentId);
+                const path = this.currentFolderPath.split('/').filter(Boolean);
+                path.pop();
+                path.pop();
+                this.currentFolderPath = path.join('/');
+                folderId = parentId;
             } else if (folderId !== ROOT_ID) {
                 // 非根目录时记录父级ID
                 const folder = this.folders.get(folderId);
@@ -946,20 +852,18 @@ class TelegramBotService {
             const message = `当前账号: ${this._getDesensitizedUserName()} \n 当前路径: ${this.currentFolderPath}\n请选择要添加的目录:`;
 
             if (messageId) {
-                await this.bot.editMessageText(message, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    reply_markup: { inline_keyboard: keyboard }
+                await this._safeEditMessageText(chatId, messageId, message, {
+                    replyMarkup: { inline_keyboard: keyboard }
                 });
             } else {
-                await this.bot.sendMessage(chatId, message, {
-                    reply_markup: { inline_keyboard: keyboard }
+                await this._safeSendMessage(chatId, message, {
+                    replyMarkup: { inline_keyboard: keyboard }
                 });
             }
 
         } catch (error) {
             logger.error('获取目录失败', { error: error.message, stack: error.stack });
-            this.bot.sendMessage(chatId, `获取目录失败: ${error.message}`);
+            await this._safeSendMessage(chatId, `获取目录失败: ${error.message}`).catch(() => {});
         }
     }
 
@@ -975,10 +879,7 @@ class TelegramBotService {
                 }
             });
             if (existingFavorite) {
-                await this.bot.editMessageText(`${data.p || '根目录'} 已经是常用目录`, {
-                    chat_id: chatId,
-                    message_id: messageId
-                });
+                await this._safeEditMessageText(chatId, messageId, `${data.p || '根目录'} 已经是常用目录`);
                 this.globalCommonFolderListMessageId = null;
                 return;
             }
@@ -995,31 +896,17 @@ class TelegramBotService {
             };
             
             await this.commonFolderRepo.save(favorite);
-            await this.bot.editMessageText(`已将 ${currentPath || '根目录'} 添加到常用目录`, {
-                chat_id: chatId,
-                message_id: messageId
-            });
+            await this._safeEditMessageText(chatId, messageId, `已将 ${currentPath || '根目录'} 添加到常用目录`);
             
         } catch (error) {
             throw new Error(`保存常用目录失败: ${error.message}`);
         }
     }
 
-    // 校验任务id
-    _checkTaskId(taskId) {
-        if(isNaN(taskId)) {
-            this.bot.editMessageText('任务ID无效', {
-                chat_id: chatId,
-                message_id: messageId
-            });
-            return false;
-        }
-        return true;
-    }
     // 校验当前是否有用户id
     _checkUserId(chatId) {
         if(!this.currentAccountId) {
-            this.bot.sendMessage(chatId, '请先使用 /accounts 选择账号');
+            Promise.resolve(this._safeSendMessage(chatId, '请先使用 /accounts 选择账号')).catch(() => {});
             return false;
         }
         return true;
@@ -1029,29 +916,155 @@ class TelegramBotService {
         if (chatId != this.chatId) return false;
         return true;
     }
+    // 账号名脱敏：前 3 后 4 特征保留、中间掩码（短名仅保留首字符）
+    _desensitizeUsername(username) {
+        const name = String(username || '');
+        if (!name) return name;
+        if (name.length <= 7) {
+            return name.slice(0, 1) + '****';
+        }
+        return name.replace(/(.{3}).*(.{4})/, '$1****$2');
+    }
     // 获取当前已脱敏的用户名
     _getDesensitizedUserName() {
-       return this.currentAccount.username.replace(/(.{3}).*(.{4})/, '$1****$2');
+        return this._desensitizeUsername(this.currentAccount.username);
     }
 
-    // 在类的底部添加新的辅助方法
-    _resetSearchModeTimeout(chatId) {
-        // 清除现有的超时计时器
-        if (this.searchModeTimeout) {
-            clearTimeout(this.searchModeTimeout);
+    // 未命中任何在役指令注册表 pattern 的指令文本
+    _isUnknownCommand(text) {
+        return !COMMANDS.some((cmd) => cmd.pattern.test(text));
+    }
+
+    // 会话内 60 秒节流的引导回复（下线引导与未知指令引导共用）
+    _throttledGuide(chatId, text) {
+        const now = Date.now();
+        if (now - (this._lastPlainGuideAt || 0) < 60 * 1000) {
+            return;
         }
-        
-        // 设置新的超时计时器
-        this.searchModeTimeout = setTimeout(async () => {
-            if (this.isSearchMode) {
-                this.isSearchMode = false;                await this.bot.sendMessage(chatId, '长时间未搜索，已自动退出搜索模式');
+        this._lastPlainGuideAt = now;
+        Promise.resolve(this._safeSendMessage(chatId, text)).catch(() => {});
+    }
+
+    // 判定是否为 Telegram 4xx"无法解析"类格式错误（触发纯文本降级重发）；
+    // 网络超时/5xx/429 限流不属格式问题，不触发降级，避免重试风暴
+    _isTelegramParseError(error) {
+        const statusCode = error && typeof error.code === 'number'
+            ? error.code
+            : error && error.response && error.response.statusCode;
+        if (typeof statusCode !== 'number') {
+            return false;
+        }
+        if (statusCode === 429) {
+            return false;
+        }
+        return statusCode >= 400 && statusCode < 500;
+    }
+
+    /**
+     * 安全发送：渲染（卡片识别/徽章/标题强化，prebuilt 文本跳过）→ HTML 实体转义 →
+     * 4096 截断 → sendMessage(parse_mode: 'HTML')；
+     * 400 类格式错误 → 剥离标签纯文本重发一次 → 仍失败仅记日志返回 null
+     * @param {number} chatId
+     * @param {string} text
+     * @param {object} [options] { replyMarkup?, cardMeta?, prebuilt? }
+     */
+    async _safeSendMessage(chatId, text, options = {}) {
+        const rendered = options.prebuilt
+            ? MessageService.truncateForTelegram(text)
+            : MessageService.renderCardHtml(text, options.cardMeta || {});
+        const sendOpts = { parse_mode: 'HTML' };
+        if (options.replyMarkup) {
+            sendOpts.reply_markup = options.replyMarkup;
+        }
+        try {
+            return await this.bot.sendMessage(chatId, rendered, sendOpts);
+        } catch (error) {
+            if (!this._isTelegramParseError(error)) {
+                logger.error('Telegram 消息发送失败', { error: error.message, stack: error.stack });
+                return null;
             }
-        }, 3 * 60 * 1000);  // 3分钟
+            try {
+                const plainOpts = {};
+                if (options.replyMarkup) {
+                    plainOpts.reply_markup = options.replyMarkup;
+                }
+                return await this.bot.sendMessage(chatId, MessageService.stripHtmlTags(rendered), plainOpts);
+            } catch (fallbackError) {
+                logger.error('Telegram 消息降级发送失败', { error: fallbackError.message, stack: fallbackError.stack });
+                return null;
+            }
+        }
+    }
+
+    /**
+     * 安全编辑：与 _safeSendMessage 同策略应用于 editMessageText，
+     * 作为巡检占位消息编辑为结果卡片的统一入口
+     * @param {number} chatId
+     * @param {number} messageId
+     * @param {string} text
+     * @param {object} [options] { replyMarkup?, cardMeta?, prebuilt? }
+     */
+    async _safeEditMessageText(chatId, messageId, text, options = {}) {
+        if (!chatId || !messageId) {
+            return false;
+        }
+        const rendered = options.prebuilt
+            ? MessageService.truncateForTelegram(text)
+            : MessageService.renderCardHtml(text, options.cardMeta || {});
+        const editOpts = { chat_id: chatId, message_id: messageId, parse_mode: 'HTML' };
+        if (options.replyMarkup) {
+            editOpts.reply_markup = options.replyMarkup;
+        }
+        try {
+            return await this.bot.editMessageText(rendered, editOpts);
+        } catch (error) {
+            if (!this._isTelegramParseError(error)) {
+                logger.error('Telegram 消息编辑失败', { error: error.message, stack: error.stack });
+                return false;
+            }
+            try {
+                const plainOpts = { chat_id: chatId, message_id: messageId };
+                if (options.replyMarkup) {
+                    plainOpts.reply_markup = options.replyMarkup;
+                }
+                return await this.bot.editMessageText(MessageService.stripHtmlTags(rendered), plainOpts);
+            } catch (fallbackError) {
+                logger.error('Telegram 消息降级编辑失败', { error: fallbackError.message, stack: fallbackError.stack });
+                return false;
+            }
+        }
+    }
+
+    /**
+     * 巡检/清理卡片渲染辅助（五区结构）：
+     * 标题区（级别徽章+类型图标+类型名+系统名）→ 统计摘要区（固定有序字段）→
+     * 抽样明细区（路径 <code> 化，超出以"等共 N 项"收尾）→ 行动引导区 → 按钮区（调用方 replyMarkup）
+     * @param {object} spec { level, icon, cardName, stats, sampleLabel, samples, samplesTail, footer }
+     * @returns {string} 预构建 HTML 文本（调用方以 prebuilt 方式发送）
+     */
+    _renderMaintenanceCard({ level, icon, cardName, stats = [], sampleLabel = '', samples = [], samplesTail = '', footer = '' }) {
+        const parts = [];
+        const badge = MessageService.buildLevelBadge(level);
+        parts.push(`${badge} <b>${icon} 139云盘 · ${cardName}</b>`);
+        if (stats.length > 0) {
+            parts.push(stats.map(s => `• ${MessageService.escapeHtmlEntities(s)}`).join('\n'));
+        }
+        if (samples.length > 0) {
+            const lines = samples.map(s => `<code>${MessageService.escapeHtmlEntities(s)}</code>`);
+            if (samplesTail) {
+                lines.push(samplesTail);
+            }
+            parts.push(`${sampleLabel}：\n${lines.join('\n')}`);
+        }
+        if (footer) {
+            parts.push(footer);
+        }
+        return parts.join('\n\n');
     }
 
     async handleScanBanned(chatId) {
         if (!await this._ensureAccountType(chatId, 'cloud139')) return;
-        const msg = await this.bot.sendMessage(chatId, '🔍 正在启动 139 全局违规失效文件巡检，请稍候...');
+        const placeholder = await this._safeSendMessage(chatId, '🔍 正在启动 139 全局违规失效文件巡检，请稍候...');
         try {
             const { Cloud139Service } = require('./cloud139');
             const { CloudMaintenanceService } = require('./CloudMaintenanceService');
@@ -1059,30 +1072,42 @@ class TelegramBotService {
             const res = await CloudMaintenanceService.scanBannedFiles(cloud139, { rootCatalogId: '/' });
             
             const sizeMB = (res.totalBannedSize / (1024 * 1024)).toFixed(2);
-            let text = `🛡 **139 云盘违规死链巡检报告**\n\n` +
-                       `• 已扫描目录: ${res.scannedFolders} 个\n` +
-                       `• 已检测文件: ${res.totalFiles} 个\n` +
-                       `• 发现违规死链: ${res.bannedFiles.length} 项\n` +
-                       `• 占用网盘空间: ${sizeMB} MB\n\n`;
 
             if (res.bannedFiles.length === 0) {
-                text += `🎉 恭喜！当前网盘环境非常健康，未发现任何违规死链文件。`;
-                await this.bot.editMessageText(text, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' });
+                const text = this._renderMaintenanceCard({
+                    level: 'info',
+                    icon: '🛡',
+                    cardName: '违规死链巡检报告',
+                    stats: [
+                        `已扫描目录: ${res.scannedFolders} 个`,
+                        `已检测文件: ${res.totalFiles} 个`,
+                        `发现违规死链: 0 项`,
+                    ],
+                    footer: '🎉 当前网盘环境非常健康，未发现任何违规死链文件。',
+                });
+                await this._safeEditMessageText(chatId, placeholder?.message_id, text, { prebuilt: true });
             } else {
                 this._lastBannedFiles = res.bannedFiles;
-                text += `⚠️ 违规文件抽样:\n`;
-                res.bannedFiles.slice(0, 5).forEach((f, idx) => {
-                    text += `${idx + 1}. \`${f.path}\`\n   └ 定性: ${f.reason}\n`;
+                const samples = res.bannedFiles.slice(0, 5).map((f) => `${f.path || f.name}（${f.reason || '违规'}）`);
+                const samplesTail = res.bannedFiles.length > 5 ? `…等共 ${res.bannedFiles.length} 项，仅列前 5 项` : '';
+                const text = this._renderMaintenanceCard({
+                    level: 'warning',
+                    icon: '🛡',
+                    cardName: '违规死链巡检报告',
+                    stats: [
+                        `已扫描目录: ${res.scannedFolders} 个`,
+                        `已检测文件: ${res.totalFiles} 个`,
+                        `发现违规死链: ${res.bannedFiles.length} 项`,
+                        `占用网盘空间: ${sizeMB} MB`,
+                    ],
+                    sampleLabel: '违规文件抽样',
+                    samples,
+                    samplesTail,
+                    footer: '可点击下方按钮或发送 /clean_banned 立即一键清理违规文件。',
                 });
-                if (res.bannedFiles.length > 5) {
-                    text += `... 等共 ${res.bannedFiles.length} 项\n\n`;
-                }
-                text += `可点击下方按钮或发送 /clean_banned 立即一键清理违规文件。`;
-                await this.bot.editMessageText(text, {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    parse_mode: 'Markdown',
-                    reply_markup: {
+                await this._safeEditMessageText(chatId, placeholder?.message_id, text, {
+                    prebuilt: true,
+                    replyMarkup: {
                         inline_keyboard: [[
                             { text: '🗑 立即清理违规文件', callback_data: JSON.stringify({ t: 'm_cb' }) }
                         ]]
@@ -1091,65 +1116,81 @@ class TelegramBotService {
             }
         } catch (err) {
             logger.error('违规文件巡检失败', { error: err.message, stack: err.stack });
-            await this.bot.editMessageText(`❌ 巡检失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, `❌ 巡检失败: ${err.message}`);
         }
     }
 
     async handleCleanBanned(chatId) {
         if (!await this._ensureAccountType(chatId, 'cloud139')) return;
-        const msg = await this.bot.sendMessage(chatId, '🗑 正在准备清理违规文件...');
+        const placeholder = await this._safeSendMessage(chatId, '🗑 正在准备清理违规文件...');
         try {
             const { Cloud139Service } = require('./cloud139');
             const { CloudMaintenanceService } = require('./CloudMaintenanceService');
             const cloud139 = Cloud139Service.getInstance(this.currentAccount);
             let targets = this._lastBannedFiles;
             if (!targets || targets.length === 0) {
-                await this.bot.editMessageText('🔍 正在重新扫描违规文件...', { chat_id: chatId, message_id: msg.message_id });
+                await this._safeEditMessageText(chatId, placeholder?.message_id, '🔍 正在重新扫描违规文件...');
                 const scanRes = await CloudMaintenanceService.scanBannedFiles(cloud139, { rootCatalogId: '/' });
                 targets = scanRes.bannedFiles;
             }
             if (targets.length === 0) {
-                await this.bot.editMessageText('✅ 当前没有需要清理的违规文件。', { chat_id: chatId, message_id: msg.message_id });
+                await this._safeEditMessageText(chatId, placeholder?.message_id, '✅ 当前没有需要清理的违规文件。');
                 return;
             }
             const cleanRes = await CloudMaintenanceService.cleanBannedFiles(cloud139, targets);
             const freedMB = (cleanRes.freedBytes / (1024 * 1024)).toFixed(2);
             this._lastBannedFiles = null;
-            await this.bot.editMessageText(
-                `🎉 **违规文件清理完成**\n\n` +
-                `• 成功移入回收站: ${cleanRes.successCount} 项\n` +
-                `• 残留未清: ${cleanRes.failedCount} 项\n` +
-                `• 释放存储空间: ${freedMB} MB`,
-                { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }
-            );
+            const text = this._renderMaintenanceCard({
+                level: 'success',
+                icon: '🗑',
+                cardName: '违规文件清理报告',
+                stats: [
+                    `成功移入回收站: ${cleanRes.successCount} 项`,
+                    `残留未清: ${cleanRes.failedCount} 项`,
+                    `释放存储空间: ${freedMB} MB`,
+                ],
+                footer: '🎉 违规文件清理完成，已全部移入回收站（可在回收站内找回）。',
+            });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, text, { prebuilt: true });
         } catch (err) {
             logger.error('违规文件清理失败', { error: err.message, stack: err.stack });
-            await this.bot.editMessageText(`❌ 清理失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, `❌ 清理失败: ${err.message}`);
         }
     }
 
     async handleSweepEmpty(chatId) {
         if (!await this._ensureAccountType(chatId, 'cloud139')) return;
-        const msg = await this.bot.sendMessage(chatId, '🧹 正在自底向上扫描并修剪空文件夹...');
+        const placeholder = await this._safeSendMessage(chatId, '🧹 正在自底向上扫描并修剪空文件夹...');
         try {
             const { Cloud139Service } = require('./cloud139');
             const { CloudMaintenanceService } = require('./CloudMaintenanceService');
             const cloud139 = Cloud139Service.getInstance(this.currentAccount);
             const res = await CloudMaintenanceService.sweepEmptyFolders(cloud139, { rootCatalogId: '/' });
-            let text = `🧹 **空文件夹清理完成**\n\n• 共修剪空目录: ${res.deletedFoldersCount} 个\n`;
-            if (res.deletedDirs.length > 0) {
-                text += `• 修剪路径抽样:\n` + res.deletedDirs.slice(0, 5).map(p => `  └ \`${p}\``).join('\n');
-            }
-            await this.bot.editMessageText(text, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' });
+            const deletedDirs = res.deletedDirs || [];
+            const samples = deletedDirs.slice(0, 5);
+            const samplesTail = deletedDirs.length > 5 ? `…等共 ${deletedDirs.length} 个，仅列前 5 个` : '';
+            const text = this._renderMaintenanceCard({
+                level: 'success',
+                icon: '🧹',
+                cardName: '空目录清理报告',
+                stats: [
+                    `共修剪空目录: ${res.deletedFoldersCount} 个`,
+                ],
+                sampleLabel: '修剪路径抽样',
+                samples,
+                samplesTail,
+                footer: '🎉 空文件夹自底向上修剪完成。',
+            });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, text, { prebuilt: true });
         } catch (err) {
             logger.error('空目录修剪失败', { error: err.message, stack: err.stack });
-            await this.bot.editMessageText(`❌ 修剪失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, `❌ 修剪失败: ${err.message}`);
         }
     }
 
     async handleScanDedup(chatId) {
         if (!await this._ensureAccountType(chatId, 'cloud139')) return;
-        const msg = await this.bot.sendMessage(chatId, '🔍 正在启动 139 多版本影视资产去重巡检，请稍候...');
+        const placeholder = await this._safeSendMessage(chatId, '🔍 正在启动 139 多版本影视资产去重巡检，请稍候...');
         try {
             const { Cloud139Service } = require('./cloud139');
             const { AssetDeduplicationService } = require('./AssetDeduplicationService');
@@ -1160,31 +1201,43 @@ class TelegramBotService {
             const plan = AssetDeduplicationService.analyzeDuplicates(files, policy);
             this._lastDedupPlan = plan;
 
-            let text = `🎬 **139 云盘多版本资产去重报告**\n\n` +
-                       `• 扫描媒体文件: ${plan.scannedFilesCount} 个\n` +
-                       `• 发现多版本资产: ${plan.duplicateGroupsCount} 组\n` +
-                       `• 冗余淘汰版本: ${plan.redundantFilesCount} 项\n` +
-                       `• 预估可释放空间: ${plan.totalFreedFormatted}\n\n`;
-
             if (plan.duplicateGroupsCount === 0) {
-                text += `🎉 当前媒体库井井有条，未发现多版本冗余文件。`;
-                await this.bot.editMessageText(text, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' });
-            } else {
-                text += `📋 **去重方案抽样 (Keeper 优选保留)**:\n`;
-                plan.groups.slice(0, 3).forEach((g, idx) => {
-                    text += `${idx + 1}. **${g.title}** (${g.season_episode || g.assetKey})\n` +
-                            `   ├ 👑 保留: \`${g.keeper.name}\`\n` +
-                            `   └ 🗑 淘汰: ` + g.losers.map(l => `\`${l.name}\``).join(', ') + `\n`;
+                const text = this._renderMaintenanceCard({
+                    level: 'info',
+                    icon: '🎬',
+                    cardName: '多版本资产去重报告',
+                    stats: [
+                        `扫描媒体文件: ${plan.scannedFilesCount} 个`,
+                        `发现多版本资产: 0 组`,
+                        `冗余淘汰版本: 0 项`,
+                    ],
+                    footer: '🎉 当前媒体库井井有条，未发现多版本冗余文件。',
                 });
-                if (plan.groups.length > 3) {
-                    text += `... 等共 ${plan.groups.length} 组冗余资产\n\n`;
-                }
-                text += `点击下方按钮或发送 /dedup_clean 即可移入回收站安全清理。`;
-                await this.bot.editMessageText(text, {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    parse_mode: 'Markdown',
-                    reply_markup: {
+                await this._safeEditMessageText(chatId, placeholder?.message_id, text, { prebuilt: true });
+            } else {
+                const samples = plan.groups.slice(0, 3).map((g) => {
+                    const losers = (g.losers || []).map(l => l.name).join('、');
+                    return `${g.title} (${g.season_episode || g.assetKey})｜保留 ${g.keeper?.name || '?'}｜淘汰 ${losers}`;
+                });
+                const samplesTail = plan.groups.length > 3 ? `…等共 ${plan.groups.length} 组冗余资产，仅列前 3 组` : '';
+                const text = this._renderMaintenanceCard({
+                    level: 'warning',
+                    icon: '🎬',
+                    cardName: '多版本资产去重报告',
+                    stats: [
+                        `扫描媒体文件: ${plan.scannedFilesCount} 个`,
+                        `发现多版本资产: ${plan.duplicateGroupsCount} 组`,
+                        `冗余淘汰版本: ${plan.redundantFilesCount} 项`,
+                        `预估可释放空间: ${plan.totalFreedFormatted}`,
+                    ],
+                    sampleLabel: '去重方案抽样 (Keeper 优选保留)',
+                    samples,
+                    samplesTail,
+                    footer: '点击下方按钮或发送 /dedup_clean 即可移入回收站安全清理。',
+                });
+                await this._safeEditMessageText(chatId, placeholder?.message_id, text, {
+                    prebuilt: true,
+                    replyMarkup: {
                         inline_keyboard: [[
                             { text: '🗑 立即清理冗余版本', callback_data: JSON.stringify({ t: 'm_dc' }) }
                         ]]
@@ -1193,13 +1246,13 @@ class TelegramBotService {
             }
         } catch (err) {
             logger.error('多版本资产去重巡检失败', { error: err.message, stack: err.stack });
-            await this.bot.editMessageText(`❌ 去重巡检失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, `❌ 去重巡检失败: ${err.message}`);
         }
     }
 
     async handleCleanDedup(chatId) {
         if (!await this._ensureAccountType(chatId, 'cloud139')) return;
-        const msg = await this.bot.sendMessage(chatId, '🗑 正在准备执行多版本资产择优清理...');
+        const placeholder = await this._safeSendMessage(chatId, '🗑 正在准备执行多版本资产择优清理...');
         try {
             const { Cloud139Service } = require('./cloud139');
             const { AssetDeduplicationService } = require('./AssetDeduplicationService');
@@ -1207,13 +1260,13 @@ class TelegramBotService {
             const cloud139 = Cloud139Service.getInstance(this.currentAccount);
             let plan = this._lastDedupPlan;
             if (!plan || !plan.groups || plan.groups.length === 0) {
-                await this.bot.editMessageText('🔍 正在重新全盘扫描多版本资产...', { chat_id: chatId, message_id: msg.message_id });
+                await this._safeEditMessageText(chatId, placeholder?.message_id, '🔍 正在重新全盘扫描多版本资产...');
                 const files = await AssetDeduplicationService.scanCloudFiles(cloud139, { rootCatalogId: '/' });
                 const policy = ConfigService.getConfigValue('policy') || {};
                 plan = AssetDeduplicationService.analyzeDuplicates(files, policy);
             }
             if (!plan || plan.groups.length === 0) {
-                await this.bot.editMessageText('✅ 当前没有需要清理的冗余多版本资产。', { chat_id: chatId, message_id: msg.message_id });
+                await this._safeEditMessageText(chatId, placeholder?.message_id, '✅ 当前没有需要清理的冗余多版本资产。');
                 return;
             }
             const transferredFileRepo = this.transferredFileRepo || null;
@@ -1223,18 +1276,23 @@ class TelegramBotService {
                 transferredFileRepo
             });
             this._lastDedupPlan = null;
-            await this.bot.editMessageText(
-                `🎉 **多版本资产清理完成**\n\n` +
-                `• 成功移入回收站: ${res.successCount} 项\n` +
-                `• 失败未清: ${res.failedCount} 项\n` +
-                `• 释放存储空间: ${res.freedFormatted}`,
-                { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }
-            );
+            const text = this._renderMaintenanceCard({
+                level: 'success',
+                icon: '🎬',
+                cardName: '多版本资产清理报告',
+                stats: [
+                    `成功移入回收站: ${res.successCount} 项`,
+                    `失败未清: ${res.failedCount} 项`,
+                    `释放存储空间: ${res.freedFormatted}`,
+                ],
+                footer: '🎉 多版本资产择优清理完成，淘汰版本已移入回收站。',
+            });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, text, { prebuilt: true });
         } catch (err) {
             logger.error('多版本资产清理失败', { error: err.message, stack: err.stack });
-            await this.bot.editMessageText(`❌ 清理失败: ${err.message}`, { chat_id: chatId, message_id: msg.message_id });
+            await this._safeEditMessageText(chatId, placeholder?.message_id, `❌ 清理失败: ${err.message}`);
         }
     }
 }
 
-module.exports = { TelegramBotService };
+module.exports = { TelegramBotService, COMMANDS, buildHelpText };

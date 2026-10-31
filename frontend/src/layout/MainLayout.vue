@@ -24,6 +24,7 @@ import {
 } from 'lucide-vue-next';
 import { isDark, toggleTheme, initTheme } from '../composables/useTheme';
 import NoticeModal from '../components/NoticeModal.vue';
+import { settingsApi } from '../api/settings';
 import { HelpCircle } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -51,12 +52,36 @@ onMounted(() => {
   // 初始化暗黑/亮色主题
   initTheme();
 
-  // 登录进入控制台后，若尚未确认过 v2.4.15 更新规范则自动弹出须知弹窗
-  try {
-    if (localStorage.getItem('cloudpan_v2415_notice_ack') !== 'true') {
+  function isNoticeAcknowledged(): boolean {
+    try {
+      if (
+        localStorage.getItem('cloudpan_v2415_notice_ack') === 'true' ||
+        localStorage.getItem('cloudpan_notice_ack') === 'true' ||
+        localStorage.getItem('cloudpan_notice_dismissed') === 'true' ||
+        sessionStorage.getItem('cloudpan_notice_dismissed_session') === 'true' ||
+        document.cookie.includes('cloudpan_notice_ack=true')
+      ) {
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // 登录进入控制台后，核查是否已确认过规范须知，杜绝重复弹出
+  if (!isNoticeAcknowledged()) {
+    settingsApi.getSettings().then((cfg) => {
+      if (cfg?.system?.noticeAck) {
+        try {
+          localStorage.setItem('cloudpan_v2415_notice_ack', 'true');
+          localStorage.setItem('cloudpan_notice_ack', 'true');
+        } catch {}
+      } else {
+        showNoticeModal.value = true;
+      }
+    }).catch(() => {
       showNoticeModal.value = true;
-    }
-  } catch (err) {}
+    });
+  }
 
   // 恢复本地存储的手风琴折叠偏好
   (['system', 'cloud139', 'media'] as const).forEach((gid) => {
@@ -90,7 +115,12 @@ const currentDesc = computed(() => (route.meta.desc as string) || '管理移动�
 const showHeaderSave = computed(() => Boolean(route.meta.showSaveBtn));
 const saveBtnText = computed(() => (route.meta.saveBtnText as string) || '保存配置');
 
+let saveDebounceTimer: any = null;
 function handleHeaderSaveClick() {
+  if (saveDebounceTimer) return;
+  saveDebounceTimer = setTimeout(() => {
+    saveDebounceTimer = null;
+  }, 500);
   window.dispatchEvent(new CustomEvent('header-save-click'));
 }
 </script>

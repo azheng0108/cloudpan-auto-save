@@ -104,6 +104,14 @@ function buildPushMessageWithThreshold({
     return `${title}\n${detailLines.join('\n')}`;
 }
 
+/**
+ * 入库记录偏差标注：追加到入库通知卡片尾部，
+ * 通知通道据此（⚠️ [入库偏差] 标记）将卡片从成功级升级为警告级
+ */
+function buildRecordDeviationNote(transferredCount, recordedCount) {
+    return `\n⚠️ [入库偏差] 转存 ${transferredCount} 项，入库 ${recordedCount} 项，已自动核对修正`;
+}
+
 function buildNameToFileIdMap(files = []) {
     const map = new Map();
     for (const f of files) {
@@ -744,9 +752,11 @@ async function processCloud139Task(taskService, task, account) {
             md5: null,
         }));
         const recordedCount = await taskService._recordTransferredFiles(task.id, taskInfoList);
+        let recordDeviationNote = '';
         if (typeof recordedCount === 'number' && recordedCount < taskInfoList.length) {
             logTaskEvent(`⚠️ [已转存DB] 多目录转存记录偏差: 转存 ${taskInfoList.length}，入库 ${recordedCount}`);
             await reconcileTransferredFileRecords(taskService, task.id, taskInfoList, '多目录转存');
+            recordDeviationNote = buildRecordDeviationNote(taskInfoList.length, recordedCount);
         }
 
         const fileCount = dedupedNewFiles.filter((f) => {
@@ -783,7 +793,7 @@ async function processCloud139Task(taskService, task, account) {
             detailLines: lines,
             compactLines,
             threshold: 20,
-        });
+        }) + recordDeviationNote;
 
         const firstExecution = !task.lastFileUpdateTime;
         task.status = 'pending';
@@ -934,4 +944,6 @@ async function processCloud139Task(taskService, task, account) {
 
 module.exports = {
     processCloud139Task,
+    buildPushMessageWithThreshold,
+    buildRecordDeviationNote,
 };

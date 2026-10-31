@@ -72,6 +72,7 @@ function classifyDomain(urlPath) {
         strm: 'strm',
         ai: 'ai',
         sync: 'sync',
+        pansou: 'pansou',
     };
     return segmentToDomain[firstSegment] || null;
 }

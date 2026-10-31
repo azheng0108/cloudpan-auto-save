@@ -102,11 +102,15 @@ class ConfigService {
         syncDeleteTask: true,
         protectedPaths: ['/', '/媒体库', '/media', '/strm', '/公共目录']
       },
-      // 本地 STRM 文件生成配置 (支持 302 原生直链与 AList/WebDAV 模式)
       strm: {
         enable: false,
+        autoGenerateOnOrganize: true, // 媒体整理入库后自动生成对应的 .strm 文件
         outputDir: '',
-        streamMode: 'direct302',
+        strmBaseUrl: '', // 139 官方 CDN 原生 302 服务根地址
+        sourceCatalogs: [],
+        videoSuffixes: ['.mp4', '.mkv', '.avi', '.ts', '.iso', '.flv', '.mov', '.wmv', '.rmvb', '.m4v', '.strm', '.mpg', '.mpeg', '.vob', '.m2ts', '.webm', '.3gp'],
+        minSizeMB: 0,
+        cleanEmptyDirs: true,
         localStrmPrefix: '',
         cloudStrmPrefix: '',
         stripRootTargetDir: true
@@ -197,6 +201,9 @@ class ConfigService {
         linkStrm: false,               // 联动生成 STRM
         notifyOnStrm: false,           // STRM 明细通知
         sweepEmptyFolders: true,       // 整理完成后自底向上修剪暂存区空目录
+        excludeNonVideo: false,           // 排除策略：排除非视频文件
+        excludeNoChineseSubtitle: false,  // 排除策略：外语片排除无中文字幕文件
+        excludeTrailersAndSamples: false, // 排除策略：排除预告片与样品文件
         filterKeywords: '',            // 全局包含关键词（逗号分隔）
         excludeKeywords: '',           // 全局排除关键词（逗号分隔，如：国产剧,韩剧）
         maxPostsPerCheck: 10,          // 每次轮询抓取单频道最新消息数量
@@ -271,9 +278,20 @@ class ConfigService {
           needSave = true;
         }
 
+        // v4 -> v5: 清理已废弃的 AList 与 WebDAV 挂载配置
+        if (this._config.strm) {
+          const obsoleteKeys = ['streamMode', 'alistBaseUrl', 'alistMountPath', 'alistToken', 'webdavBaseUrl', 'webdavUsername', 'webdavPassword'];
+          for (const k of obsoleteKeys) {
+            if (this._config.strm[k] !== undefined) {
+              delete this._config.strm[k];
+              needSave = true;
+            }
+          }
+        }
+
         // 更新配置版本号
-        if (!this._config.configVersion || this._config.configVersion < 4) {
-          this._config.configVersion = 4;
+        if (!this._config.configVersion || this._config.configVersion < 5) {
+          this._config.configVersion = 5;
           needSave = true;
         }
         

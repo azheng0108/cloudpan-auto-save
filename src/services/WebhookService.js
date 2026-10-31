@@ -364,8 +364,102 @@ class WebhookService {
         const TaskRepository = taskRepo || AppDataSource.getRepository(Task);
         const AccountRepository = accountRepo || AppDataSource.getRepository(Account);
 
+        // ─── 核心升级 1: 优先基于本地 .strm 反查网盘真实 fileId (100% 精准移入回收站) ───
         try {
-            // 搜索关联的任务
+            const { StrmService } = require('./strm');
+            const { Cloud139Service } = require('./cloud139');
+            const fsPromises = require('fs').promises;
+            const pathModule = require('path');
+            const strmService = new StrmService();
+            const baseDir = strmService.baseDir;
+
+            // 获取默认活跃的 139 账号
+            const defaultAccount = (await AccountRepository.findOne({ where: { accountType: 'cloud139', isActive: true } }))
+                || (await AccountRepository.findOne({ where: { accountType: 'cloud139' } }))
+                || (await AccountRepository.findOne());
+
+            // 候选本地查找路径列表
+            const candidatePaths = [
+                itemPath,
+                pathModule.join(baseDir, cloudRelPath),
+                pathModule.join(baseDir, cloudRelPath + '.strm'),
+                pathModule.join(baseDir, '139云盘', cloudRelPath),
+                pathModule.join(baseDir, '139云盘', cloudRelPath + '.strm')
+            ];
+
+            let foundLocalPath = null;
+            let isFoundDir = false;
+            for (const cPath of candidatePaths) {
+                try {
+                    const stat = await fsPromises.stat(cPath);
+                    foundLocalPath = cPath;
+                    isFoundDir = stat.isDirectory();
+                    break;
+                } catch (_) {}
+            }
+
+            if (foundLocalPath) {
+                logger.info(`[Webhook 深度删除] 成功命中本地映射路径: ${foundLocalPath} (是否目录: ${isFoundDir})`);
+                const extractedFileIds = [];
+
+                if (isFoundDir || isFolder) {
+                    const allStrms = await strmService.listAllStrmFilesRecursive(foundLocalPath);
+                    for (const strmF of allStrms) {
+                        try {
+                            const c = await fsPromises.readFile(strmF, 'utf8');
+                            const fid = StrmService.extractFileIdFromStrmContent(c);
+                            if (fid) extractedFileIds.push(fid);
+                        } catch (_) {}
+                    }
+                } else {
+                    try {
+                        const c = await fsPromises.readFile(foundLocalPath, 'utf8');
+                        const fid = StrmService.extractFileIdFromStrmContent(c);
+                        if (fid) extractedFileIds.push(fid);
+                    } catch (_) {}
+                }
+
+                if (extractedFileIds.length > 0 && defaultAccount) {
+                    const cloud139 = Cloud139Service.getInstance(defaultAccount);
+                    await cloud139.deleteFiles(extractedFileIds);
+                    logTaskEvent(`[Webhook 深度删除] 成功联动将 ${extractedFileIds.length} 个文件移入 139 网盘回收站 (IDs: ${extractedFileIds.slice(0, 5).join(',')})`);
+
+                    // 本地文件清理
+                    if (isFoundDir) {
+                        await fsPromises.rm(foundLocalPath, { recursive: true, force: true }).catch(() => {});
+                    } else {
+                        await fsPromises.unlink(foundLocalPath).catch(() => {});
+                        const parsed = pathModule.parse(foundLocalPath);
+                        const extsToClean = ['.nfo', '.srt', '.ass', '.vtt', '-thumb.jpg'];
+                        for (const cleanExt of extsToClean) {
+                            await fsPromises.unlink(pathModule.join(parsed.dir, parsed.name + cleanExt)).catch(() => {});
+                        }
+                    }
+                    await strmService.cleanEmptyDirs(baseDir).catch(() => {});
+
+                    const msg = `【神医助手/Emby 深度删除】已联动将对应网盘源文件移入 139 回收站:\n` +
+                                `• 媒体路径: ${itemPath}\n` +
+                                `• 关联文件数: ${extractedFileIds.length} 个\n` +
+                                `• 本地 STRM 及残留空目录: 已同步清理`;
+                    await this.messageUtil.sendMessage(msg).catch(() => {});
+
+                    return {
+                        statusCode: 200,
+                        body: {
+                            success: true,
+                            message: '已通过 STRM 成功识别并完成网盘深度删除',
+                            deletedCount: extractedFileIds.length,
+                            path: cloudRelPath
+                        }
+                    };
+                }
+            }
+        } catch (strmReverseErr) {
+            logger.warn(`[Webhook 深度删除] 本地 STRM 反查异常，回退至 Task 库匹配: ${strmReverseErr.message}`);
+        }
+
+        try {
+            // 兜底：搜索关联的任务
             // 使用路径中段或全名匹配任务 realFolderName
             const searchKeyword = isFolder ? cloudRelPath : (cloudRelPath.includes('/') ? cloudRelPath.slice(0, cloudRelPath.lastIndexOf('/')) : cloudRelPath);
             if (!searchKeyword || searchKeyword.trim().length < 2) {

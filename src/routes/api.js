@@ -1,6 +1,7 @@
 const { Like, Not, IsNull, Or, In } = require('typeorm');
 const fs = require('fs').promises;
 const path = require('path');
+const https = require('https');
 const { Cloud139Service } = require('../services/cloud139');
 const ConfigService = require('../services/ConfigService');
 const { SchedulerService } = require('../services/scheduler');
@@ -470,6 +471,16 @@ const registerApiRoutes = (app, deps) => {
                     apiKey: typeof settings.ai.apiKey === 'string' ? settings.ai.apiKey.trim() : (settings.ai.apiKey || ''),
                     model: typeof settings.ai.model === 'string' && settings.ai.model.trim() ? settings.ai.model.trim() : 'gpt-4o-mini',
                     mode: typeof settings.ai.mode === 'string' && settings.ai.mode.trim() ? settings.ai.mode.trim() : 'fallback'
+                };
+            }
+
+            if (settings.pansou) {
+                settings.pansou = {
+                    ...(ConfigService.getConfigValue('pansou') || {}),
+                    ...settings.pansou,
+                    baseUrl: typeof settings.pansou.baseUrl === 'string' ? settings.pansou.baseUrl.trim().replace(/\/+$/, '') : '',
+                    apiKey: typeof settings.pansou.apiKey === 'string' ? settings.pansou.apiKey.trim() : (settings.pansou.apiKey || ''),
+                    timeout: Number(settings.pansou.timeout) || 10000
                 };
             }
 
@@ -1009,9 +1020,16 @@ const registerApiRoutes = (app, deps) => {
 
     app.delete('/api/maintenance/jobs', async (req, res) => {
         try {
+            const { type } = req.query || {};
             const { MaintenanceJobService } = require('../services/MaintenanceJobService');
-            await MaintenanceJobService.clearJobs();
-            res.json({ success: true, message: '已清空全部维护作业记录' });
+            if (type) {
+                const { getMaintenanceJobRepository } = require('../database');
+                const repo = getMaintenanceJobRepository();
+                await repo.delete({ type });
+            } else {
+                await MaintenanceJobService.clearJobs();
+            }
+            res.json({ success: true, message: '已清空作业记录' });
         } catch (error) {
             res.status(500).json({ success: false, error: error.message });
         }
@@ -1022,6 +1040,16 @@ const registerApiRoutes = (app, deps) => {
             const { MaintenanceJobService } = require('../services/MaintenanceJobService');
             await MaintenanceJobService.deleteJob(req.params.id);
             res.json({ success: true, message: '已删除指定维护作业记录' });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.delete('/api/maintenance/episodes/missing/cache', async (req, res) => {
+        try {
+            const { EpisodeInspectionService } = require('../services/EpisodeInspectionService');
+            EpisodeInspectionService.clearScanResults();
+            res.json({ success: true, message: '已成功清空缺集巡检实时结果与缓存' });
         } catch (error) {
             res.status(500).json({ success: false, error: error.message });
         }
@@ -1082,8 +1110,9 @@ const registerApiRoutes = (app, deps) => {
             const { EpisodeInspectionService } = require('../services/EpisodeInspectionService');
             const { RecognitionEngine } = require('../services/RecognitionEngine');
             const cleanTitle = RecognitionEngine.sanitizeMediaTitle(title) || title;
+            const extractedYear = year || RecognitionEngine.extractYear(title) || '';
             const candidates = await EpisodeInspectionService.tmdbService.searchCandidates(cleanTitle, {
-                year: year || '',
+                year: extractedYear,
                 mediaType: mediaType || 'tv'
             });
             res.json({ success: true, data: candidates });
@@ -1257,7 +1286,7 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // ─── 媒体服务器与 Webhook 联动接口 ─────────────────────────────────────────────
+    // ─── 媒体服务器与 Webhook 联动接口 (支持神医助手与 Emby 官方 deep_delete 深度删除) ───
     app.post('/api/webhook/emby', async (req, res) => {
         try {
             const { webhookService } = require('../services/WebhookService');
@@ -1268,7 +1297,7 @@ const registerApiRoutes = (app, deps) => {
             });
             res.status(result.statusCode).json(result.body);
         } catch (error) {
-            logger.error('处理 Emby Webhook 路由异常', { error: error.message, stack: error.stack });
+            logger.error('处理 Emby / 神医助手 Webhook 路由异常', { error: error.message, stack: error.stack });
             res.status(500).json({ success: false, error: error.message });
         }
     });
@@ -1506,9 +1535,10 @@ const registerApiRoutes = (app, deps) => {
                 return res.status(400).json({ success: false, error: '标题不能为空' });
             }
             const cleanTitle = RecognitionEngine.sanitizeMediaTitle(title) || title;
+            const extractedYear = year || RecognitionEngine.extractYear(title) || '';
             const candidates = await MediaScrapeService.tmdbService.searchCandidates(
                 cleanTitle,
-                year,
+                extractedYear,
                 mediaType || 'multi'
             );
             res.json({ success: true, data: candidates });
@@ -2032,7 +2062,8 @@ const registerApiRoutes = (app, deps) => {
             }
 
             const cleanTitle = RecognitionEngine.sanitizeMediaTitle(query) || query;
-            const candidates = await tmdb.searchCandidates(cleanTitle, year || '', mediaType || 'auto');
+            const extractedYear = year || RecognitionEngine.extractYear(query) || '';
+            const candidates = await tmdb.searchCandidates(cleanTitle, extractedYear, mediaType || 'auto');
             res.json({ success: true, data: candidates });
         } catch (error) {
             res.status(500).json({ success: false, error: error.message });
@@ -2257,9 +2288,58 @@ const registerApiRoutes = (app, deps) => {
                     logTaskEvent(failDirectMsg);
                     return res.status(502).send('获取 139 官方 CDN 直链失败');
                 }
-                // 302 重定向至 139 官方 CDN 高速直链（零服务器中转带宽，直连满速播放）
-                logger.info(`[STRM 302] 成功获取 CDN 直链并响应 302 重定向: ${fileName} (fileId: ${fileId})`);
-                return res.redirect(302, directUrl);
+                const cleanName = path.basename(String(fileName || 'video.mp4'));
+                const safeAsciiName = encodeURIComponent(cleanName);
+
+                // 若请求显式携带了 mode=302 或 redirect=true，则保留纯 302 重定向
+                if (req.query.redirect === 'true' || req.query.mode === '302') {
+                    logger.info(`[STRM 取流] 响应 302 重定向: ${fileName} (fileId: ${fileId})`);
+                    res.setHeader('Content-Disposition', `inline; filename="${safeAsciiName}"; filename*=UTF-8''${safeAsciiName}`);
+                    return res.redirect(302, directUrl);
+                }
+
+                // 默认高性能流式直推 (Stream Proxy Pipeline)
+                // 彻底解决 139 预签名 S3 强制返回 Content-Disposition: attachment 导致浏览器强制弹下载和 UUID 乱码文件名的问题
+                logger.info(`[STRM 流式推流] 启动流式直推: ${fileName} (fileId: ${fileId}), Range: ${req.headers.range || '全量'}`);
+                
+                const cdnHeaders = {};
+                if (req.headers.range) {
+                    cdnHeaders.range = req.headers.range;
+                }
+
+                const cdnReq = https.get(directUrl, { headers: cdnHeaders }, (cdnRes) => {
+                    const statusCode = cdnRes.statusCode || 200;
+                    const ext = path.extname(cleanName).toLowerCase();
+                    const mimeType = ext === '.mp4' || ext === '.m4v' ? 'video/mp4'
+                        : (ext === '.mkv' ? 'video/x-matroska'
+                        : (ext === '.ts' ? 'video/mp2t'
+                        : (ext === '.avi' ? 'video/x-msvideo'
+                        : (ext === '.webm' ? 'video/webm' : (cdnRes.headers['content-type'] || 'video/mp4')))));
+
+                    const outHeaders = {
+                        'Content-Type': mimeType,
+                        'Accept-Ranges': 'bytes',
+                        'Content-Disposition': `inline; filename="${safeAsciiName}"; filename*=UTF-8''${safeAsciiName}`,
+                        'Access-Control-Allow-Origin': '*'
+                    };
+
+                    if (cdnRes.headers['content-range']) outHeaders['Content-Range'] = cdnRes.headers['content-range'];
+                    if (cdnRes.headers['content-length']) outHeaders['Content-Length'] = cdnRes.headers['content-length'];
+
+                    res.writeHead(statusCode, outHeaders);
+                    cdnRes.pipe(res);
+                });
+
+                cdnReq.on('error', (cdnErr) => {
+                    logger.error(`[STRM 流式推流] CDN 请求错误: ${cdnErr.message}`);
+                    if (!res.headersSent) {
+                        res.status(502).send(`CDN 取流失败: ${cdnErr.message}`);
+                    }
+                });
+
+                req.on('close', () => {
+                    cdnReq.destroy();
+                });
             } catch (err) {
                 const errMsg = err.message || '';
                 if (errMsg.includes('04000010') || errMsg.includes('资源不存在') || errMsg.includes('04000002') || errMsg.includes('00010002')) {
@@ -2297,15 +2377,43 @@ const registerApiRoutes = (app, deps) => {
 
             let targetFiles = [...files];
 
-            // 若未提供显式 files 列表，则按用户指定目录从 139 网盘实际扫描
+            // 多源目录支持：支持 sourceCatalogs 列表 [{ id, name }] 或单 folderId/folderPath
+            const sourceCatalogs = Array.isArray(body.sourceCatalogs) && body.sourceCatalogs.length > 0
+                ? body.sourceCatalogs
+                : (Array.isArray(options.sourceCatalogs) && options.sourceCatalogs.length > 0
+                    ? options.sourceCatalogs
+                    : (specifiedFolderId ? [{ id: specifiedFolderId, name: specifiedFolderName || '指定目录' }] : []));
+
+            const rawVideoSuffixes = body.videoSuffixes || options.videoSuffixes || ConfigService.getConfigValue('strm.videoSuffixes');
+            const minSizeMB = Number(body.minSizeMB ?? options.minSizeMB ?? ConfigService.getConfigValue('strm.minSizeMB') ?? 0);
+            const strmBaseUrl = (body.strmBaseUrl || options.strmBaseUrl || ConfigService.getConfigValue('strm.strmBaseUrl') || ConfigService.getConfigValue('system.baseUrl') || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+            const cleanEmptyDirs = body.cleanEmptyDirs ?? options.cleanEmptyDirs ?? ConfigService.getConfigValue('strm.cleanEmptyDirs') !== false;
+
+            // 若传入了 strmBaseUrl 或 videoSuffixes，持久化保存至配置中
+            if (body.strmBaseUrl || body.videoSuffixes || body.minSizeMB !== undefined) {
+                const currentStrmCfg = ConfigService.getConfigValue('strm') || {};
+                ConfigService.setConfigValue('strm', {
+                    ...currentStrmCfg,
+                    ...(body.strmBaseUrl ? { strmBaseUrl } : {}),
+                    ...(body.videoSuffixes ? { videoSuffixes: body.videoSuffixes } : {}),
+                    ...(body.minSizeMB !== undefined ? { minSizeMB } : {}),
+                    ...(body.cleanEmptyDirs !== undefined ? { cleanEmptyDirs } : {}),
+                    ...(sourceCatalogs.length > 0 ? { sourceCatalogs } : {})
+                });
+            }
+
+            // 若未提供显式 files 列表，则按用户指定的源目录列表从 139 网盘实际并行/递归扫描
             if (targetFiles.length === 0) {
                 const { AppDataSource } = require('../database');
                 const { Account } = require('../entities');
 
-                const mediaSuffixes = (ConfigService.getConfigValue('task.mediaSuffix') || '.mp4;.mkv;.avi;.mov;.ts;.flv;.wmv;.iso;.m4v;.rmvb;.strm')
-                    .split(';')
-                    .map(s => s.trim().toLowerCase())
-                    .filter(Boolean);
+                const videoSuffixList = (Array.isArray(rawVideoSuffixes)
+                    ? rawVideoSuffixes
+                    : (typeof rawVideoSuffixes === 'string' ? rawVideoSuffixes.split(/[;,]/) : StrmService.DEFAULT_VIDEO_EXTS)
+                )
+                    .map(s => String(s).trim().toLowerCase().replace(/^\./, ''))
+                    .filter(Boolean)
+                    .map(s => '.' + s);
 
                 const accountRepo = AppDataSource && AppDataSource.isInitialized ? AppDataSource.getRepository(Account) : null;
                 const account = accountRepo ? (
@@ -2323,96 +2431,76 @@ const registerApiRoutes = (app, deps) => {
                 const { Cloud139Service } = require('../services/cloud139');
                 const cloud139 = Cloud139Service.getInstance(account);
 
-                // 解析目标待扫描目录 ID 与展示名称
-                let targetCatalogId = specifiedFolderId;
-                let targetFolderName = specifiedFolderName || '';
-
-                if (!targetCatalogId || targetCatalogId === '-11') {
-                    // 若未显式传入 folderId，但传入了 folderName（如 /目标目录 或 目标目录）
-                    if (targetFolderName && targetFolderName !== '/' && targetFolderName !== '根目录') {
-                        const cleanName = targetFolderName.replace(/^\/+|\/+$/g, '').split('/')[0];
-                        const found = await cloud139.findFolderByName('/', cleanName).catch(() => null);
-                        if (found && (found.fileId || found.id)) {
-                            targetCatalogId = found.fileId || found.id;
-                        }
-                    }
-                }
-
-                // 若仍未定位，从系统配置中回退至默认目标目录
-                if (!targetCatalogId || targetCatalogId === '/' || targetCatalogId === '-11') {
+                // 解析目标待扫描目录列表
+                let targetCatalogsToScan = [...sourceCatalogs];
+                if (targetCatalogsToScan.length === 0) {
                     const defaultTargetFolderId = ConfigService.getConfigValue('channelMonitor.defaultTargetFolderId');
                     const defaultTargetFolderName = ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName') || '目标目录';
                     if (defaultTargetFolderId && defaultTargetFolderId !== '/' && defaultTargetFolderId !== '-11') {
-                        targetCatalogId = defaultTargetFolderId;
-                        if (!targetFolderName) targetFolderName = defaultTargetFolderName;
-                    } else if (defaultTargetFolderName) {
-                        const cleanName = defaultTargetFolderName.replace(/^\/+|\/+$/g, '').split('/')[0];
-                        const found = await cloud139.findFolderByName('/', cleanName).catch(() => null);
-                        if (found && (found.fileId || found.id)) {
-                            targetCatalogId = found.fileId || found.id;
-                            if (!targetFolderName) targetFolderName = defaultTargetFolderName;
-                        }
+                        targetCatalogsToScan.push({ id: defaultTargetFolderId, name: defaultTargetFolderName });
+                    } else {
+                        targetCatalogsToScan.push({ id: '/', name: '根目录' });
                     }
                 }
 
-                if (!targetCatalogId) targetCatalogId = '/';
-                if (!targetFolderName) targetFolderName = targetCatalogId === '/' ? '根目录' : '指定目录';
+                const scanSummaryMsg = `[STRM生成] 启动扫描 ${targetCatalogsToScan.length} 个源目录: [${targetCatalogsToScan.map(c => c.name || c.id).join(', ')}], 播放地址: ${strmBaseUrl}, 小视频阈值: ${minSizeMB}MB`;
+                logger.info(scanSummaryMsg);
+                logTaskEvent(scanSummaryMsg);
 
-                const startMsg = `[STRM生成] 启动扫描指定网盘目录: ${targetFolderName} (ID: ${targetCatalogId}), 清理失效映射: ${cleanObsolete ? '是' : '否'}`;
-                logger.info(startMsg);
-                logTaskEvent(startMsg);
-
-                // 递归全量扫描指定网盘目录（使用 listDiskDirAll 分页获取真实文件）
-                const seenIds = new Set();
+                const seenFileIds = new Set();
                 let scannedDirCount = 0;
-                const scanCatalog = async (catalogId, relativePath = '') => {
-                    scannedDirCount++;
-                    if (relativePath) {
-                        logger.info(`[STRM生成] 正在扫描网盘子目录: /${relativePath} (ID: ${catalogId})`);
-                    }
-                    const items = await cloud139.listDiskDirAll(catalogId).catch(err => {
-                        const scanErrMsg = `[STRM生成] 扫描网盘子目录 (${catalogId}) 失败: ${err.message}`;
-                        logger.error(scanErrMsg);
-                        logTaskEvent(scanErrMsg);
-                        return [];
-                    });
 
-                    for (const item of items) {
-                        const fileId = item.fileId || item.id;
-                        if (!fileId || seenIds.has(String(fileId))) continue;
+                for (const cat of targetCatalogsToScan) {
+                    const catId = typeof cat === 'object' ? (cat.id || cat.catalogId) : cat;
+                    const catName = typeof cat === 'object' ? (cat.name || catId) : catId;
 
-                        const name = item.name || item.fileName || '';
-                        if (item.type === 'folder') {
-                            const subRel = relativePath ? `${relativePath}/${name}` : name;
-                            await scanCatalog(fileId, subRel);
-                        } else {
-                            const ext = path.extname(name).toLowerCase();
-                            if (mediaSuffixes.includes(ext)) {
-                                seenIds.add(String(fileId));
-                                targetFiles.push({
-                                    fileId,
-                                    id: fileId,
-                                    name,
-                                    finalName: name,
-                                    originalName: name,
-                                    targetFolderPath: relativePath,
-                                    size: Number(item.size || 0),
-                                    accountId: account.id
-                                });
+                    const scanCatalog = async (currentCatalogId, relativePath = '') => {
+                        scannedDirCount++;
+                        const items = await cloud139.listDiskDirAll(currentCatalogId).catch(err => {
+                            logger.error(`[STRM生成] 扫描目录 (${currentCatalogId}) 失败: ${err.message}`);
+                            return [];
+                        });
+
+                        for (const item of items) {
+                            const fileId = item.fileId || item.id;
+                            if (!fileId || seenFileIds.has(String(fileId))) continue;
+
+                            const name = item.name || item.fileName || '';
+                            if (item.type === 'folder') {
+                                const subRel = relativePath ? `${relativePath}/${name}` : name;
+                                await scanCatalog(fileId, subRel);
+                            } else {
+                                const ext = path.extname(name).toLowerCase();
+                                const size = Number(item.size || 0);
+
+                                if (videoSuffixList.includes(ext)) {
+                                    seenFileIds.add(String(fileId));
+                                    targetFiles.push({
+                                        fileId,
+                                        id: fileId,
+                                        name,
+                                        finalName: name,
+                                        originalName: name,
+                                        targetFolderPath: relativePath,
+                                        size,
+                                        accountId: account.id
+                                    });
+                                }
                             }
                         }
-                    }
-                };
+                    };
 
-                await scanCatalog(targetCatalogId, '');
-                const scanDoneMsg = `[STRM生成] 网盘目录扫描完成: 遍历 ${scannedDirCount} 个目录，共发现 ${targetFiles.length} 个视频媒体资产`;
+                    await scanCatalog(catId, '');
+                }
+
+                const scanDoneMsg = `[STRM生成] 网盘源目录扫描完毕: 遍历 ${scannedDirCount} 个目录，发现 ${targetFiles.length} 个视频文件`;
                 logger.info(scanDoneMsg);
                 logTaskEvent(scanDoneMsg);
             }
 
             // 若仍无媒体文件，返回成功并带空统计与提示信息，杜绝抛出 400 报错
             if (targetFiles.length === 0) {
-                const emptyMsg = `[STRM生成] 指定网盘目录「${targetFolderName}」中暂未检测到媒体文件，已终止生成`;
+                const emptyMsg = `[STRM生成] 指定源目录中暂未检测到媒体文件，已终止生成`;
                 logger.info(emptyMsg);
                 logTaskEvent(emptyMsg);
                 return res.json({
@@ -2428,17 +2516,25 @@ const registerApiRoutes = (app, deps) => {
                         errors: 0,
                         results: [],
                         outputDir: strmService.baseDir,
-                        folderName: targetFolderName,
-                        message: '指定网盘目录中暂未检测到媒体文件，请确认该目录是否存在视频资产'
+                        folderName: sourceCatalogs.map(c => c.name || c.id).join(', ') || '指定目录',
+                        message: '指定源目录中暂未检测到匹配后缀的视频资产'
                     }
                 });
             }
 
             const result = await strmService.generateForOrganizedFiles(targetFiles, {
                 ...options,
+                videoSuffixes: rawVideoSuffixes,
+                minSizeMB,
+                strmBaseUrl,
+                cleanEmptyDirs,
                 cleanObsolete,
                 accountId
             });
+
+            const firstSuccess = (result.results || []).find(r => r.content);
+            const sampleRealUrl = firstSuccess ? firstSuccess.content : '';
+            const sampleRealName = firstSuccess ? (firstSuccess.originalFile || firstSuccess.strmFile || '') : '';
 
             res.json({
                 success: true,
@@ -2450,7 +2546,10 @@ const registerApiRoutes = (app, deps) => {
                     errors: result.failedCount ?? 0,
                     outputDir: result.outputDir || strmService.baseDir,
                     cleanedObsoleteCount: result.cleanedObsoleteCount ?? 0,
-                    folderName: targetFolderName,
+                    metaSyncedCount: result.metaSyncedCount ?? 0,
+                    folderName: sourceCatalogs.map(c => c.name || c.id).join(', ') || '多源目录',
+                    sampleRealUrl,
+                    sampleRealName
                 }
             });
         } catch (error) {
@@ -3678,8 +3777,42 @@ const registerApiRoutes = (app, deps) => {
             res.status(500).json({ success: false, error: error.message });
         }
     });
+    // ─── 盘搜 (PanSou) 资源检索与服务健康检查 ──────────────────────────────────────
+    app.post('/api/pansou/search', async (req, res) => {
+        try {
+            const { keyword, kw, baseUrl, apiKey, timeout, cloudTypes, refresh } = req.body || {};
+            const searchKw = String(keyword || kw || req.query.keyword || req.query.kw || '').trim();
+            if (!searchKw) {
+                return res.status(400).json({ success: false, error: '搜索关键词不能为空', data: [] });
+            }
+            const { PansouService } = require('../services/pansouService');
+            const result = await PansouService.searchDetailed(searchKw, {
+                baseUrl,
+                apiKey,
+                timeout,
+                cloudTypes,
+                refresh
+            });
+            res.json(result);
+        } catch (error) {
+            logger.error(`[PanSou] 检索路由异常: ${error.message}`, { error: error.message });
+            res.status(500).json({ success: false, error: error.message, data: [] });
+        }
+    });
+
+    app.get('/api/pansou/health', async (req, res) => {
+        try {
+            const { baseUrl, apiKey, timeout } = req.query || {};
+            const { PansouService } = require('../services/pansouService');
+            const result = await PansouService.checkHealth({ baseUrl, apiKey, timeout });
+            res.json({ success: true, data: result });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
 };
 
 module.exports = {
     registerApiRoutes,
 };
+

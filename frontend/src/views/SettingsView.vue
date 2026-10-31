@@ -21,10 +21,12 @@ import {
   ChevronUp,
   SlidersHorizontal,
   Film,
+  Search,
   Info,
 } from 'lucide-vue-next';
 import { ElMessage } from 'element-plus';
 import { settingsApi } from '../api/settings';
+import { pansouApi } from '../api/pansou';
 
 // 页面加载与状态管理
 const isLoading = ref(true);
@@ -35,6 +37,8 @@ const showBotToken = ref(false);
 const isCopiedApiKey = ref(false);
 const showProxyDetail = ref(false);
 const isTestingTmdb = ref(false);
+const isTestingPansou = ref(false);
+const pansouTestResult = ref<{ success?: boolean; message?: string } | null>(null);
 const tmdbTestResult = ref<{ success: boolean; latency?: number; message?: string } | null>(null);
 const showTmdbKey = ref(false);
 const showAdvancedTask = ref(false);
@@ -83,6 +87,12 @@ const form = reactive({
       customPush: true,
       tmdb: true,
     },
+  },
+  // 盘搜 (PanSou) 检索服务配置
+  pansou: {
+    baseUrl: 'http://127.0.0.1:8888',
+    apiKey: '',
+    timeout: 10000,
   },
   // TMDB API 与影视刮削配置
   tmdb: {
@@ -225,6 +235,13 @@ async function loadSettings() {
       form.pushplus.webhook = data.pushplus.webhook || '';
       form.pushplus.to = data.pushplus.to || '';
       form.pushplus.enable = Boolean(form.pushplus.token);
+    }
+
+    // 5.5 盘搜回填
+    if (data.pansou) {
+      form.pansou.baseUrl = data.pansou.baseUrl || 'http://127.0.0.1:8888';
+      form.pansou.apiKey = data.pansou.apiKey || '';
+      form.pansou.timeout = data.pansou.timeout || 10000;
     }
 
     // 6. TMDB API 回填
@@ -370,6 +387,35 @@ async function testTmdb() {
   }
 }
 
+async function testPansou() {
+  isTestingPansou.value = true;
+  pansouTestResult.value = null;
+  try {
+    const res = await pansouApi.checkHealth({
+      baseUrl: form.pansou.baseUrl.trim(),
+      apiKey: form.pansou.apiKey.trim(),
+      timeout: form.pansou.timeout || 10000,
+    });
+    pansouTestResult.value = {
+      success: res.connected,
+      message: res.message,
+    };
+    if (res.connected) {
+      ElMessage.success(`盘搜服务连接正常 (${res.latency}ms)`);
+    } else {
+      ElMessage.warning(`盘搜测试失败: ${res.message}`);
+    }
+  } catch (err: any) {
+    pansouTestResult.value = {
+      success: false,
+      message: err.message || '连接失败',
+    };
+    ElMessage.error(`盘搜连接失败: ${err.message || '连接失败'}`);
+  } finally {
+    isTestingPansou.value = false;
+  }
+}
+
 // 重新生成 32 位随机 API Key
 function generateApiKey() {
   const chars = '0123456789abcdef';
@@ -487,6 +533,11 @@ async function handleSave() {
         username: form.system.username.trim(),
         password: form.system.password.trim(),
         apiKey: form.system.apiKey.trim(),
+      },
+      pansou: {
+        baseUrl: form.pansou.baseUrl.trim(),
+        apiKey: form.pansou.apiKey.trim(),
+        timeout: Number(form.pansou.timeout) || 10000,
       },
     };
 
@@ -770,6 +821,107 @@ onUnmounted(() => {
           <CheckCircle2 v-if="tmdbTestResult.success" class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <XCircle v-else class="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
           <span>{{ tmdbTestResult.message }}</span>
+        </div>
+      </div>
+    </div>
+
+        <!-- ================= 模块: PanSou 盘搜网盘搜索服务 ================= -->
+    <div class="settings-card">
+      <div class="flex items-center gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
+        <div class="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+          <Search class="w-5 h-5" />
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">PanSou 盘搜服务</h3>
+        </div>
+      </div>
+
+      <!-- 统一文字说明区 -->
+      <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 space-y-2 mb-4">
+        <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+          <Info class="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+          <span>PanSou 服务说明与指引</span>
+        </div>
+        <ul class="space-y-1.5 pl-1 leading-relaxed text-slate-600 dark:text-slate-300">
+          <li>• <strong>集成项目</strong>：对接开源高性能聚合搜索项目 <a href="https://github.com/fish2018/pansou" target="_blank" class="text-purple-600 dark:text-purple-400 underline font-mono">fish2018/pansou</a>，专为 139 移动云盘搜索提供全网聚合索引。</li>
+          <li>• <strong>单链追更联动</strong>：配置并启动后，在「追更管理」添加追更任务时，可直接点击「盘搜找资源」，秒级检索并一键装载移动云盘分享外链与提取码。</li>
+          <li>• <strong>部署建议</strong>：若通过 Docker 本地部署且端口为 8888，地址填写 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">http://127.0.0.1:8888</code> 即可。</li>
+        </ul>
+      </div>
+
+      <div class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- 盘搜服务地址 -->
+          <div>
+            <label for="pansouBaseUrl" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              服务地址 (Base URL)
+            </label>
+            <input
+              id="pansouBaseUrl"
+              v-model="form.pansou.baseUrl"
+              type="text"
+              placeholder="默认: http://127.0.0.1:8888"
+              class="input-base font-mono text-xs w-full"
+            />
+          </div>
+
+          <!-- API Key / Token -->
+          <div>
+            <label for="pansouApiKey" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              API Key / 鉴权 Token (可选)
+            </label>
+            <input
+              id="pansouApiKey"
+              v-model="form.pansou.apiKey"
+              type="password"
+              placeholder="无鉴权则留空"
+              class="input-base font-mono text-xs w-full"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- 请求超时 -->
+          <div>
+            <label for="pansouTimeout" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              请求超时时间 (毫秒)
+            </label>
+            <input
+              id="pansouTimeout"
+              v-model.number="form.pansou.timeout"
+              type="number"
+              min="1000"
+              max="60000"
+              step="1000"
+              placeholder="10000"
+              class="input-base text-xs w-full"
+            />
+          </div>
+
+          <!-- 测速操作与状态 -->
+          <div class="flex flex-col justify-end">
+            <button
+              type="button"
+              class="btn-default text-xs h-[38px] px-4 w-full flex items-center justify-center gap-1.5 cursor-pointer font-medium"
+              :disabled="isTestingPansou"
+              @click="testPansou"
+            >
+              <RefreshCw v-if="isTestingPansou" class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 animate-spin" />
+              <Network v-else class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <span>{{ isTestingPansou ? '检测中...' : '测试盘搜连通性' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 测试结果提示条 -->
+        <div
+          v-if="pansouTestResult"
+          class="p-2.5 rounded-lg border text-xs flex items-center gap-2"
+          :class="pansouTestResult.success ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300' : 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 text-red-700 dark:text-red-300'"
+        >
+          <CheckCircle2 v-if="pansouTestResult.success" class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <XCircle v-else class="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
+          <span>{{ pansouTestResult.message }}</span>
         </div>
       </div>
     </div>

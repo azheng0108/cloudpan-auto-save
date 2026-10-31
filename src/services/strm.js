@@ -458,11 +458,12 @@ class StrmService {
             }
         }));
     }
+
     //检查文件是否是媒体文件
     _checkFileSuffix(file, mediaSuffixs) {
-         // 获取文件后缀
-         const fileExt = '.' + file.name.split('.').pop().toLowerCase();
-         return mediaSuffixs.includes(fileExt)
+        // 获取文件后缀
+        const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+        return mediaSuffixs.includes(fileExt);
     }
 
     _joinUrl(base, path) {
@@ -475,12 +476,10 @@ class StrmService {
 
     // 根据文件名获取STRM文件路径
     getStrmPath(task) {
-        // 使用完整 realFolderName（不裁剪目标目录前缀），normalize Windows 反斜杠
         let taskName = (task.realFolderName || '').replace(/\\/g, '/').replace(/^\/|\/$/g, '');
         const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || task.account?.localStrmPrefix || '';
         const cloudStrmPrefix = ConfigService.getConfigValue('strm.cloudStrmPrefix') || task.account?.cloudStrmPrefix || '';
         if (!this.enable){
-            // 如果cloudStrmPrefix存在 且不是url地址
             if (cloudStrmPrefix && !cloudStrmPrefix.startsWith('http')) {
                 return path.join(cloudStrmPrefix, taskName);
             }
@@ -488,6 +487,24 @@ class StrmService {
             return path.join(this.baseDir, localStrmPrefix, taskName);
         }
         return '';
+    }
+                 /**
+     * 从 .strm 文件的文本内容中提取 139 云盘 fileId
+     * @param {string} content - .strm 文件内容
+     * @returns {string|null}
+     */
+    static extractFileIdFromStrmContent(content) {
+        if (!content || typeof content !== 'string') return null;
+        // 匹配 /api/strm/stream/{fileId} 或 /play/{fileId}
+        const match = content.match(/(?:\/api\/strm\/stream\/|\/play\/)([a-zA-Z0-9_\-]+)/i);
+        return match ? match[1] : null;
+    }
+
+    /**
+     * 默认视频扩展名列表 (TgtoDrive 标准对标)
+     */
+    static get DEFAULT_VIDEO_EXTS() {
+        return ['.mp4', '.mkv', '.avi', '.ts', '.iso', '.flv', '.mov', '.wmv', '.rmvb', '.m4v', '.strm', '.mpg', '.mpeg', '.vob', '.m2ts', '.webm', '.3gp'];
     }
 
     /**
@@ -499,7 +516,7 @@ class StrmService {
      *    - custom: AList / OpenList / WebDAV 挂载前缀 URL
      * 
      * @param {Array<object>} files - 归档文件列表 [{ fileId, originalName, finalName, targetFolderPath, size, tmdbId, ... }]
-     * @param {object} [options] - 选项 { overwrite, accountId, defaultTargetFolderName }
+     * @param {object} [options] - 选项 { overwrite, accountId, defaultTargetFolderName, videoSuffixes, minSizeMB, strmBaseUrl, cleanEmptyDirs, cleanObsolete }
      * @returns {Promise<{ success: boolean, total: number, successCount: number, skippedCount: number, failedCount: number, results: Array }>}
      */
     async generateForOrganizedFiles(files, options = {}) {
@@ -508,20 +525,34 @@ class StrmService {
         }
 
         const overwrite = options.overwrite ?? options.forceAll ?? false;
-        const mediaSuffixes = (ConfigService.getConfigValue('task.mediaSuffix') || '.mp4;.mkv;.avi;.mov;.ts;.flv;.wmv;.iso;.m4v;.rmvb;.strm')
-            .split(';')
-            .map(s => s.trim().toLowerCase())
-            .filter(Boolean);
 
+        // 1. 视频扩展名规范化（支持从 options 或配置读取，对标 TgtoDrive 17 种格式）
+        const rawVideoSuffixes = options.videoSuffixes ?? ConfigService.getConfigValue('strm.videoSuffixes') ?? ConfigService.getConfigValue('task.mediaSuffix');
+        const mediaSuffixes = (Array.isArray(rawVideoSuffixes)
+            ? rawVideoSuffixes
+            : (typeof rawVideoSuffixes === 'string' ? rawVideoSuffixes.split(/[;,]/) : StrmService.DEFAULT_VIDEO_EXTS)
+        )
+            .map(s => String(s).trim().toLowerCase().replace(/^\./, ''))
+            .filter(Boolean)
+            .map(s => '.' + s);
+
+        // 2. 小视频跳过阈值 (MB, 0 为不限制)
+        const minSizeMB = Number(options.minSizeMB ?? ConfigService.getConfigValue('strm.minSizeMB') ?? 0);
+
+        // 3. 基础地址与模式
         const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || '';
         const cloudStrmPrefix = ConfigService.getConfigValue('strm.cloudStrmPrefix') || '';
-        const streamMode = ConfigService.getConfigValue('strm.streamMode') || 'direct302';
         const stripRootTargetDir = ConfigService.getConfigValue('strm.stripRootTargetDir') !== false;
         const defaultTargetFolderName = (options.defaultTargetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName') || '目标目录')
             .replace(/^\/+|\/+$/g, '');
 
-        const systemBaseUrl = ConfigService.getConfigValue('system.baseUrl') || 'http://127.0.0.1:3000';
+        // 优先使用用户配置的 STRM 播放服务基础地址（如 http://192.168.1.100:3000）
+        const configuredStrmBaseUrl = options.strmBaseUrl || ConfigService.getConfigValue('system.baseUrl') || ConfigService.getConfigValue('strm.strmBaseUrl') || 'http://127.0.0.1:3000';
+        const strmBaseUrl = configuredStrmBaseUrl.replace(/\/+$/, '');
         const accountId = options.accountId || '';
+
+        // 4. 清理空目录开关（开启清理失效 .strm 和空目录；关闭只清理 .strm）
+        const cleanEmptyDirs = options.cleanEmptyDirs ?? ConfigService.getConfigValue('strm.cleanEmptyDirs') !== false;
 
         let successCount = 0;
         let skippedCount = 0;
@@ -529,7 +560,7 @@ class StrmService {
         const results = [];
 
         const fullOutputDir = path.join(this.baseDir, localStrmPrefix);
-        const startWriteMsg = `[STRM生成] 开始为 ${files.length} 个媒体文件写入本地 STRM (保存路径: ${fullOutputDir}, 直链模式: 139 CDN 302)`;
+        const startWriteMsg = `[STRM生成] 开始为 ${files.length} 个媒体文件写入本地 STRM (保存路径: ${fullOutputDir}, 播放地址: ${strmBaseUrl}, 小视频阈值: ${minSizeMB > 0 ? minSizeMB + 'MB' : '不限制'})`;
         logTaskEvent(startWriteMsg);
         logger.info(startWriteMsg);
 
@@ -550,9 +581,11 @@ class StrmService {
                         logger.info(`[STRM生成] 清理失效旧映射文件: ${existingFile}`);
                     }
                 }
-                await this.cleanEmptyDirs(this.baseDir);
+                if (cleanEmptyDirs) {
+                    await this.cleanEmptyDirs(this.baseDir);
+                }
                 if (cleanedObsoleteCount > 0) {
-                    const cleanDoneMsg = `[STRM生成] 失效旧映射清理完成: 共清理 ${cleanedObsoleteCount} 个失效 STRM 文件及残留空目录`;
+                    const cleanDoneMsg = `[STRM生成] 失效旧映射清理完成: 共清理 ${cleanedObsoleteCount} 个失效 STRM 文件${cleanEmptyDirs ? '及残留空目录' : ''}`;
                     logTaskEvent(cleanDoneMsg);
                     logger.info(cleanDoneMsg);
                 } else {
@@ -578,6 +611,20 @@ class StrmService {
             // 仅对视频媒体文件生成 .strm
             if (!mediaSuffixes.includes(ext)) {
                 skippedCount++;
+                continue;
+            }
+
+            // 小视频跳过阈值校验
+            const fileSize = Number(file.size || 0);
+            if (minSizeMB > 0 && fileSize > 0 && fileSize < minSizeMB * 1024 * 1024) {
+                const sizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+                logger.info(`[STRM生成] 小视频跳过: ${fileName} (${sizeMB} MB < 阈值 ${minSizeMB} MB)`);
+                skippedCount++;
+                results.push({
+                    originalFile: fileName,
+                    status: 'skipped',
+                    reason: `小视频跳过 (${sizeMB} MB < ${minSizeMB} MB)`
+                });
                 continue;
             }
 
@@ -616,21 +663,15 @@ class StrmService {
                     continue;
                 }
 
-                // 生成 STRM 内容（单行 URL）
-                let content = '';
-                const fileId = file.fileId || file.id;
-
-                if (streamMode === 'direct302' || !cloudStrmPrefix) {
-                    // 原生 302 直链模式 (免 AList，零宿主机流量)
-                    const queryParams = [];
-                    if (accountId) queryParams.push(`accountId=${accountId}`);
-                    const queryStr = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
-                    content = `${systemBaseUrl.replace(/\/+$/, '')}/api/strm/stream/${fileId || ''}/${encodeURIComponent(fileName)}${queryStr}`;
-                } else {
-                    // 自定义 AList / WebDAV 挂载前缀模式
-                    const joinFolder = cloudStrmPrefix.endsWith(defaultTargetFolderName) ? relativePath : rawTargetFolder;
-                    content = this._joinUrl(this._joinUrl(cloudStrmPrefix, joinFolder), fileName);
-                }
+                // 生成 STRM 内容（单行 URL，写入 139 官方 CDN 原生 302 播放直链）
+                const content = StrmService.buildStrmUrl(file, {
+                    strmBaseUrl,
+                    accountId,
+                    relativePath,
+                    rawTargetFolder,
+                    defaultTargetFolderName,
+                    cloudStrmPrefix
+                });
 
                 await fs.writeFile(strmFilePath, content, 'utf8');
 
@@ -691,6 +732,43 @@ class StrmService {
             results
         };
     }
-}
 
+    /**
+     * 构建单个媒体文件的 STRM 播放直链 URL (139 官方 CDN 原生 302 直链播放)
+     * 
+     * @param {object} file - 文件对象 { fileId, name, finalName, ... }
+     * @param {object} context - 上下文配置 { strmBaseUrl, accountId }
+     * @returns {string} 单行 STRM URL
+     */
+    static buildStrmUrl(file, context = {}) {
+        const fileId = file.fileId || file.id || '';
+        const fileName = file.finalName || file.name || file.originalName || '';
+        const accountId = context.accountId || file.accountId || '';
+
+        // 139 官方 CDN 原生 302 直链播放
+        const streamMode = ConfigService.getConfigValue('strm.streamMode') || 'direct302';
+        const cloudStrmPrefix = context.cloudStrmPrefix || ConfigService.getConfigValue('strm.cloudStrmPrefix') || '';
+        if (streamMode === 'custom' && cloudStrmPrefix) {
+            const defaultTargetFolderName = (context.defaultTargetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName') || '目标目录').replace(/^\/+|\/+$/g, '');
+            const joinFolder = cloudStrmPrefix.endsWith(defaultTargetFolderName) ? (context.relativePath || '') : (context.rawTargetFolder || '');
+            return StrmService._joinUrlStatic(StrmService._joinUrlStatic(cloudStrmPrefix, joinFolder), fileName);
+        }
+
+        // 139 官方 CDN 原生 302 直链播放
+        const configuredStrmBaseUrl = context.strmBaseUrl || ConfigService.getConfigValue('system.baseUrl') || ConfigService.getConfigValue('strm.strmBaseUrl') || 'http://127.0.0.1:3000';
+        const strmBaseUrl = configuredStrmBaseUrl.replace(/\/+$/, '');
+        const queryParams = [];
+        if (accountId) queryParams.push(`accountId=${accountId}`);
+        const queryStr = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        return `${strmBaseUrl}/api/strm/stream/${fileId}/${encodeURIComponent(fileName)}${queryStr}`;
+    }
+
+    static _joinUrlStatic(base, p) {
+        base = (base || '').replace(/\/$/, '');
+        p = (p || '').replace(/^\//, '');
+        if (!base) return p;
+        if (!p) return base;
+        return `${base}/${p}`;
+    }
+}
 module.exports = { StrmService };

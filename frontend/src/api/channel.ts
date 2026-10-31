@@ -109,6 +109,9 @@ export interface ChannelGlobalConfig {
   enableMediaInfo?: boolean;
   includeEpisodeTitle?: boolean;
   sweepEmptyFolders?: boolean;
+  excludeNonVideo?: boolean;
+  excludeNoChineseSubtitle?: boolean;
+  excludeTrailersAndSamples?: boolean;
   ai?: ChannelAiConfig;
 }
 

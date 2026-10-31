@@ -24,15 +24,15 @@ class AIService {
      * @returns {object}
      */
     getEffectiveConfig(customConfig = null) {
-        const stored = ConfigService.getConfigValue('channelMonitor.ai') || ConfigService.getConfigValue('ai') || ConfigService.getConfigValue('openai') || {};
+        const stored = ConfigService.getConfigValue('ai') || ConfigService.getConfigValue('openai') || ConfigService.getConfigValue('channelMonitor.ai') || {};
         const cfg = Object.assign({}, stored, customConfig || {});
-        let rawBaseUrl = (customConfig && customConfig.baseUrl !== undefined) ? customConfig.baseUrl : (cfg.baseUrl || 'http://127.0.0.1:8045/v1');
+        let rawBaseUrl = (customConfig && customConfig.baseUrl !== undefined) ? customConfig.baseUrl : (cfg.baseUrl || 'https://api.openai.com/v1');
         let baseUrl = String(rawBaseUrl || '').trim().replace(/\/+$/, '');
         return {
             enable: Boolean(cfg.enable),
             apiKey: String(cfg.apiKey || '').trim(),
             baseUrl,
-            model: String(cfg.model || 'gemini-3.8-flash-tiered').trim(),
+            model: String(cfg.model || 'gpt-4o-mini').trim(),
             temperature: typeof cfg.temperature === 'number' ? cfg.temperature : 0.1,
             maxTokens: typeof cfg.maxTokens === 'number' ? cfg.maxTokens : (cfg.max_tokens || 2000),
             mode: cfg.mode || 'fallback'

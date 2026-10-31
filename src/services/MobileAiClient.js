@@ -79,9 +79,10 @@ function parseSseResponse(sseText) {
         if (!raw || raw === '[DONE]') continue;
         try {
             const frame = JSON.parse(raw);
-            if (!frame || !frame.data) continue;
+            if (!frame) continue;
             result.frameCount++;
             if (frame.code) result.code = String(frame.code);
+            if (!frame.data) continue;
             if (frame.success === true) result.success = true;
             const d = frame.data;
             if (d.sessionId) result.sessionId = String(d.sessionId);

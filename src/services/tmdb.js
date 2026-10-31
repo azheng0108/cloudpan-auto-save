@@ -714,16 +714,23 @@ class TMDBService {
 
         const { RecognitionEngine } = require('./RecognitionEngine');
 
-        // 2. 清洗标题中的常见防封干扰字符与技术规格
-        let sanitized = String(queryTitle || '').replace(/[丨|｜丶]/g, '')
-            .replace(/\.(?:mkv|mp4|iso|avi|rmvb|flv|ts)$/i, '')
-            .replace(/\b(?:1080[pi]|2160[pi]|4k|720[pi]|480[pi]|1920\s*[x*×]\s*1080|3840\s*[x*×]\s*2160|x26[45]|h\.?26[45]|hevc|avc|10bit|8bit|bdrip|remux|web-?dl|aac|dts(?:-hd)?(?:ma)?|truehd|flac|lpcm|\d\.\d(?:ch)?)\b/gi, ' ')
-            .replace(/[\[【][^\]】]*[\]】]/g, ' ')
-            .replace(/\s+/g, ' ').trim();
+        // 2. 清洗标题中的常见防封干扰字符、推文引流后缀、更新状态与技术规格
+        const strippedExt = String(queryTitle || '').replace(/\.(?:mkv|mp4|iso|avi|rmvb|flv|ts)$/i, '');
+        let sanitized = RecognitionEngine.sanitizeMediaTitle(strippedExt);
+        if (!sanitized && strippedExt) {
+            sanitized = strippedExt.replace(/[丨|｜丶]/g, '')
+                .replace(/\b(?:1080[pi]|2160[pi]|4k|720[pi]|480[pi]|1920\s*[x*×]\s*1080|3840\s*[x*×]\s*2160|x26[45]|h\.?26[45]|hevc|avc|10bit|8bit|bdrip|remux|web-?dl|aac|dts(?:-hd)?(?:ma)?|truehd|flac|lpcm|\d\.\d(?:ch)?)\b/gi, ' ')
+                .replace(/[\[【][^\]】]*[\]】]/g, ' ')
+                .replace(/\s+/g, ' ').trim();
+        }
 
-        // 停用词过滤：纯修饰词直接返回空
-        if (/^(?:国语|粤语|台配|英语|日语|中字|中文字幕|双语字幕|简繁双字|纯净版原盘|原盘|DIY|压制|重置|全集)+$/i.test(sanitized)) {
+        // 停用词过滤：纯修饰词或未识别出有效主体时直接返回空
+        if (!sanitized || /^(?:国语|粤语|台配|英语|日语|中字|中文字幕|双语字幕|简繁双字|纯净版原盘|原盘|DIY|压制|重置|全集)+$/i.test(sanitized)) {
             return [];
+        }
+
+        if (!year) {
+            year = RecognitionEngine.extractYear(queryTitle) || '';
         }
 
         let cleanQuery = sanitized || queryTitle;

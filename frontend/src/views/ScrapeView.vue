@@ -52,6 +52,8 @@ import {
   Radio,
   Clapperboard,
   ShieldCheck,
+  Shield,
+  ChevronDown,
   CheckCircle,
   ExternalLink,
   Copy,
@@ -77,9 +79,9 @@ const strategyConfig = ref<ChannelGlobalConfig>({
   enabled: true,
   channels: [],
   stagingFolderId: '',
-  stagingFolderName: '/暂存区/频道转存',
-  defaultTargetFolderId: '/',
-  defaultTargetFolderName: '默认媒体库 (/)',
+  stagingFolderName: '',
+  defaultTargetFolderId: '',
+  defaultTargetFolderName: '',
   dispatchRules: [],
   whitelistRegex: '',
   blacklistKeywords: [],
@@ -114,7 +116,12 @@ const strategyConfig = ref<ChannelGlobalConfig>({
   notifyOnOrganize: true,
   linkStrm: false,
   notifyOnStrm: false,
+  excludeNonVideo: false,
+  excludeNoChineseSubtitle: false,
+  excludeTrailersAndSamples: false,
 });
+
+const excludeStrategyExpanded = ref(false);
 
 // 洗版优先级项元数据
 const washPriorityMeta: Record<string, { label: string; desc: string }> = {
@@ -1056,12 +1063,36 @@ function handleFolderSelected(folder: { id: string; name: string }) {
 
 // 保存策略配置 (媒体整理配置 / 洗版配置)
 async function handleSaveStrategy() {
-  if (
-    strategyConfig.value.stagingFolderId &&
-    strategyConfig.value.defaultTargetFolderId &&
-    strategyConfig.value.stagingFolderId === strategyConfig.value.defaultTargetFolderId
-  ) {
-    ElMessage.error('源暂存目录与目标归档目录不能相同，请重新选择！');
+  if (savingStrategy.value) return;
+
+  // 1. 严格校验源暂存目录 (必须已选择真实有效目录)
+  const stagingId = strategyConfig.value.stagingFolderId?.trim();
+  const stagingName = strategyConfig.value.stagingFolderName?.trim();
+  if (!stagingId || stagingId === '/' || !stagingName || stagingName === '临时存放') {
+    ElMessage.warning({
+      message: '请先点击【选择暂存目录】，指定待整理的网盘源暂存目录！',
+      grouping: true,
+    });
+    return;
+  }
+
+  // 2. 严格校验目标归档目录 (必须已选择真实有效媒体库目录)
+  const targetId = strategyConfig.value.defaultTargetFolderId?.trim();
+  const targetName = strategyConfig.value.defaultTargetFolderName?.trim();
+  if (!targetId || targetId === '/' || !targetName || targetName === '默认媒体库' || targetName === '默认媒体库 (/)') {
+    ElMessage.warning({
+      message: '请先点击【选择归档目录】，指定影视整理入库的目标媒体库目录！',
+      grouping: true,
+    });
+    return;
+  }
+
+  // 3. 严格校验互斥防环保护
+  if (stagingId === targetId) {
+    ElMessage.error({
+      message: '源暂存目录与目标归档目录不能相同，否则会导致循环归档死锁！',
+      grouping: true,
+    });
     return;
   }
 
@@ -1072,9 +1103,15 @@ async function handleSaveStrategy() {
       strategyConfig.value = { ...strategyConfig.value, ...res };
     }
     const tip = isWashRoute.value ? '洗版策略配置已成功保存！' : '媒体整理策略配置已成功保存！';
-    ElMessage.success(tip);
+    ElMessage.success({
+      message: tip,
+      grouping: true,
+    });
   } catch (err: any) {
-    ElMessage.error(`保存策略失败: ${err.message || '网络异常'}`);
+    ElMessage.error({
+      message: `保存策略失败: ${err.message || '网络异常'}`,
+      grouping: true,
+    });
   } finally {
     savingStrategy.value = false;
   }
@@ -1982,6 +2019,9 @@ function parseRecordDetails(record: any) {
 
 // 监听 MainLayout 顶栏保存按钮
 function onHeaderSave() {
+  if (route.path !== '/organize' && route.path !== '/scrape' && route.path !== '/wash') {
+    return;
+  }
   handleSaveStrategy();
 }
 
@@ -2040,6 +2080,7 @@ onMounted(async () => {
   if (activeMainTab.value !== 'history' && activeMainTab.value !== 'wash_history') {
     await loadHistory();
   }
+  window.removeEventListener('header-save-click', onHeaderSave);
   window.addEventListener('header-save-click', onHeaderSave);
 });
 
@@ -2163,10 +2204,12 @@ onUnmounted(() => {
             </div>
             <div class="flex flex-col sm:flex-row gap-2">
               <input
-                :value="strategyConfig.stagingFolderName || '/暂存区/频道转存'"
+                :value="strategyConfig.stagingFolderName || ''"
                 type="text"
                 readonly
+                placeholder="请点击右侧按钮选择网盘源暂存目录 (必填)"
                 class="input-base font-mono text-xs flex-1 w-full cursor-default bg-slate-50 dark:bg-slate-800/50"
+                :class="{ 'border-amber-400 dark:border-amber-600': !strategyConfig.stagingFolderId }"
               />
               <button
                 type="button"
@@ -2177,9 +2220,14 @@ onUnmounted(() => {
                 <span>选择暂存目录</span>
               </button>
             </div>
-            <span class="form-text">
-              待整理影视所在的源目录，整理完成后该目录内的空文件夹将被自动修剪
-            </span>
+            <div class="flex items-center justify-between mt-1">
+              <span class="form-text">
+                待整理影视所在的源目录，整理完成后该目录内的空文件夹将被自动修剪
+              </span>
+              <span v-if="!strategyConfig.stagingFolderId" class="text-[11px] text-amber-600 dark:text-amber-400 font-semibold shrink-0">
+                ⚠️ 待配置
+              </span>
+            </div>
           </div>
 
           <!-- 2. 目标媒体库 -->
@@ -2192,10 +2240,12 @@ onUnmounted(() => {
             </div>
             <div class="flex flex-col sm:flex-row gap-2">
               <input
-                :value="strategyConfig.defaultTargetFolderName || '默认媒体库 (/)'"
+                :value="strategyConfig.defaultTargetFolderName || ''"
                 type="text"
                 readonly
+                placeholder="请点击右侧按钮选择影视归档目标目录 (必填)"
                 class="input-base font-mono text-xs flex-1 w-full cursor-default bg-slate-50 dark:bg-slate-800/50"
+                :class="{ 'border-rose-400 dark:border-rose-600': !strategyConfig.defaultTargetFolderId || strategyConfig.defaultTargetFolderId === '/' }"
               />
               <button
                 type="button"
@@ -2206,9 +2256,14 @@ onUnmounted(() => {
                 <span>选择归档目录</span>
               </button>
             </div>
-            <span class="form-text">
-              经 TMDB 识别和结构化点分重命名后，影视最终分类归档入库的根目录
-            </span>
+            <div class="flex items-center justify-between mt-1">
+              <span class="form-text">
+                经 TMDB 识别和结构化点分重命名后，影视最终分类归档入库的根目录
+              </span>
+              <span v-if="!strategyConfig.defaultTargetFolderId || strategyConfig.defaultTargetFolderId === '/'" class="text-[11px] text-rose-500 font-semibold shrink-0">
+                ⚠️ 待配置
+              </span>
+            </div>
           </div>
         </div>
 
@@ -2289,15 +2344,111 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 清理空文件夹 -->
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between">
+        <!-- 整理后清理空文件夹 (对齐截图) -->
+        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-4 space-y-3">
           <div>
-            <h4 class="text-xs font-bold text-gray-900 dark:text-white">清理空文件夹</h4>
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">
+              整理后清理空文件夹: <span class="font-normal text-[11px] text-gray-500 dark:text-gray-400">启用时整理完成后会删除已整理为空的源子目录；关闭时保留空文件夹</span>
+            </h4>
+          </div>
+          <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
+            <span class="text-xs font-medium" :class="strategyConfig.sweepEmptyFolders ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
+              {{ strategyConfig.sweepEmptyFolders ? '已启用' : '未启用' }}
+            </span>
+            <el-switch v-model="strategyConfig.sweepEmptyFolders" />
+          </div>
+        </div>
+
+        <!-- 联动生成 STRM (对齐截图) -->
+        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-4 space-y-3">
+          <div>
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">联动生成 STRM</h4>
             <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-              整理完成后，自动清理暂存区中残留的空文件夹，避免云盘层级碎片化
+              启用时每轮整理后会增量生成 STRM 并清理失效 STRM；关闭时只整理网盘文件，不联动 STRM。需先配置「139 云盘 - STRM 生成」
             </p>
           </div>
-          <el-switch v-model="strategyConfig.sweepEmptyFolders" />
+          <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
+            <span class="text-xs font-medium" :class="strategyConfig.linkStrm ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
+              {{ strategyConfig.linkStrm ? '已启用' : '未启用' }}
+            </span>
+            <el-switch v-model="strategyConfig.linkStrm" />
+          </div>
+        </div>
+
+        <!-- 排除策略 (对标截图: 盾牌图标 + 展开收起 + 三个开关) -->
+        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Shield class="w-5 h-5" />
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-gray-900 dark:text-white">排除策略</h4>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">
+                  按文件类型及中文字幕情况排除源文件；仅检查 TMDB 国家/地区不含中国大陆、中国台湾、中国香港、中国澳门的资源；三个开关默认关闭
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="text-xs font-medium text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 shrink-0"
+              @click="excludeStrategyExpanded = !excludeStrategyExpanded"
+            >
+              <span>{{ excludeStrategyExpanded ? '收起' : '展开' }}</span>
+              <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': excludeStrategyExpanded }" />
+            </button>
+          </div>
+
+          <!-- 展开后的三个开关卡片 -->
+          <div v-show="excludeStrategyExpanded" class="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+            <!-- 开关 1: 排除非视频文件 -->
+            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-3.5 space-y-2">
+              <div>
+                <h5 class="text-xs font-bold text-gray-900 dark:text-white">排除非视频文件</h5>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  仅整理识别为视频的文件，遇到非视频格式源文件（如 txt、nfo、jpg、url 等）时直接排除，不移入媒体库
+                </p>
+              </div>
+              <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
+                <span class="text-xs font-medium" :class="strategyConfig.excludeNonVideo ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
+                  {{ strategyConfig.excludeNonVideo ? '已启用' : '未启用' }}
+                </span>
+                <el-switch v-model="strategyConfig.excludeNonVideo" />
+              </div>
+            </div>
+
+            <!-- 开关 2: 排除无中文字幕文件 -->
+            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-3.5 space-y-2">
+              <div>
+                <h5 class="text-xs font-bold text-gray-900 dark:text-white">排除无中文字幕文件 (针对外语片)</h5>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  仅检查 TMDB 制片国家/地区不含中国大陆、中国台湾、中国香港、中国澳门的外语资源；若文件名及同级无中文字幕标识（中字/CHS/CHT/双语等），则予以排除跳过
+                </p>
+              </div>
+              <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
+                <span class="text-xs font-medium" :class="strategyConfig.excludeNoChineseSubtitle ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
+                  {{ strategyConfig.excludeNoChineseSubtitle ? '已启用' : '未启用' }}
+                </span>
+                <el-switch v-model="strategyConfig.excludeNoChineseSubtitle" />
+              </div>
+            </div>
+
+            <!-- 开关 3: 排除预告片及广告样本 -->
+            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-3.5 space-y-2">
+              <div>
+                <h5 class="text-xs font-bold text-gray-900 dark:text-white">排除预告片与样品文件</h5>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  自动过滤文件名含 sample、trailer、preview、featurette 等副片及广告宣传小文件
+                </p>
+              </div>
+              <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
+                <span class="text-xs font-medium" :class="strategyConfig.excludeTrailersAndSamples ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
+                  {{ strategyConfig.excludeTrailersAndSamples ? '已启用' : '未启用' }}
+                </span>
+                <el-switch v-model="strategyConfig.excludeTrailersAndSamples" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

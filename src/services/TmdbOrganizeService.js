@@ -1604,6 +1604,14 @@ const TaskManager = {
                                 decisiveDetail: decisiveRes.decisiveDetail,
                                 winner: 'existing'
                             };
+                            // 延后淘汰安全机制：挂载到优胜版本上，只有优胜版本入库成功后才执行淘汰，严禁提前删除
+                            best.pendingDiscardPeers = best.pendingDiscardPeers || [];
+                            best.pendingDiscardPeers.push({
+                                fileId: sec.fileId,
+                                name: sec.oldName,
+                                newName: sec.newName,
+                                reason: sec.conflictAction
+                            });
                         }
                     }
                 } else {
@@ -3164,18 +3172,18 @@ const TaskManager = {
             Context.clearCache('path'); // 确保执行整理时路径映射全新解析，杜绝历史缓存污染
             Logger.info(`[TMDB整理] 开始执行媒体整理，共计 ${total} 个任务。`);
 
-            // 1. 批量清理废弃垃圾旁挂与冲突文件入回收站
-            const discardTasks = tasks.filter(t => t.discard || t.conflictDiscard);
-            if (discardTasks.length > 0) {
-                onProgress?.(0, total, `正在清理 ${discardTasks.length} 个废弃旁挂与冲突文件...`);
-                const discardIds = discardTasks.map(t => t.fileId);
-                Logger.debug(`[TMDB整理] 触发清理 -> 共计 ${discardIds.length} 项`);
+            // 1. 批量清理纯废弃垃圾旁挂（广告/网址说明等纯 junk 文件），绝不提前删除视频次选或冲突文件！
+            const pureJunkTasks = tasks.filter(t => t.discard && !t.conflictDiscard);
+            if (pureJunkTasks.length > 0) {
+                onProgress?.(0, total, `正在清理 ${pureJunkTasks.length} 个废弃广告说明文件...`);
+                const junkIds = pureJunkTasks.map(t => t.fileId);
+                Logger.debug(`[TMDB整理] 触发垃圾清理 -> 共计 ${junkIds.length} 项`);
                 try {
-                    await DriveAPI.batchDelete(discardIds, modeConfig);
-                    discardedCount += discardTasks.length;
-                    Logger.info(`[TMDB整理] 成功清理 ${discardTasks.length} 个废弃文件至回收站。`);
+                    await DriveAPI.batchDelete(junkIds, modeConfig);
+                    discardedCount += pureJunkTasks.length;
+                    Logger.info(`[TMDB整理] 成功清理 ${pureJunkTasks.length} 个废弃广告文件至回收站。`);
                 } catch (e) {
-                    Logger.warning(`[TMDB整理] 批量清理文件失败: ${e.message}`);
+                    Logger.warning(`[TMDB整理] 批量清理废弃广告文件失败: ${e.message}`);
                 }
             }
 
@@ -3474,17 +3482,35 @@ const TaskManager = {
                     }
                 }
 
-                // 3. 执行洗版置换的延后淘汰（只有在新版本重命名与移动完全成功后，才安全将旧版移入回收站，杜绝因改名/移动失败导致目标库空空如也）
-                const successfulWashTasks = folderTasks.filter(t => t.status === 'success' && Array.isArray(t.pendingWashReplaces) && t.pendingWashReplaces.length > 0);
+                // 3. 执行洗版置换与同批次次选副本的延后安全淘汰
+                // 核心铁律：只有在新版本重命名与移动 100% 确认成功后（status === 'success'），才安全将旧版或同批次次优副本移入回收站！
+                // 若新版本移动失败（如 04000010、网络超时），旧版和次选副本全部完好保留在原地，绝不发生误删！
+                const successfulWashTasks = folderTasks.filter(t => t.status === 'success');
                 for (const task of successfulWashTasks) {
-                    for (const oldFile of task.pendingWashReplaces) {
-                        try {
-                            Logger.info(`[TMDB整理-洗版置换] 新版本已成功入库 (${task.newName})，旧版本 (${oldFile.name}) 淘汰移入回收站！`);
-                            onProgress?.(done, activeTasks.length, `[洗版置换] 旧版本 ${oldFile.name} 已移入回收站`);
-                            await DriveAPI.batchDelete([oldFile.fileId], modeConfig);
-                            discardedCount++;
-                        } catch (delErr) {
-                            Logger.warn(`[TMDB整理-洗版置换] 清理旧版本失败: ${delErr.message}`);
+                    // 3.1 目标库中被置换的旧版本延后淘汰
+                    if (Array.isArray(task.pendingWashReplaces) && task.pendingWashReplaces.length > 0) {
+                        for (const oldFile of task.pendingWashReplaces) {
+                            try {
+                                Logger.info(`[TMDB整理-洗版置换] 新版本已成功入库 (${task.newName})，目标库旧版本 (${oldFile.name}) 淘汰移入回收站！`);
+                                onProgress?.(done, activeTasks.length, `[洗版置换] 旧版本 ${oldFile.name} 已移入回收站`);
+                                await DriveAPI.batchDelete([oldFile.fileId], modeConfig);
+                                discardedCount++;
+                            } catch (delErr) {
+                                Logger.warn(`[TMDB整理-洗版置换] 清理旧版本失败: ${delErr.message}`);
+                            }
+                        }
+                    }
+                    // 3.2 同批次中被胜出的次选低画质副本延后淘汰 (确立新版本移动成功后才执行)
+                    if (Array.isArray(task.pendingDiscardPeers) && task.pendingDiscardPeers.length > 0) {
+                        for (const peer of task.pendingDiscardPeers) {
+                            try {
+                                Logger.info(`[TMDB整理-次选淘汰] 最佳画质版本已成功入库 (${task.newName})，同批次次选副本 (${peer.name}) 淘汰移入回收站！`);
+                                onProgress?.(done, activeTasks.length, `[多版本淘汰] 次选副本 ${peer.name} 已移入回收站`);
+                                await DriveAPI.batchDelete([peer.fileId], modeConfig);
+                                discardedCount++;
+                            } catch (delErr) {
+                                Logger.warn(`[TMDB整理-次选淘汰] 清理次选副本失败: ${delErr.message}`);
+                            }
                         }
                     }
                 }

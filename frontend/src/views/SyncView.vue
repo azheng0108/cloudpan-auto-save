@@ -35,6 +35,8 @@ import {
   Info,
   ExternalLink,
   HardDrive,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-vue-next';
 import { accountApi, type AccountItem } from '../api/account';
 import {
@@ -54,17 +56,25 @@ import FolderTreeSelector from '../components/FolderTreeSelector.vue';
 const route = useRoute();
 const router = useRouter();
 
-// ================= 主选项卡切换 =================
-const activeTab = ref<'cross' | 'rapid' | 'offline' | 'settings'>('cross');
+// ================= 主选项卡切换 (优化移除多余的配置独立页) =================
+const showRapidTab = ref(false); // 默认隐藏秒传特征码互转
+const activeTab = ref<'cross' | 'rapid' | 'offline'>('cross');
+const isPan123ConfigExpanded = ref(false);
 
 function syncTabFromRoute() {
   const t = route.query.tab as string;
-  if (t === 'cross' || t === 'rapid' || t === 'offline' || t === 'settings') {
+  if (t === 'cross' || t === 'offline') {
     activeTab.value = t;
+  } else if (t === 'rapid') {
+    activeTab.value = showRapidTab.value ? 'rapid' : 'cross';
+  } else if (t === 'settings') {
+    // 兼容历史链接，自动平滑重定向至 123 离线页
+    activeTab.value = 'offline';
+    isPan123ConfigExpanded.value = true;
   }
 }
 
-function switchTab(t: 'cross' | 'rapid' | 'offline' | 'settings') {
+function switchTab(t: 'cross' | 'rapid' | 'offline') {
   activeTab.value = t;
   router.replace({
     path: '/sync',
@@ -127,6 +137,9 @@ async function loadConfig() {
         form.pan123.hasPassword = Boolean(res.pan123.hasPassword);
         form.pan123.targetDirId = res.pan123.targetDirId ?? 0;
         form.pan123.targetDirPath = res.pan123.targetDirPath || '/离线下载';
+        if (!form.pan123.username) {
+          isPan123ConfigExpanded.value = true;
+        }
       }
       if (res.sync) {
         form.sync.existSkip = res.sync.existSkip !== false;
@@ -164,10 +177,14 @@ async function handleSaveConfig() {
       payload.pan123.password = form.pan123.password.trim();
     }
     const res = await syncApi.saveConfig(payload);
-    ElMessage.success(res?.message || '资产同步配置已保存');
+    ElMessage.success(res?.message || '配置已成功保存！');
     if (payload.pan123.password) {
       form.pan123.hasPassword = true;
       form.pan123.password = '';
+    }
+    if (form.pan123.username) {
+      loadPan123Folders();
+      loadPan123Tasks();
     }
   } catch (err: any) {
     ElMessage.error(err.message || '保存配置失败');
@@ -762,6 +779,7 @@ onUnmounted(() => {
         </button>
 
         <button
+          v-if="showRapidTab"
           type="button"
           @click="switchTab('rapid')"
           :class="activeTab === 'rapid' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-white shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
@@ -780,16 +798,6 @@ onUnmounted(() => {
           <CloudDownload class="w-3.5 h-3.5" />
           <span>123 网盘离线</span>
         </button>
-
-        <button
-          type="button"
-          @click="switchTab('settings')"
-          :class="activeTab === 'settings' ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-white shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'"
-          class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
-        >
-          <SlidersHorizontal class="w-3.5 h-3.5" />
-          <span>同步与离线配置</span>
-        </button>
       </div>
 
       <!-- 右侧辅助徽章提示 -->
@@ -798,7 +806,7 @@ onUnmounted(() => {
           <ShieldCheck class="w-3.5 h-3.5 text-blue-500" />
           PC 纯协议秒传 (3 线程并发)
         </span>
-        <span v-else-if="activeTab === 'rapid'" class="inline-flex items-center gap-1">
+        <span v-else-if="showRapidTab && activeTab === 'rapid'" class="inline-flex items-center gap-1">
           <Share2 class="w-3.5 h-3.5 text-indigo-500" />
           文件名#大小#SHA256 标准格式
         </span>
@@ -1179,12 +1187,65 @@ onUnmounted(() => {
             </table>
           </div>
         </div>
+
+        <!-- 跨号秒传与同步策略卡片 -->
+        <div class="settings-card space-y-4">
+          <div class="flex items-center justify-between pb-3.5 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <ShieldCheck class="w-4 h-4" />
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-gray-900 dark:text-white">跨号秒传与同步策略</h4>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  控制跨账号秒传时的重复防碰撞、同名建树与源文件软删除回收站安全防护
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              @click="handleSaveConfig"
+              :disabled="isSaving"
+              class="btn-default text-xs h-8 px-3 flex items-center gap-1.5 cursor-pointer font-medium disabled:opacity-50"
+            >
+              <RefreshCw v-if="isSaving" class="w-3.5 h-3.5 animate-spin" />
+              <Save v-else class="w-3.5 h-3.5 text-indigo-500" />
+              <span>{{ isSaving ? '保存中...' : '保存策略' }}</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-3 rounded-xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between gap-2">
+              <div class="pr-2">
+                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">存在同特征跳过</label>
+                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">避免重复创建冗余副本</p>
+              </div>
+              <el-switch v-model="form.sync.existSkip" @change="handleSaveConfig" />
+            </div>
+
+            <div class="p-3 rounded-xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between gap-2">
+              <div class="pr-2">
+                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">保持相对子层级</label>
+                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">递归创建多层目录树</p>
+              </div>
+              <el-switch v-model="form.sync.preservePath" @change="handleSaveConfig" />
+            </div>
+
+            <div class="p-3 rounded-xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between gap-2">
+              <div class="pr-2">
+                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">成功移入回收站</label>
+                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">仅 batchTrash 软删除</p>
+              </div>
+              <el-switch v-model="form.sync.trashSource" @change="handleSaveConfig" />
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ═════════════════════════════════════════════════════════════ -->
       <!-- TAB 2: 秒传特征码互转 (文件名#大小#SHA256 导入导出)           -->
       <!-- ═════════════════════════════════════════════════════════════ -->
-      <div v-if="activeTab === 'rapid'" class="space-y-6">
+      <div v-if="showRapidTab && activeTab === 'rapid'" class="space-y-6">
         <!-- 内部子选项卡 -->
         <div class="flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-3">
           <button
@@ -1302,7 +1363,7 @@ onUnmounted(() => {
               :value="exportResult.text"
               readonly
               rows="10"
-              class="input-base font-mono text-xs w-full h-48 select-all p-3 bg-gray-50/60 dark:bg-gray-900/60 leading-relaxed"
+              class="input-base font-mono text-xs w-full min-h-[200px] select-all p-3.5 bg-gray-50/60 dark:bg-gray-900/60 leading-relaxed"
             ></textarea>
           </div>
         </div>
@@ -1384,8 +1445,8 @@ onUnmounted(() => {
             <textarea
               v-model="importRawText"
               placeholder="例如:&#10;流浪地球2.2023.2160p.mkv#15829182390#3c5a6b8e1f0d4c2b9a8e7f6d5c4b3a2e1f0d4c2b9a8e7f6d5c4b3a2e1f0d4c2b&#10;星际穿越.2014.1080p.mkv#8429182310#a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d"
-              rows="6"
-              class="input-base font-mono text-xs w-full h-36 p-3 leading-relaxed"
+              rows="10"
+              class="input-base font-mono text-xs w-full min-h-[220px] p-3.5 leading-relaxed bg-white dark:bg-gray-900"
             ></textarea>
           </div>
 
@@ -1454,6 +1515,140 @@ onUnmounted(() => {
       <!-- TAB 3: 123 网盘离线调度中枢 (139 直链免流离线)                 -->
       <!-- ═════════════════════════════════════════════════════════════ -->
       <div v-if="activeTab === 'offline'" class="space-y-6">
+        <!-- 模块 0: 123 网盘 OpenAPI 凭据与账号状态（直接内置于 123 离线页） -->
+        <div class="settings-card space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <HardDrive class="w-4 h-4" />
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="text-xs font-bold text-gray-900 dark:text-white">123 网盘 OpenAPI 离线账号</h4>
+                  <span
+                    v-if="form.pan123.username"
+                    class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                  >
+                    已绑定: {{ form.pan123.username.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') }}
+                  </span>
+                  <span
+                    v-else
+                    class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                  >
+                    未配置 123 账号
+                  </span>
+                </div>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  用于驱动 139 官方高速直链自动推送到 123 网盘进行离线下载，凭据直配直显
+                </p>
+              </div>
+            </div>
+
+            <!-- 凭据操作按钮组 -->
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                @click="handleTestPan123"
+                :disabled="isTestingPan123 || !form.pan123.username"
+                class="btn-default text-xs h-8 px-3 flex items-center gap-1.5 cursor-pointer font-medium disabled:opacity-50"
+                title="测试 123 网盘 OpenAPI 连通性"
+              >
+                <RefreshCw v-if="isTestingPan123" class="w-3.5 h-3.5 animate-spin text-blue-500" />
+                <CheckCircle2 v-else-if="testPan123Success === true" class="w-3.5 h-3.5 text-emerald-500" />
+                <XCircle v-else-if="testPan123Success === false" class="w-3.5 h-3.5 text-red-500" />
+                <SlidersHorizontal v-else class="w-3.5 h-3.5 text-gray-500" />
+                <span>{{ isTestingPan123 ? '测试中...' : '测试连通性' }}</span>
+              </button>
+
+              <button
+                type="button"
+                @click="isPan123ConfigExpanded = !isPan123ConfigExpanded"
+                class="btn-default text-xs h-8 px-3 flex items-center gap-1 cursor-pointer font-medium text-gray-600 dark:text-gray-300"
+              >
+                <span>{{ isPan123ConfigExpanded ? '收起凭据' : '配置/修改账号' }}</span>
+                <ChevronUp v-if="isPan123ConfigExpanded" class="w-3.5 h-3.5" />
+                <ChevronDown v-else class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <!-- 折叠内容：账号密码与目录配置 -->
+          <div v-show="isPan123ConfigExpanded" class="pt-1 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  123 网盘账号 (手机号或注册邮箱)
+                </label>
+                <input
+                  v-model="form.pan123.username"
+                  type="text"
+                  placeholder="例如: 13800138000 或 user@example.com"
+                  class="input-base text-xs font-mono w-full"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  123 网盘登录密码
+                </label>
+                <div class="relative">
+                  <input
+                    v-model="form.pan123.password"
+                    :type="showPan123Password ? 'text' : 'password'"
+                    :placeholder="form.pan123.hasPassword ? '●●●●●●●● (已安全保存，留空保持不变)' : '请输入 123 网盘登录密码'"
+                    class="input-base text-xs font-mono pr-10 w-full"
+                  />
+                  <button
+                    type="button"
+                    @click="showPan123Password = !showPan123Password"
+                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  >
+                    <Eye v-if="!showPan123Password" class="w-3.5 h-3.5" />
+                    <EyeOff v-else class="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  默认离线落盘目录 ID (0 为根目录)
+                </label>
+                <input
+                  v-model.number="form.pan123.targetDirId"
+                  type="number"
+                  placeholder="0"
+                  class="input-base text-xs font-mono w-full"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  默认离线落盘展示路径
+                </label>
+                <input
+                  v-model="form.pan123.targetDirPath"
+                  type="text"
+                  placeholder="/离线下载"
+                  class="input-base text-xs font-mono w-full"
+                />
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+              <button
+                type="button"
+                @click="handleSaveConfig"
+                :disabled="isSaving"
+                class="btn-primary text-xs h-8 px-4 flex items-center gap-1.5 shadow-sm font-medium cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw v-if="isSaving" class="w-3.5 h-3.5 animate-spin" />
+                <Save v-else class="w-3.5 h-3.5" />
+                <span>{{ isSaving ? '保存中...' : '保存 123 凭据' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- 模块 A: 139 媒体选定并推送到 123 离线 -->
         <div class="settings-card space-y-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
@@ -1772,162 +1967,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- ═════════════════════════════════════════════════════════════ -->
-      <!-- TAB 4: 同步与离线配置 (123 OpenAPI 凭据与默认策略)           -->
-      <!-- ═════════════════════════════════════════════════════════════ -->
-      <div v-if="activeTab === 'settings'" class="space-y-6">
-        <!-- 123 网盘账号与 OpenAPI 凭据 -->
-        <div class="settings-card space-y-5">
-          <div class="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-800">
-            <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <HardDrive class="w-5 h-5" />
-              </div>
-              <div>
-                <h3 class="text-sm font-bold text-gray-900 dark:text-white">123 网盘 OpenAPI 凭据配置</h3>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  用于驱动 139 官方高速直链自动推送到 123 网盘进行离线下载
-                </p>
-              </div>
-            </div>
-
-            <!-- 凭据连通性测试按钮 -->
-            <button
-              type="button"
-              @click="handleTestPan123"
-              :disabled="isTestingPan123"
-              class="btn-default text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer font-medium disabled:opacity-50"
-            >
-              <RefreshCw v-if="isTestingPan123" class="w-3.5 h-3.5 animate-spin text-blue-500" />
-              <CheckCircle2 v-else-if="testPan123Success === true" class="w-3.5 h-3.5 text-emerald-500" />
-              <XCircle v-else-if="testPan123Success === false" class="w-3.5 h-3.5 text-red-500" />
-              <SlidersHorizontal v-else class="w-3.5 h-3.5 text-gray-500" />
-              <span>{{ isTestingPan123 ? '测试中...' : '测试 123 凭据连通性' }}</span>
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                123 网盘账号 (手机号或注册邮箱)
-              </label>
-              <input
-                v-model="form.pan123.username"
-                type="text"
-                placeholder="例如: 13800138000 或 user@example.com"
-                class="input-base text-xs font-mono w-full"
-              />
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                123 网盘登录密码
-              </label>
-              <div class="relative">
-                <input
-                  v-model="form.pan123.password"
-                  :type="showPan123Password ? 'text' : 'password'"
-                  :placeholder="form.pan123.hasPassword ? '●●●●●●●● (已安全保存，留空保持不变)' : '请输入 123 网盘登录密码'"
-                  class="input-base text-xs font-mono pr-10 w-full"
-                />
-                <button
-                  type="button"
-                  @click="showPan123Password = !showPan123Password"
-                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                >
-                  <Eye v-if="!showPan123Password" class="w-3.5 h-3.5" />
-                  <EyeOff v-else class="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                默认离线落盘目录 ID (0 为根目录)
-              </label>
-              <input
-                v-model.number="form.pan123.targetDirId"
-                type="number"
-                placeholder="0"
-                class="input-base text-xs font-mono w-full"
-              />
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                默认离线落盘展示路径
-              </label>
-              <input
-                v-model="form.pan123.targetDirPath"
-                type="text"
-                placeholder="/离线下载"
-                class="input-base text-xs font-mono w-full"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- 资产同步默认策略 -->
-        <div class="settings-card space-y-4">
-          <div class="flex items-center gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
-            <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-              <ShieldCheck class="w-5 h-5" />
-            </div>
-            <div>
-              <h3 class="text-sm font-bold text-gray-900 dark:text-white">跨号秒传与同步默认策略</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                控制跨账号秒传时的重复防碰撞、同名建树与源文件软删除回收站安全防护
-              </p>
-            </div>
-          </div>
-
-          <div class="space-y-3">
-            <div class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50">
-              <div class="pr-2">
-                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200">目标已存在同特征文件自动跳过</label>
-                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
-                  秒传前比对目标目录下同名或同 64 位 SHA256 哈希，避免重复创建冗余副本
-                </p>
-              </div>
-              <el-switch v-model="form.sync.existSkip" />
-            </div>
-
-            <div class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50">
-              <div class="pr-2">
-                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200">保持源目录相对子层级结构</label>
-                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
-                  自动在目标网盘递归幂等创建多层子目录树（如 <code>剧集/庆余年/Season 1</code>）
-                </p>
-              </div>
-              <el-switch v-model="form.sync.preservePath" />
-            </div>
-
-            <div class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50">
-              <div class="pr-2">
-                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200">秒传成功后安全移入源账号回收站</label>
-                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
-                  秒传落盘成功后，仅通过 139 官方 <code>batchTrash</code> 移入回收站，杜绝物理硬删，保护原始资产
-                </p>
-              </div>
-              <el-switch v-model="form.sync.trashSource" />
-            </div>
-          </div>
-        </div>
-
-        <!-- 底部主保存按钮卡片 -->
-        <div class="flex justify-end gap-3 pt-2">
-          <button
-            type="button"
-            @click="handleSaveConfig"
-            :disabled="isSaving"
-            class="btn-primary text-xs h-9 px-6 flex items-center gap-1.5 shadow-sm font-medium cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw v-if="isSaving" class="w-3.5 h-3.5 animate-spin" />
-            <Save v-else class="w-3.5 h-3.5" />
-            <span>{{ isSaving ? '正在保存...' : '保存同步与离线配置' }}</span>
-          </button>
-        </div>
-      </div>
     </div>
 
     <!-- 统一网盘目录选择弹窗 (FolderTreeSelector) -->

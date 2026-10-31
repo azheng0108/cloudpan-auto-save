@@ -595,6 +595,7 @@ function syncCurrentResultToBatches(res: EpisodeInspectionResult, folderPath = m
     : scanBatches.value.findIndex(b => b.id === 'current' || (Date.now() - b.timestamp < 180000 && b.folderPath === folderPath));
   const batchItem: MissingScanBatch = {
     id: existingIdx !== -1 ? scanBatches.value[existingIdx].id : (targetBatchId || `batch-${Date.now()}`),
+    jobId: (res as any).jobId || (existingIdx !== -1 ? scanBatches.value[existingIdx].jobId : undefined),
     title: `缺更巡检 · ${folderPath}`,
     folderPath,
     timeFormatted: new Date().toLocaleString('zh-CN', { hour12: false }),
@@ -817,16 +818,37 @@ function collapseAllBatches() {
   });
 }
 
-function clearAllBatches() {
+async function clearAllBatches() {
+  const currentBatches = [...scanBatches.value];
   scanBatches.value = [];
-  ElMessage.success('已清空巡检批次列表');
+  missingInspectionResult.value = null;
+  try {
+    for (const b of currentBatches) {
+      const rawId = String(b.id || '');
+      const jobId = b.jobId || (rawId.startsWith('job-') ? rawId.replace('job-', '') : null);
+      if (jobId) {
+        try {
+          await maintenanceApi.deleteJob(jobId);
+        } catch (_) {}
+      }
+    }
+    await maintenanceApi.clearJobs('missing_scan');
+    await maintenanceApi.clearMissingCache();
+    await loadMaintenanceJobs();
+  } catch (e: any) {
+    console.warn('清空批次异常:', e);
+  }
+  ElMessage.success('已清空巡检批次列表并彻底持久化');
 }
 
 async function deleteBatch(batch: MissingScanBatch, index: number) {
   scanBatches.value.splice(index, 1);
-  if (batch.jobId) {
+  const rawId = String(batch.id || '');
+  const jobId = batch.jobId || (rawId.startsWith('job-') ? rawId.replace('job-', '') : null);
+  if (jobId) {
     try {
-      await maintenanceApi.deleteJob(batch.jobId);
+      await maintenanceApi.deleteJob(jobId);
+      await loadMaintenanceJobs();
     } catch (_) {}
   }
   ElMessage.success('已删除该批次记录');
@@ -1614,12 +1636,20 @@ function loadJobFindingsIntoInspection(jobDetail: MaintenanceJobDetail) {
   window.scrollTo({ top: 300, behavior: 'smooth' });
 }
 
+function getJobFindingsList(jobDetail: any): any[] {
+  if (!jobDetail) return [];
+  if (Array.isArray(jobDetail.findings)) return jobDetail.findings;
+  if (jobDetail.findings && Array.isArray(jobDetail.findings.items)) return jobDetail.findings.items;
+  if (jobDetail.rawFindings && Array.isArray(jobDetail.rawFindings.items)) return jobDetail.rawFindings.items;
+  return [];
+}
+
 function loadMissingJobFindingsIntoInspection(jobDetail: MaintenanceJobDetail) {
-  if (!jobDetail.findings || jobDetail.findings.length === 0) {
+  const missingItems = getJobFindingsList(jobDetail);
+  if (!missingItems || missingItems.length === 0) {
     ElMessage.info('该次缺更巡检快照未包含缺集记录');
     return;
   }
-  const missingItems = jobDetail.findings;
   missingInspectionResult.value = {
     scannedFilesCount: jobDetail.totalFiles || 0,
     scannedShowsCount: jobDetail.scannedFolders || missingItems.length,
@@ -1628,6 +1658,7 @@ function loadMissingJobFindingsIntoInspection(jobDetail: MaintenanceJobDetail) {
     totalMissingCount: jobDetail.cleanedCount || missingItems.reduce((acc: number, cur: any) => acc + (cur.missingCount || 0), 0),
     durationMs: jobDetail.durationMs,
     items: missingItems as any,
+    shows: (jobDetail as any).rawFindings?.shows || buildShowGroupsFallback(missingItems as any),
   };
   if (jobDetail.folderPath) {
     missingFolderName.value = (jobDetail.folderPath === '/' || jobDetail.folderPath === '根目录 (/)') ? '' : jobDetail.folderPath;
@@ -5490,11 +5521,11 @@ onUnmounted(() => {
                 </div>
 
                 <!-- 2. 剧集缺更检出清单快照 -->
-                <div v-if="job.type === 'missing_scan' && expandedJobDetail.findings && expandedJobDetail.findings.length > 0" class="space-y-2">
+                <div v-if="job.type === 'missing_scan' && getJobFindingsList(expandedJobDetail).length > 0" class="space-y-2">
                   <div class="flex items-center justify-between gap-2">
                     <div class="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
                       <Tv class="w-3.5 h-3.5" />
-                      <span>检出缺更剧集快照 (共 {{ expandedJobDetail.findings.length }} 个季度)</span>
+                      <span>检出缺更剧集快照 (共 {{ getJobFindingsList(expandedJobDetail).length }} 个季度)</span>
                     </div>
 
                     <!-- 一键载入至剧集缺更主视图 -->
@@ -5511,7 +5542,7 @@ onUnmounted(() => {
                   <!-- 缺更紧凑行卡片（对齐频道监控规范 ChannelView:1488 行卡片形态；indigo 主题浅底保留，字段完整） -->
                   <div class="max-h-60 overflow-y-auto space-y-1.5 p-2 border border-indigo-200/60 dark:border-indigo-900/40 rounded-lg bg-indigo-50/20 dark:bg-indigo-950/10">
                     <div
-                      v-for="(m, idx) in expandedJobDetail.findings"
+                      v-for="(m, idx) in getJobFindingsList(expandedJobDetail)"
                       :key="idx"
                       class="p-2 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-indigo-100/60 dark:border-indigo-900/30 hover:bg-indigo-50/40 dark:hover:bg-indigo-900/20 transition-colors font-mono text-[11px]"
                     >
@@ -5550,7 +5581,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- 扫描巡检无异常（健康状态） -->
-                <div v-if="(job.type === 'banned_scan' || job.type === 'missing_scan') && (!expandedJobDetail.findings || expandedJobDetail.findings.length === 0)" class="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                <div v-if="(job.type === 'banned_scan' || job.type === 'missing_scan') && getJobFindingsList(expandedJobDetail).length === 0" class="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                   <CheckCircle2 class="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{{ job.type === 'banned_scan' ? '此轮巡检未发现任何违规占位或死链文件，状态完全健康。' : '此轮剧集巡检全部完整收齐，未发现任何缺更分集。' }}</span>
                 </div>

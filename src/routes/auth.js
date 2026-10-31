@@ -86,6 +86,7 @@ const registerAuthRoutes = (app, publicDir, assetVersion) => {
             req.path === '/api/auth/session' ||
             req.path === '/api/auth/wall-posters' ||
             req.path === '/api/webhook/emby' ||
+            req.path === '/api/emby/webhook/deep_delete' ||
             req.path.startsWith('/api/strm/stream') ||
             req.path.startsWith('/assets/') ||
             req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico|svg|webmanifest|woff2?|ttf|map)$/i)
