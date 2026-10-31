@@ -78,7 +78,11 @@ class TaskEventHandler {
         // 全局后处理总开关：阶段性关闭后处理流程 (自动重命名/STRM/NFO/OpenList/Emby/Webhook)
         const isPostProcessEnabled = ConfigService.getConfigValue('postProcess.enable', false)
             || ConfigService.getConfigValue('postProcess.enabled', false);
-        if (!isPostProcessEnabled) {
+        const isStrmAutoGenerate = taskCompleteEventDto.sourceMode === 'staging_organize' && (
+            ConfigService.getConfigValue('strm.autoGenerateOnOrganize', true) &&
+            (ConfigService.getConfigValue('strm.enable', false) || ConfigService.getConfigValue('channelMonitor.linkStrm', false))
+        );
+        if (!isPostProcessEnabled && !isStrmAutoGenerate) {
             logger.debug('[后处理] 全局后处理总开关已关闭，跳过后处理流程');
             return;
         }
@@ -198,7 +202,28 @@ class TaskEventHandler {
      * @param {TaskCompleteEventDto} dto
      */
     async _handleLocalStrmGenerate(dto) {
-        const strmEnabled = ConfigService.getConfigValue('strm.enable');
+        const linkStrm = ConfigService.getConfigValue('channelMonitor.linkStrm', false);
+        const strmEnabled = ConfigService.getConfigValue('strm.enable', false);
+
+        // 影视整理联动 STRM 生成处理
+        if (dto.sourceMode === 'staging_organize') {
+            const autoGenerate = ConfigService.getConfigValue('strm.autoGenerateOnOrganize', true);
+            if (!autoGenerate && !linkStrm && !strmEnabled) {
+                logTaskEvent('[2] 影视整理联动 STRM 生成未启用，跳过');
+                return;
+            }
+            const files = Array.isArray(dto.fileList) ? dto.fileList : [];
+            if (files.length === 0) return;
+            const { StrmService } = require('./strm');
+            const strmService = new StrmService();
+            logTaskEvent(`[2] 触发影视整理联动 STRM 增量生成: 共 ${files.length} 个文件`);
+            await strmService.generateForOrganizedFiles(files, {
+                cleanObsolete: true,
+                cleanEmptyDirs: true
+            });
+            return;
+        }
+
         if (!strmEnabled) {
             logTaskEvent('STRM 本地生成未启用，跳过（使用外部工具生成或不使用本地 STRM）');
             return;
@@ -209,6 +234,7 @@ class TaskEventHandler {
             logTaskEvent(`[2] 跳过本地 STRM 生成 [任务 ${task.id}]: 文件列表为空`);
             return;
         }
+        const { StrmService } = require('./strm');
         const strmService = new StrmService();
         logTaskEvent(`[2] 开始本地 STRM 生成 [任务 ${task.id}]: 共 ${files.length} 个文件`);
         await strmService.generate(task, files, dto.overwriteStrm ?? false);
@@ -433,9 +459,51 @@ class TaskEventHandler {
      * @param {object} refreshContext
      */
     async _handleEmbyNotify(dto, refreshContext = null) {
-        // 用户明确要求：emby自动触发流程先不要触发
-        logTaskEvent('[5] Emby 媒体库直连刷新跳过: 用户要求暂不自动触发');
-        return { status: 'skipped', reason: 'auto_trigger_paused_by_user' };
+        const embyEnable = ConfigService.getConfigValue('emby.enable', false);
+        if (!embyEnable) {
+            logTaskEvent('[5] Emby 媒体库直连刷新跳过: 未开启 Emby 联动入库');
+            return { status: 'skipped', reason: 'disabled' };
+        }
+        try {
+            const embyService = new EmbyService();
+            if (!embyService.enable || !embyService.embyUrl || !embyService.embyApiKey) {
+                logTaskEvent('[5] Emby 媒体库直连刷新跳过: 未配置 Emby 服务端地址或 API Key');
+                return { status: 'skipped', reason: 'not_configured' };
+            }
+            logTaskEvent('[5] 正在联动通知 Emby 刷新媒体库...');
+
+            // 收集需通知的目录
+            let paths = [];
+            if (refreshContext?.directoryPath) {
+                paths.push(refreshContext.directoryPath);
+            }
+            if (dto?.files && Array.isArray(dto.files)) {
+                for (const f of dto.files) {
+                    const dir = f.targetPath ? require('path').dirname(f.targetPath) : (f.parentPath || '');
+                    if (dir) paths.push(dir);
+                }
+            }
+
+            const embyMountPrefix = ConfigService.getConfigValue('webhook.embyMountPrefix', '') || ConfigService.getConfigValue('emby.mountPrefix', '');
+            if (paths.length > 0) {
+                const mappedPaths = paths.map(p => {
+                    const norm = String(p).replace(/\\/g, '/').replace(/^\/+/, '');
+                    return embyMountPrefix ? `${embyMountPrefix.replace(/\/+$/, '')}/${norm}` : `/${norm}`;
+                });
+                const ok = await embyService.refreshMediaByPaths(mappedPaths);
+                if (ok) {
+                    logTaskEvent(`[5] 已成功通知 Emby 刷新入库: ${mappedPaths.slice(0, 3).join(', ')}`);
+                    return { status: 'success', refreshMode: 'path_updated', paths: mappedPaths };
+                }
+            }
+
+            const res = await embyService.notify(dto?.task || {}, { directoryPath: refreshContext?.directoryPath });
+            return res;
+        } catch (err) {
+            logger.warn(`[Emby联动] 通知入库刷新异常: ${err.message}`);
+            logTaskEvent(`[5] 联动 Emby 入库通知异常: ${err.message}`);
+            return { status: 'failed', error: err.message };
+        }
     }
 
     /**

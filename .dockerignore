@@ -24,6 +24,8 @@ data/
 # 构建产物（Builder 阶段自行生成，无需从宿主机复制）
 node_modules/
 dist/
+frontend/node_modules/
+frontend/dist/
 
 # vender 子模块中不需要的部分
 vender/cloud189-sdk/node_modules/
@@ -37,3 +39,4 @@ vender/cloud189-sdk/docs/
 *.crx
 *.pem
 .env.example
+scratch/

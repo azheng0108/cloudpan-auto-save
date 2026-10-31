@@ -108,7 +108,56 @@ class MaintenanceJobService {
                 qb.andWhere('job.type = :type', { type: options.type });
             }
 
-            const [items, total] = await qb.getManyAndCount();
+            let [items, total] = await qb.getManyAndCount();
+
+            // 自动容灾同步：若当前作业列表缺少 missing_scan 记录，但本地缺集巡检缓存存在有效快照，自动写入一条基线审计记录
+            if (total === 0 || !items.some(j => j.type === 'missing_scan')) {
+                try {
+                    const { EpisodeInspectionService } = require('./EpisodeInspectionService');
+                    if (!EpisodeInspectionService.scanJob.result) {
+                        EpisodeInspectionService.loadCache();
+                    }
+                    const cached = EpisodeInspectionService.scanJob;
+                    if (cached && cached.result && ((cached.result.scannedShowsCount > 0) || (Array.isArray(cached.result.items) && cached.result.items.length > 0))) {
+                        const resData = cached.result;
+                        const existingInDb = await repo.findOne({ where: { type: 'missing_scan' } });
+                        if (!existingInDb) {
+                            const newJob = repo.create({
+                                type: 'missing_scan',
+                                triggerType: 'manual',
+                                title: 'TMDB 剧集缺更巡检',
+                                status: 'completed',
+                                summary: `分析 ${resData.scannedShowsCount || 0} 部剧集 · 发现缺更 ${resData.missingShowsCount || 0} 部 (累计缺 ${resData.totalMissingCount || 0} 集)`,
+                                folderPath: cached.targetPath || '/tv',
+                                scannedFolders: resData.scannedShowsCount || 0,
+                                totalFiles: resData.scannedFilesCount || 0,
+                                bannedCount: resData.missingShowsCount || 0,
+                                cleanedCount: resData.totalMissingCount || 0,
+                                freedFormatted: `${resData.totalMissingCount || 0} 集`,
+                                durationMs: cached.durationMs || 0,
+                                findingsJson: JSON.stringify({
+                                    shows: resData.shows || [],
+                                    items: resData.items || [],
+                                    unidentifiedShowsCount: resData.unidentifiedShowsCount || 0,
+                                    missingShowsCount: resData.missingShowsCount || 0,
+                                    totalMissingCount: resData.totalMissingCount || 0,
+                                    scannedShowsCount: resData.scannedShowsCount || 0,
+                                    durationMs: cached.durationMs || 0,
+                                }),
+                                createdAt: cached.finishedAt ? new Date(cached.finishedAt) : new Date(),
+                            });
+                            await repo.save(newJob);
+                            logger.info(`[维护作业审计] 自动从缺集巡检缓存中回填作业记录 #${newJob.id}`);
+                            // 重新拉取
+                            const [newItems, newTotal] = await qb.getManyAndCount();
+                            items = newItems;
+                            total = newTotal;
+                        }
+                    }
+                } catch (syncErr) {
+                    logger.warn(`[维护作业审计] 从缺集巡检缓存回填历史记录失败: ${syncErr.message}`);
+                }
+            }
 
             // 为前端列表展示清洗格式（ findingsJson 在列表页不展开完整内容，只在详情中取，节省网络带宽）
             const formatted = items.map(j => {
@@ -167,8 +216,46 @@ class MaintenanceJobService {
         if (!id) return null;
         try {
             const repo = getMaintenanceJobRepository();
-            const job = await repo.findOne({ where: { id: parseInt(id) } });
-            if (!job) return null;
+            let job = null;
+            const parsedId = parseInt(id);
+            if (!isNaN(parsedId)) {
+                job = await repo.findOne({ where: { id: parsedId } });
+            }
+
+            // 若数据库未查到，但本地存在缺集巡检历史缓存，智能兼容返回
+            if (!job) {
+                const { EpisodeInspectionService } = require('./EpisodeInspectionService');
+                if (!EpisodeInspectionService.scanJob.result) {
+                    EpisodeInspectionService.loadCache();
+                }
+                const cached = EpisodeInspectionService.scanJob;
+                if (cached && cached.result) {
+                    const resData = cached.result;
+                    const items = Array.isArray(resData.items) ? resData.items : [];
+                    return {
+                        id: id,
+                        type: 'missing_scan',
+                        triggerType: 'manual',
+                        title: 'TMDB 剧集缺更巡检',
+                        status: cached.status || 'completed',
+                        summary: `分析 ${resData.scannedShowsCount || 0} 部剧集 · 发现缺更 ${resData.missingShowsCount || 0} 部 (累计缺 ${resData.totalMissingCount || 0} 集)`,
+                        durationMs: cached.durationMs || 0,
+                        folderPath: cached.targetPath || '/tv',
+                        scannedFolders: resData.scannedShowsCount || 0,
+                        totalFiles: resData.scannedFilesCount || 0,
+                        bannedCount: resData.missingShowsCount || 0,
+                        cleanedCount: resData.totalMissingCount || 0,
+                        freedFormatted: `${resData.totalMissingCount || 0} 集`,
+                        findings: items,
+                        rawFindings: resData,
+                        cleanedDetails: [],
+                        error: cached.error || null,
+                        createdAt: cached.finishedAt ? new Date(cached.finishedAt) : new Date(),
+                        timeFormatted: cached.finishedAt ? new Date(cached.finishedAt).toLocaleString('zh-CN', { hour12: false }) : ''
+                    };
+                }
+                return null;
+            }
 
             let findings = [];
             let cleanedDetails = [];
@@ -181,6 +268,15 @@ class MaintenanceJobService {
                 try {
                     cleanedDetails = JSON.parse(job.cleanedDetailsJson);
                 } catch (_) {}
+            }
+
+            let findingsList = [];
+            let rawFindings = null;
+            if (Array.isArray(findings)) {
+                findingsList = findings;
+            } else if (findings && typeof findings === 'object') {
+                rawFindings = findings;
+                findingsList = Array.isArray(findings.items) ? findings.items : (Array.isArray(findings.shows) ? findings.shows : []);
             }
 
             return {
@@ -197,7 +293,8 @@ class MaintenanceJobService {
                 bannedCount: job.bannedCount,
                 cleanedCount: job.cleanedCount,
                 freedFormatted: job.freedFormatted,
-                findings,
+                findings: findingsList,
+                rawFindings,
                 cleanedDetails,
                 error: job.error,
                 createdAt: job.createdAt,

@@ -353,12 +353,16 @@ export const maintenanceApi = {
     return http.get(`/api/maintenance/jobs/${id}`);
   },
 
-  clearJobs(): Promise<{ success: boolean; message: string }> {
-    return http.delete('/api/maintenance/jobs');
+  clearJobs(type?: string): Promise<{ success: boolean; message: string }> {
+    return http.delete('/api/maintenance/jobs', { params: type ? { type } : undefined });
   },
 
   deleteJob(id: number | string): Promise<{ success: boolean; message: string }> {
     return http.delete(`/api/maintenance/jobs/${id}`);
+  },
+
+  clearMissingCache(): Promise<{ success: boolean; message: string }> {
+    return http.delete('/api/maintenance/episodes/missing/cache');
   },
 };
 

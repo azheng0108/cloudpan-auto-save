@@ -173,3 +173,5 @@ scratch/
 caiyun-*.mjs
 *.mjs.map
 
+
+src/entities/index.js

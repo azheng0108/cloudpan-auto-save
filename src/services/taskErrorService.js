@@ -10,6 +10,23 @@ const { logTaskEvent } = require('../utils/logUtils');
 class TaskErrorService {
     static authFailNotifyCache = new Map();
 
+    /**
+     * 账号标识脱敏：保留前 3 后 4 位特征、中间掩码（与 Bot 侧 _getDesensitizedUserName 规则一致）；
+     * 过短标识仅保留首字符加掩码，避免整段泄露
+     * @param {string|number} identifier
+     * @returns {string}
+     */
+    static maskIdentifier(identifier) {
+        const raw = String(identifier ?? '');
+        if (!raw || raw === '未知') {
+            return raw;
+        }
+        if (raw.length <= 7) {
+            return raw.slice(0, 1) + '****';
+        }
+        return raw.replace(/^(.{3}).*(.{4})$/, '$1****$2');
+    }
+
     constructor(taskErrorRepo, options = {}) {
         this.taskErrorRepo = taskErrorRepo;
         this.messageUtil = options.messageUtil || null;
@@ -43,7 +60,7 @@ class TaskErrorService {
         const message = [
             '【认证失效通知】',
             `任务: ${resourceName} (ID: ${taskId})`,
-            `账号ID: ${accountId}`,
+            `账号ID: ${TaskErrorService.maskIdentifier(accountId)}`,
             `错误码: ${code}`,
             `原因: ${error.message || '认证失败'}`,
             '处理建议: 请在账号页面更新Cookie后重试。',

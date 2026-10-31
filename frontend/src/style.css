@@ -268,6 +268,12 @@ html.dark .settings-card {
   border-color: #1677ff;
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
 }
+textarea.input-base {
+  height: auto;
+  min-height: 180px;
+  resize: vertical;
+  line-height: 1.6;
+}
 .input-base:read-only {
   background-color: #f8fafc;
   color: #64748b;

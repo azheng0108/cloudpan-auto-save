@@ -222,11 +222,12 @@ class StagingOrganizeService {
                     this._dirCache.set(stepKey, matched);
                     currentId = matched;
                 } else {
-                    // 若在基准目录下创建首段就遇到 04000010（资源不存在），说明 baseFolderId 已在云盘端被删除或失效！自动自愈回退至根目录重新建链
+                    // 若在基准目录下创建首段就遇到 04000010（资源不存在），说明 baseFolderId 已在云盘端被删除或失效！严禁回退至根目录创建，避免污染网盘根目录！
                     if (currentId === baseFolderId && baseFolderId !== '/' && lastErr?.message?.includes('04000010')) {
-                        logger.warn(`[暂存整理-自愈] 基准目录 (ID: ${baseFolderId}) 在云端不存在(04000010)，自动回退至根目录重新构建全量层级...`);
+                        const noTargetErr = `归档目标基准目录 (ID: ${baseFolderId}) 在云盘端不存在或已失效 (04000010)，拒绝回退至根目录创建，避免污染网盘根目录！请在配置中重新选定有效的目标目录。`;
+                        logger.error(`[暂存整理-熔断] ${noTargetErr}`);
                         this._dirCache.delete(cacheKey);
-                        return this.ensureFolderPath(cloud139, folderPath, '/', '');
+                        throw new Error(noTargetErr);
                     }
                     throw new Error(`创建网盘目录失败: "${seg}" (父目录ID: ${currentId}): ${lastErr?.message || '无法获取或创建目录节点'}`);
                 }
@@ -307,6 +308,25 @@ class StagingOrganizeService {
             reasons.push('未配置待整理暂存目录（请在「媒体整理」中选定暂存目录）');
         }
 
+        // 核心安全防线：归档目标目录必须显式选定，严禁使用根目录('/')、空目录或缺省占位，杜绝未选目标目录时误触发整理
+        const targetId = options.defaultTargetFolderId || options.targetFolderId || cmConfig.defaultTargetFolderId;
+        const targetFolderName = options.targetFolderName || options.defaultTargetFolderName || cmConfig.defaultTargetFolderName;
+        const isTargetIdValid = Boolean(targetId && String(targetId).trim() && String(targetId).trim() !== '/' && String(targetId).trim() !== '0');
+        const isTargetNameValid = Boolean(targetFolderName && String(targetFolderName).trim() && String(targetFolderName).trim() !== '/' && String(targetFolderName).trim() !== '默认媒体库 (/)');
+        const targetConfigured = isTargetIdValid || (isTargetNameValid && targetFolderName !== '/媒体库');
+
+        if (!targetConfigured) {
+            missing.push('targetFolder');
+            missing.push('defaultTargetFolderId');
+            reasons.push('未选择归档目标目录（严禁在未选定独立目标目录或使用网盘根目录的情况下执行整理，避免误损资产）');
+        }
+
+        // 核心安全防线：源目录与目标目录重叠熔断防御，严禁源与目标相同（杜绝将已有媒体库当成暂存区洗版删除）
+        if (stagingId && targetId && String(stagingId).trim() === String(targetId).trim()) {
+            missing.push('folderCollision');
+            reasons.push('待整理暂存源目录与归档目标目录相同，触发安全熔断（严禁原地自杀式扫描洗版）');
+        }
+
         let channelMonitorConfigured = true;
         if (!options.skipChannelCheck) {
             if (cmConfig.enabled === false) {
@@ -331,10 +351,6 @@ class StagingOrganizeService {
                 channelMonitorConfigured = false;
             }
         }
-
-        const targetId = options.defaultTargetFolderId || options.targetFolderId || cmConfig.defaultTargetFolderId;
-        const targetFolderName = cmConfig.defaultTargetFolderName || '/媒体库';
-        const targetConfigured = Boolean((targetId && String(targetId).trim()) || (targetFolderName && String(targetFolderName).trim()));
 
         return {
             ready: missing.length === 0,
@@ -409,6 +425,32 @@ class StagingOrganizeService {
             let stagingFolderId = globalStagingId;
             if (!stagingFolderId || !stagingFolderId.trim()) {
                 stagingFolderId = await this.ensureFolderPath(cloud139, globalStagingName);
+            }
+
+            const targetFolderId = options.targetFolderId || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderId', '');
+            const defaultTargetFolderName = options.targetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName', '');
+            if (!targetFolderId || targetFolderId === '/' || targetFolderId === '0') {
+                const errMsg = '[云盘整理-安全熔断] 未配置有效的归档目标目录（严禁使用根目录或空目标目录），已熔断终止整理';
+                logger.error(errMsg);
+                logTaskEvent(errMsg);
+                return { scanned: 0, organized: 0, status: 'unconfigured_target', message: errMsg };
+            }
+            if (stagingFolderId && targetFolderId && String(stagingFolderId).trim() === String(targetFolderId).trim()) {
+                const errMsg = '[云盘整理-安全熔断] 暂存源目录与归档目标目录完全重叠，已熔断终止整理';
+                logger.error(errMsg);
+                logTaskEvent(errMsg);
+                return { scanned: 0, organized: 0, status: 'folder_collision', message: errMsg };
+            }
+            // 验证目标目录在 139 网盘端是否真实有效存在，杜绝使用已失效或不存在的目录 ID 误伤文件
+            try {
+                await cloud139.listDiskDirAll(targetFolderId);
+            } catch (targetCheckErr) {
+                if (targetCheckErr?.message?.includes('04000010') || targetCheckErr?.message?.includes('资源不存在')) {
+                    const errMsg = `[云盘整理-安全熔断] 配置的归档目标目录 (ID: ${targetFolderId}) 在 139 网盘中不存在(04000010)！已熔断终止整理，请在系统设置中重新选定有效的目标目录。`;
+                    logger.error(errMsg);
+                    logTaskEvent(errMsg);
+                    return { scanned: 0, organized: 0, status: 'invalid_target_folder', message: errMsg };
+                }
             }
 
             if (!options.silentIfEmpty) {
@@ -495,8 +537,6 @@ class StagingOrganizeService {
                 return { scanned: allStagingEntries.length, organized: 0, details: [] };
             }
 
-            const targetFolderId = options.targetFolderId || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderId', '/');
-            const defaultTargetFolderName = options.targetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName', '/媒体库');
             const targetDirPath = (defaultTargetFolderName && defaultTargetFolderName !== '/') ? defaultTargetFolderName : '/媒体库';
 
             const previewSettings = {
@@ -539,6 +579,50 @@ class StagingOrganizeService {
                         });
                     } catch (scrapeErr) {
                         logger.warn(`[云盘整理-TMDB] 《${gTitle}》在线刮削异常: ${scrapeErr.message}`);
+                    }
+                }
+
+                // 5.1.1 排除策略: 过滤预告片与样品文件 (excludeTrailersAndSamples)
+                const excludeTrailersAndSamples = ConfigService.getConfigValue('channelMonitor.excludeTrailersAndSamples', false);
+                if (excludeTrailersAndSamples) {
+                    group.files = (group.files || []).filter(f => !/(?:[.\-_ ]|^)(?:sample|trailer|preview|featurette)(?:[.\-_ ]|\.\w+$)/i.test(f.name || ''));
+                    if (group.files.length === 0) {
+                        logger.info(`[云盘整理-排除策略] 《${gTitle}》全部文件均为样品或预告片，已排除跳过`);
+                        logTaskEvent(`[排除策略] 跳过样本/预告片资源: 《${gTitle}》`);
+                        continue;
+                    }
+                }
+
+                // 5.1.2 排除策略: 外语片无中文字幕排除 (excludeNoChineseSubtitle)
+                // 仅检查 TMDB 国家/地区不含中国大陆(CN)、中国台湾(TW)、中国香港(HK)、中国澳门(MO)的资源
+                const excludeNoChineseSubtitle = ConfigService.getConfigValue('channelMonitor.excludeNoChineseSubtitle', false);
+                if (excludeNoChineseSubtitle && group.tmdbId) {
+                    const chineseRegions = ['CN', 'TW', 'HK', 'MO'];
+                    const countries = Array.isArray(group.origin_country) ? group.origin_country.map(c => String(c).toUpperCase()) : [];
+                    const isChineseWork = countries.some(c => chineseRegions.includes(c));
+                    if (!isChineseWork && countries.length > 0) {
+                        const allNames = [
+                            group.title || '',
+                            options.post?.title || '',
+                            options.post?.rawText || '',
+                            ...(group.files || []).map(f => f.name || '')
+                        ].join(' ');
+                        const hasChineseSub = /(?:中字|中文字幕|双语|双字|官中|简中|繁中|chs|cht|chinese|mandarin|\.chs\.|\.cht\.|\.sub\.|\.ass$|\.srt$)/i.test(allNames);
+                        if (!hasChineseSub) {
+                            logger.info(`[云盘整理-排除策略] 《${gTitle}》制片国家为 [${countries.join(', ')}]，未检测到中文字幕特征，予以排除跳过`);
+                            logTaskEvent(`[排除策略] 跳过无中文字幕外语资源: 《${gTitle}》`);
+                            continue;
+                        }
+                    }
+                }
+
+                // 5.1.3 排除策略: 排除非视频文件 (excludeNonVideo)
+                const excludeNonVideo = ConfigService.getConfigValue('channelMonitor.excludeNonVideo', false);
+                if (excludeNonVideo) {
+                    group.files = (group.files || []).filter(f => this.isVideoFile(f.name) || this.isVideoFile(f.extension) || /\.iso$/i.test(f.name));
+                    if (group.files.length === 0) {
+                        logger.info(`[云盘整理-排除策略] 《${gTitle}》无有效视频文件，已排除跳过`);
+                        continue;
                     }
                 }
 
@@ -636,11 +720,13 @@ class StagingOrganizeService {
                     logTaskEvent(gDoneMsg);
                 }
 
-                // 5.4 支柱 2 & 支柱 3：单作品流式原子闭环与暂存批次销毁 (即扫 -> 即探 -> 即理 -> 即移 -> 即删)
-                // 若该作品所属的暂存批次目录内部的视频已全部成功移出，检查并销毁该暂存批次子目录
+                // 5.4 严格安全防护：只有在作品组中所有视频全部 100% 成功移入目标库，且批次目录下无其他有效文件与未清空子目录时，才安全清理空壳目录
                 const batchTopCatalogId = group.batchFolderId || group.files?.[0]?.topCatalogId;
                 const batchTopFolderName = group.batchFolderName || group.files?.[0]?.topFolderName;
-                if (batchTopCatalogId && batchTopCatalogId !== stagingFolderId && !batchTopCatalogId.includes('/')) {
+                const totalGroupVideos = (group.files || []).filter(f => this.isVideoFile(f.name)).length;
+                const isGroupFullyMoved = totalGroupVideos > 0 && groupMovedFiles.length >= totalGroupVideos;
+
+                if (isGroupFullyMoved && batchTopCatalogId && batchTopCatalogId !== stagingFolderId && batchTopCatalogId !== targetFolderId && !batchTopCatalogId.includes('/')) {
                     // 确认该批次目录下是否还有其它待处理视频组
                     const hasRemainingVideosInBatch = readyGroups.slice(groupIdx).some(otherGroup => {
                         const otherBatchId = otherGroup.batchFolderId || otherGroup.files?.[0]?.topCatalogId;
@@ -656,19 +742,23 @@ class StagingOrganizeService {
                             });
 
                             if (isDirExisted) {
-                                const nonJunkRemaining = remainingItems.filter(i => {
+                                // 铁律防线：严禁忽略子目录！若目录下仍有任何子文件夹，说明资产结构未搬空，绝对禁止整目录销毁！
+                                const hasSubFolders = remainingItems.some(i => i.type === 'folder');
+                                const nonJunkFiles = remainingItems.filter(i => {
                                     if (i.type === 'folder') return false;
                                     return !StagingOrganizeService.isAdOrPromoFile(i.name, i.extension, i.relativePath);
                                 });
 
-                                if (nonJunkRemaining.length === 0) {
-                                    logger.info(`[云盘整理-批次销毁] 批次目录《${batchTopFolderName}》已无有效媒体资产，移入回收站销毁批次目录 (${batchTopCatalogId})`);
-                                    logTaskEvent(`[云盘整理] 《${batchTopFolderName}》已完成全量入库，销毁暂存批次目录`);
+                                if (!hasSubFolders && nonJunkFiles.length === 0) {
+                                    logger.info(`[云盘整理-批次销毁] 批次目录《${batchTopFolderName}》已完成全量移动且已无任何残留资产，安全清理空批次目录 (${batchTopCatalogId})`);
+                                    logTaskEvent(`[云盘整理] 《${batchTopFolderName}》已完成全量入库，清理空批次目录`);
                                     await cloud139.deleteFiles([batchTopCatalogId]).catch(delErr => {
                                         if (!delErr?.message?.includes('04000010') && !delErr?.message?.includes('资源不存在')) {
                                             logger.warn(`[云盘整理-批次销毁] 销毁批次目录异常: ${delErr.message}`);
                                         }
                                     });
+                                } else {
+                                    logger.info(`[云盘整理-批次保留] 批次目录《${batchTopFolderName}》仍有 ${hasSubFolders ? '子目录' : ''} ${nonJunkFiles.length > 0 ? nonJunkFiles.length + ' 个有效文件' : ''} 未清空，安全保留批次目录`);
                                 }
                             }
                         } catch (batchErr) {
@@ -703,6 +793,38 @@ class StagingOrganizeService {
                 if (notifyOnOrganize) {
                     const pushMsg = `[139云盘整理] 全量规范整理完成\n已归档 ${totalMovedFiles.length} 个视频文件至媒体库。\n包含作品组: ${readyGroups.length} 部。`;
                     await this._messageUtil.sendMessage(pushMsg).catch(() => {});
+                }
+
+                // 7.1 媒体整理入库后自动生成对应的 .strm 文件联动
+                const isAutoGenerateStrm = ConfigService.getConfigValue('strm.autoGenerateOnOrganize', true)
+                    && (ConfigService.getConfigValue('strm.enable', false) || ConfigService.getConfigValue('channelMonitor.linkStrm', false));
+                if (isAutoGenerateStrm) {
+                    try {
+                        const { StrmService } = require('./strm');
+                        const strmService = new StrmService();
+                        const strmFiles = totalMovedFiles.map(f => ({
+                            fileId: f.fileId,
+                            id: f.fileId,
+                            name: f.finalName,
+                            finalName: f.finalName,
+                            originalName: f.originalName,
+                            targetFolderPath: f.targetFolderPath,
+                            size: f.size,
+                            accountId: account?.id
+                        }));
+                        const autoMsg = `[媒体挂载-STRM自动生成] 媒体整理入库完成，自动为 ${strmFiles.length} 个入库视频生成 .strm 映射`;
+                        logger.info(autoMsg);
+                        logTaskEvent(autoMsg);
+                        await strmService.generateForOrganizedFiles(strmFiles, {
+                            cleanObsolete: false,
+                            cleanEmptyDirs: ConfigService.getConfigValue('strm.cleanEmptyDirs', true),
+                            accountId: account?.id
+                        });
+                    } catch (strmErr) {
+                        const errMsg = `[媒体挂载-STRM自动生成] 自动生成异常: ${strmErr.message}`;
+                        logger.error(errMsg, { error: strmErr });
+                        logTaskEvent(errMsg);
+                    }
                 }
 
                 EventService.getInstance().emit('taskComplete', {

@@ -3,6 +3,7 @@ import { ref, computed, onMounted, reactive, nextTick, watch } from 'vue';
 import { taskApi, type TaskItem } from '../api/task';
 import { accountApi, type AccountItem } from '../api/account';
 import { channelApi, type TmdbCandidateItem } from '../api/channel';
+import { pansouApi, type PansouResourceItem } from '../api/pansou';
 import { ElMessage } from 'element-plus';
 import {
   Film,
@@ -81,6 +82,15 @@ const form = reactive({
 const tmdbSearching = ref(false);
 const tmdbCandidates = ref<TmdbCandidateItem[]>([]);
 const selectedCandidate = ref<TmdbCandidateItem | null>(null);
+
+// PanSou 盘搜 139 资源检索状态
+const showPansouSearch = ref(false);
+const pansouKeyword = ref('');
+const pansouSearching = ref(false);
+const pansouCandidates = ref<PansouResourceItem[]>([]);
+const pansouError = ref('');
+const hasSearched = ref(false);
+const lastSearchedKeyword = ref('');
 
 const showCustomCron = ref(false);
 
@@ -167,6 +177,75 @@ onMounted(async () => {
   await Promise.all([loadAccounts(), loadTasks(), loadGlobalConfig()]);
 });
 
+/**
+ * 影视标题规范化提纯清洗工具：
+ * 剥离外层修饰、防封干扰、规格词汇、更新状态与集数，提取纯净片名、年份与集数
+ */
+function cleanResourceTitle(raw?: string): { title: string; year: string; episode: number } {
+  if (!raw) return { title: '', year: '', episode: 0 };
+  let s = String(raw).trim();
+  let extractedYear = '';
+  let extractedEpisode = 0;
+
+  // 1. 如果整体被外层括号包裹，如【遮天】，先解构
+  s = s.replace(/^[【\[（\(]([^【】\[\]（）()]+)[】\]）\)]$/, '$1').trim();
+
+  // 2. 剥离前缀宣传标签，如【4K国漫】、【最新更新】、[1080P]、[国漫] 等
+  while (/^[【\[（\(][^】\]）\)]+[】\]）\)]\s*/.test(s)) {
+    const next = s.replace(/^[【\[（\(][^】\]）\)]+[】\]）\)]\s*/, '').trim();
+    if (next) s = next;
+    else break;
+  }
+
+  // 3. 提取集数 (更新到166集 / 更至18集 / 全36集 / 第20集 / 166集)
+  const epMatch = s.match(/(?:更新[到至]|更[到至]|连载[到至]|全|第)\s*(\d+)\s*[集话期]/i) || s.match(/(\d+)\s*[集话期]/i);
+  if (epMatch) {
+    const num = parseInt(epMatch[1], 10);
+    if (!isNaN(num) && num > 0 && num < 5000) {
+      extractedEpisode = num;
+    }
+  }
+
+  // 4. 提取括号中的年份 (如 "(2023)", "（2023）", "[2024]")
+  const parenYearMatch = s.match(/[\(\[（【]\s*(19\d\d|20[0-3]\d)\s*[\)\]）】]/);
+  if (parenYearMatch) {
+    extractedYear = parenYearMatch[1];
+    s = s.replace(/[\(\[（【]\s*(19\d\d|20[0-3]\d)\s*[\)\]）】]/g, ' ');
+  }
+
+  // 5. 剥离更新状态、集数后缀与引流宣传
+  s = s.replace(/(?:[._\-\s/]+)?(?:更新[到至中]|更[到至]|连载[到至中]|完结|已完结|全\s*\d+\s*[集话期全]|第\s*\d+\s*[集话期全]|每周[一二三四五六日天周]?\s*更[新]?|持续更新|139网盘|移动云盘|夸克网盘|夸克|百度网盘|百度云|阿里网盘|阿里云盘|天翼云盘|迅雷网盘|关注[^\s._\-]+|防封[^\s._\-]*|未删减[^\s._\-]*|内封字幕|官方原盘|4K超清|HDR版本).*/i, '');
+
+  // 6. 剥离技术规格词与画质
+  s = s.replace(/\b(?:4K|2160[pi]?|1080[pi]?|720[pi]?|480[pi]?|HD|BD|UHD|HDR\d*|DV|WEB-?DL|WEBRip|BDRip|Remux|HEVC|H\.?26[45]|x26[45]|60fps|120fps|60帧|120帧|高码率|无损|自压|S\d+(?:E\d+)?|EP?\d+)\b/gi, ' ');
+  s = s.replace(/(?:[._\-\s]+)?(?:4K超清|超清4K|1080P超清|蓝光|高码率|60帧|120帧|国漫|动漫|连续剧|电影)[\s._\-]*/gi, ' ');
+
+  // 7. 提取并清理点号/空格分隔的年份 (如 "白夜破晓.2024" -> "白夜破晓", 但保留纯片名如 "1917")
+  const dotYearMatch = s.match(/(?<=[\u4e00-\u9fffA-Za-z])[._\-\s]+(19\d\d|20[0-3]\d)(?=[._\-\s]|$)/);
+  if (dotYearMatch) {
+    if (!extractedYear) extractedYear = dotYearMatch[1];
+    s = s.replace(/(?<=[\u4e00-\u9fffA-Za-z])[._\-\s]+(19\d\d|20[0-3]\d)(?=[._\-\s]|$)/g, ' ');
+  }
+
+  // 8. 剥离末尾残留的括号标签，如 [1080P/60帧]
+  s = s.replace(/[\(\[（【][^）\]）】]*[）\]）】]$/g, ' ');
+
+  // 9. 汉字间防封混淆字符处理
+  s = s.replace(/([\u4e00-\u9fff])\s*[丨|｜/\\丿丶•·~～]\s*([\u4e00-\u9fff])/g, '$1$2');
+  s = s.replace(/([\u4e00-\u9fff])\s*[丨|｜/\\丿丶•·~～]\s*([\u4e00-\u9fff])/g, '$1$2');
+  s = s.replace(/[丨|｜丶]/g, '');
+
+  // 10. 首尾符号清理与空格压缩
+  s = s.replace(/^[^a-zA-Z0-9\u4e00-\u9fff]+|[^a-zA-Z0-9\u4e00-\u9fff]+$/g, '').replace(/\s+/g, ' ').trim();
+
+  // 11. 停用词校验 (若纯为画质或修饰词则返回空，等用户手动填写)
+  if (/^(?:4k|1080p|720p|hd|bd|web-?dl|hdr|全集|合集|短剧|电影|动漫|国漫|原盘|自压|修复|重制|精选|典藏|无损|更新|连载)$/i.test(s)) {
+    s = '';
+  }
+
+  return { title: s, year: extractedYear, episode: extractedEpisode };
+}
+
 // ================= 智能链接解析 =================
 function handleShareLinkInput(val: string) {
   if (!val) return;
@@ -179,7 +258,22 @@ function handleShareLinkInput(val: string) {
   }
   if (codeMatch && !form.accessCode) {
     form.accessCode = codeMatch[1].trim();
-    ElMessage.success(`已自动解析提取码: ${form.accessCode}`);
+    ElMessage.success('已自动解析提取码: ' + form.accessCode);
+  }
+
+  // 若尚未填写影视剧名称，尝试从分享文案前半截智能提取规范片名
+  if (!form.resourceName || !form.resourceName.trim()) {
+    const textWithoutUrl = val
+      .replace(/(https?:\/\/\S+)/gi, '')
+      .replace(/(?:提取码|访问码|密码|提取|pwd|code)[:：\s]*[a-zA-Z0-9]{4,8}/gi, '');
+    const { title: cleanTitle, year, episode } = cleanResourceTitle(textWithoutUrl);
+    if (cleanTitle) {
+      form.resourceName = cleanTitle;
+      if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
+        form.totalEpisodes = episode;
+      }
+      searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
+    }
   }
 }
 
@@ -196,25 +290,41 @@ async function handlePasteShareLink() {
 }
 
 // ================= TMDB 检索与绑定 =================
-async function searchTmdbCandidates() {
-  const query = form.resourceName.trim();
+async function searchTmdbCandidates(opts?: { queryOverride?: string; yearOverride?: string } | Event) {
+  const options = (opts && typeof opts === 'object' && 'queryOverride' in opts) ? (opts as { queryOverride?: string; yearOverride?: string }) : undefined;
+  const rawQuery = options?.queryOverride !== undefined ? options.queryOverride : form.resourceName;
+  const { title: cleanTitle, year: cleanYear, episode } = cleanResourceTitle(rawQuery);
+  const query = (cleanTitle || rawQuery || '').trim();
+
   if (!query) {
-    ElMessage.warning('请输入要检索的影视剧名称');
+    ElMessage.warning('未能识别出有效片名，请手动填写规范片名（例如：遮天 / 仙逆）');
     return;
   }
+
+  // 自动将清洗后的规范片名同步回填输入框，杜绝脏文本污染
+  if (cleanTitle && form.resourceName !== cleanTitle) {
+    form.resourceName = cleanTitle;
+  }
+  // 若提取到了有效集数且当前总集数目标为 0 或未填，自动联动赋值
+  if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
+    form.totalEpisodes = episode;
+  }
+
+  const searchYear = options?.yearOverride || cleanYear || '';
 
   tmdbSearching.value = true;
   try {
     const list = await channelApi.searchCandidates({
       title: query,
+      year: searchYear || undefined,
       mediaType: 'multi',
     });
     tmdbCandidates.value = Array.isArray(list) ? list : [];
     if (tmdbCandidates.value.length === 0) {
-      ElMessage.info('未在 TMDB 找到相关作品，可精简片名或用英文原名检索');
+      ElMessage.info('未在 TMDB 找到相关作品，可精简片名或手动尝试英文/原名检索');
     }
   } catch (err: any) {
-    ElMessage.error(`TMDB 检索失败: ${err.message || '网络异常'}`);
+    ElMessage.error('TMDB 检索失败: ' + (err.message || '网络异常'));
   } finally {
     tmdbSearching.value = false;
   }
@@ -253,7 +363,104 @@ function handleResourceNameInput() {
   }
 }
 
-// ================= Cron 调度联动 =================
+// ================= 盘搜 (fish2018/pansou) 资源快搜逻辑 =================
+function togglePansouSearch() {
+  showPansouSearch.value = !showPansouSearch.value;
+  if (showPansouSearch.value) {
+    if (!pansouKeyword.value && form.resourceName) {
+      pansouKeyword.value = form.resourceName.trim();
+    }
+    if (pansouKeyword.value && !hasSearched.value) {
+      handlePansouSearch(false);
+    }
+  }
+}
+
+async function handlePansouSearch(refresh: boolean = false) {
+  const kw = pansouKeyword.value.trim();
+  if (!kw) {
+    ElMessage.warning('请输入搜索关键词');
+    return;
+  }
+
+  pansouSearching.value = true;
+  pansouError.value = '';
+  try {
+    const list = await pansouApi.search(kw, { refresh });
+    pansouCandidates.value = Array.isArray(list) ? list : [];
+    hasSearched.value = true;
+    lastSearchedKeyword.value = kw;
+    if (pansouCandidates.value.length === 0) {
+      ElMessage.info(`未检索到与「${kw}」相关的 139 移动云盘资源`);
+    } else {
+      ElMessage.success(`成功召回 ${pansouCandidates.value.length} 个 139 移动云盘有效资源`);
+    }
+  } catch (err: any) {
+    pansouError.value = err.message || '网络连接超时或无法连接盘搜服务';
+    ElMessage.error(`盘搜检索失败: ${err.message || '网络异常'}`);
+  } finally {
+    pansouSearching.value = false;
+  }
+}
+
+async function checkPansouStatus() {
+  try {
+    const health = await pansouApi.checkHealth();
+    if (health && health.connected) {
+      pansouError.value = '';
+      ElMessage.success(health.message || '盘搜服务连接正常');
+      if (pansouKeyword.value) {
+        handlePansouSearch(false);
+      }
+    } else {
+      pansouError.value = health?.message || '服务连通性检测失败';
+      ElMessage.warning(pansouError.value);
+    }
+  } catch (err: any) {
+    pansouError.value = err.message || '无法连接盘搜服务';
+    ElMessage.error(pansouError.value);
+  }
+}
+
+function applyPansouCandidate(item: PansouResourceItem) {
+  form.shareLink = item.link || item.url || '';
+  if (item.password) {
+    form.accessCode = item.password.trim();
+  }
+
+  // 若尚未填写影视剧名称或当前名称为空
+  if (!form.resourceName || !form.resourceName.trim()) {
+    const { title: cleanTitle, year, episode } = cleanResourceTitle(item.title);
+    if (cleanTitle) {
+      form.resourceName = cleanTitle;
+      if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
+        form.totalEpisodes = episode;
+      }
+      searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
+    } else {
+      // 未能可靠提纯出规范片名：杜绝填入脏文本，等待用户手动填写
+      form.resourceName = '';
+      tmdbCandidates.value = [];
+      selectedCandidate.value = null;
+      ElMessage.info('已填入分享链接，未能识别规范片名，请在下方手动填写影视剧名称后点击「智能匹配」');
+    }
+  } else {
+    // 若当前输入框内已有内容，但包含未清理的脏后缀，顺带提纯
+    const { title: cleanTitle, year, episode } = cleanResourceTitle(form.resourceName);
+    if (cleanTitle && cleanTitle !== form.resourceName) {
+      form.resourceName = cleanTitle;
+      if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
+        form.totalEpisodes = episode;
+      }
+      if (!form.tmdbId) {
+        searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
+      }
+    }
+  }
+
+  ElMessage.success('已填入 139 分享链接' + (item.password ? '与提取码' : '') + '！');
+}
+
 function handleCronPresetChange(preset: string) {
   form.cronPreset = preset;
   switch (preset) {
@@ -292,6 +499,10 @@ function openInlineAddForm() {
   selectedCandidate.value = null;
   tmdbCandidates.value = [];
   showCustomCron.value = false;
+  showPansouSearch.value = false;
+  pansouCandidates.value = [];
+  pansouError.value = "";
+  hasSearched.value = false;
 
   Object.assign(form, {
     id: 0,
@@ -396,6 +607,7 @@ function openInlineEditForm(task: TaskItem) {
 
 function closeInlineForm() {
   showForm.value = false;
+  showPansouSearch.value = false;
   isEditing.value = false;
   deletingTaskId.value = null;
   resettingTaskId.value = null;
@@ -800,14 +1012,28 @@ function getErrorTier(errText?: string) {
               <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300">
                 139 云盘分享链接 <span class="text-red-500">*</span>
               </label>
-              <button
-                type="button"
-                class="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
-                @click="handlePasteShareLink"
-              >
-                <Copy class="w-3 h-3" />
-                <span>从剪贴板粘贴并解析</span>
-              </button>
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  class="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-all"
+                  :class="showPansouSearch
+                    ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 font-semibold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'"
+                  @click="togglePansouSearch"
+                >
+                  <Search class="w-3 h-3" />
+                  <span>{{ showPansouSearch ? '收起盘搜' : '盘搜找资源' }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-all"
+                  title="从剪贴板读取并解析链接与提取码"
+                  @click="handlePasteShareLink"
+                >
+                  <Copy class="w-3 h-3 text-slate-400" />
+                  <span>剪贴板粘贴</span>
+                </button>
+              </div>
             </div>
             <input
               v-model="form.shareLink"
@@ -819,6 +1045,117 @@ function getErrorTier(errText?: string) {
             />
           </div>
         </div>
+
+        <!-- PanSou 盘搜展开面板 (极简灰蓝雅致风格，杜绝杂色与拥挤) -->
+        <div
+          v-if="showPansouSearch"
+          class="p-3.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200/90 dark:border-slate-700/80 space-y-3 transition-all"
+        >
+          <!-- 搜索框与按钮组 (flex 结构彻底杜绝图标与文本重叠) -->
+          <div class="flex items-center gap-2">
+            <div class="flex-1 flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 h-[38px] focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 transition-all">
+              <Search class="w-4 h-4 text-slate-400 shrink-0 mr-2.5" />
+              <input
+                v-model="pansouKeyword"
+                type="text"
+                placeholder="输入影视剧名搜索 139 网盘资源（如: 全职高手 / 繁花 / 凡人修仙传）"
+                class="w-full bg-transparent text-xs text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400"
+                @keydown.enter.prevent="handlePansouSearch(false)"
+              />
+              <button
+                v-if="pansouKeyword"
+                type="button"
+                class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 cursor-pointer p-0.5 ml-1"
+                title="清空关键词"
+                @click="pansouKeyword = ''"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              class="btn-primary text-xs h-[38px] px-4 flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+              :disabled="pansouSearching || !pansouKeyword.trim()"
+              @click="handlePansouSearch(false)"
+            >
+              <RefreshCw v-if="pansouSearching" class="w-3.5 h-3.5 animate-spin" />
+              <Search v-else class="w-3.5 h-3.5" />
+              <span>{{ pansouSearching ? '搜索中...' : '搜索资源' }}</span>
+            </button>
+          </div>
+
+          <!-- 异常错误提示条 (温和告警，去冗余杂色) -->
+          <div
+            v-if="pansouError"
+            class="p-2.5 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/70 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs flex items-center justify-between gap-2"
+          >
+            <div class="flex items-center gap-1.5 min-w-0">
+              <AlertTriangle class="w-4 h-4 shrink-0 text-red-500" />
+              <span class="truncate">{{ pansouError }}</span>
+            </div>
+            <router-link
+              to="/settings"
+              class="text-[11px] underline hover:text-red-700 shrink-0 font-medium"
+            >
+              检查盘搜服务配置
+            </router-link>
+          </div>
+
+          <!-- 候选资源卡片列表 (极简双栏，自然灰阶蓝调) -->
+          <div v-if="pansouCandidates.length > 0" class="space-y-2">
+            <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>找到 {{ pansouCandidates.length }} 条 139 移动云盘资源（点击直接填入表单）：</span>
+              <span v-if="lastSearchedKeyword" class="text-[11px] font-mono">「{{ lastSearchedKeyword }}」</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+              <div
+                v-for="(item, idx) in pansouCandidates"
+                :key="item.link + idx"
+                class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-xs transition-all cursor-pointer flex items-start justify-between gap-2 group"
+                @click="applyPansouCandidate(item)"
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs font-medium text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400" :title="item.title">
+                    {{ item.title }}
+                  </div>
+                  <div class="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
+                    <span v-if="item.sizeFormatted" class="font-mono text-slate-600 dark:text-slate-300">
+                      {{ item.sizeFormatted }}
+                    </span>
+                    <span v-if="item.source" class="truncate max-w-[130px]">
+                      {{ item.source }}
+                    </span>
+                    <span v-if="item.password" class="px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-mono text-[10px]">
+                      提取码: {{ item.password }}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="px-2 py-1 text-[11px] font-medium rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:border-blue-500 group-hover:bg-blue-50 group-hover:text-blue-600 dark:group-hover:bg-blue-950 dark:group-hover:text-blue-400 shrink-0 transition-colors"
+                  @click.stop="applyPansouCandidate(item)"
+                >
+                  填入
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 空状态提示 (清爽克制) -->
+          <div
+            v-else-if="hasSearched && !pansouSearching && !pansouError"
+            class="py-4 text-center text-xs text-slate-400 space-y-1"
+          >
+            <p>未在全网检索到与「{{ lastSearchedKeyword }}」匹配的 139 移动云盘资源</p>
+            <p class="text-[11px] text-slate-400">
+              提示：频道与插件可能暂未收录该资源，您可尝试更简短的片名或从剪贴板直接粘贴。
+            </p>
+          </div>
+        </div>
+
+
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- 提取码 -->
@@ -1357,3 +1694,4 @@ function getErrorTier(errText?: string) {
   animation: fadeIn 0.25s ease-out forwards;
 }
 </style>
+

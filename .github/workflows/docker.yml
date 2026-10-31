@@ -2,10 +2,10 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       custom_version:
@@ -26,11 +26,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'yarn'
       
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: |
+          yarn install --frozen-lockfile --ignore-engines
+          npm --prefix frontend ci
 
       - name: Clean build validation
         run: yarn build
@@ -105,6 +107,7 @@ jobs:
             # 主分支推送或手动触发：同时打 latest 和 package.json 版本号标签
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ steps.pkg.outputs.version }},enable={{is_default_branch}}
+            type=ref,event=branch
             # Git tag 推送时：提取 semver（v2.2.53 -> 2.2.53）并同步更新 latest
             # 确保无论 main push CI 是否成功，latest 始终跟随最新发布 tag
             type=match,pattern=v(.*),group=1,event=tag

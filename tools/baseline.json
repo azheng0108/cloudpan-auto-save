@@ -351,7 +351,7 @@
   },
   "endpointSnapshot": {
     "version": 1,
-    "generatedAt": "2026-10-21T05:57:50.447Z",
+    "generatedAt": "2026-10-27T07:48:31.913Z",
     "lineLimit": 1500,
     "endpoints": [
       {
@@ -393,49 +393,49 @@
         "method": "GET",
         "path": "/api/accounts",
         "domain": "accounts",
-        "sourceFile": "src/routes/api.js",
+        "sourceFile": "src/routes/api/accounts.js",
         "order": 6
       },
       {
         "method": "POST",
         "path": "/api/accounts",
         "domain": "accounts",
-        "sourceFile": "src/routes/api.js",
+        "sourceFile": "src/routes/api/accounts.js",
         "order": 7
       },
       {
         "method": "DELETE",
         "path": "/api/accounts/recycle",
         "domain": "accounts",
-        "sourceFile": "src/routes/api.js",
+        "sourceFile": "src/routes/api/accounts.js",
         "order": 8
       },
       {
         "method": "DELETE",
         "path": "/api/accounts/:id",
         "domain": "accounts",
-        "sourceFile": "src/routes/api.js",
+        "sourceFile": "src/routes/api/accounts.js",
         "order": 9
       },
       {
         "method": "PUT",
         "path": "/api/accounts/:id/alias",
         "domain": "accounts",
-        "sourceFile": "src/routes/api.js",
+        "sourceFile": "src/routes/api/accounts.js",
         "order": 10
       },
       {
         "method": "PUT",
         "path": "/api/accounts/:id/default",
         "domain": "accounts",
-        "sourceFile": "src/routes/api.js",
+        "sourceFile": "src/routes/api/accounts.js",
         "order": 11
       },
       {
         "method": "DELETE",
         "path": "/api/accounts/:id/default",
         "domain": "accounts",
-        "sourceFile": "src/routes/api.js",
+        "sourceFile": "src/routes/api/accounts.js",
         "order": 12
       },
       {
@@ -712,98 +712,98 @@
         "order": 51
       },
       {
-        "method": "GET",
-        "path": "/api/maintenance/episodes/missing/status",
+        "method": "DELETE",
+        "path": "/api/maintenance/episodes/missing/cache",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 52
       },
       {
-        "method": "POST",
-        "path": "/api/maintenance/episodes/missing/scan",
+        "method": "GET",
+        "path": "/api/maintenance/episodes/missing/status",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 53
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/episodes/missing/search-tmdb",
+        "path": "/api/maintenance/episodes/missing/scan",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 54
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/episodes/missing/match-tmdb",
+        "path": "/api/maintenance/episodes/missing/search-tmdb",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 55
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/episodes/missing/recheck",
+        "path": "/api/maintenance/episodes/missing/match-tmdb",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 56
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/episodes/missing/clear",
+        "path": "/api/maintenance/episodes/missing/recheck",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 57
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/episodes/missing/remove-show",
+        "path": "/api/maintenance/episodes/missing/clear",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 58
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/episodes/missing/delete-targets",
+        "path": "/api/maintenance/episodes/missing/remove-show",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 59
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/assets/dedup/scan",
+        "path": "/api/maintenance/episodes/missing/delete-targets",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 60
       },
       {
         "method": "POST",
-        "path": "/api/maintenance/assets/dedup/prune",
+        "path": "/api/maintenance/assets/dedup/scan",
         "domain": "maintenance",
         "sourceFile": "src/routes/api.js",
         "order": 61
       },
       {
         "method": "POST",
+        "path": "/api/maintenance/assets/dedup/prune",
+        "domain": "maintenance",
+        "sourceFile": "src/routes/api.js",
+        "order": 62
+      },
+      {
+        "method": "POST",
         "path": "/api/webhook/emby",
         "domain": "webhook",
         "sourceFile": "src/routes/api.js",
-        "order": 62
+        "order": 63
       },
       {
         "method": "POST",
         "path": "/api/webhook/test-outbound",
         "domain": "webhook",
         "sourceFile": "src/routes/api.js",
-        "order": 63
-      },
-      {
-        "method": "GET",
-        "path": "/api/scrape/rules",
-        "domain": "scrape",
-        "sourceFile": "src/routes/api.js",
         "order": 64
       },
       {
-        "method": "POST",
+        "method": "GET",
         "path": "/api/scrape/rules",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
@@ -811,381 +811,423 @@
       },
       {
         "method": "POST",
-        "path": "/api/scrape/plan",
+        "path": "/api/scrape/rules",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
         "order": 66
       },
       {
         "method": "POST",
-        "path": "/api/scrape/apply",
+        "path": "/api/scrape/plan",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
         "order": 67
+      },
+      {
+        "method": "POST",
+        "path": "/api/scrape/apply",
+        "domain": "scrape",
+        "sourceFile": "src/routes/api.js",
+        "order": 68
       },
       {
         "method": "GET",
         "path": "/api/scrape/journal",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 68
+        "order": 69
       },
       {
         "method": "POST",
         "path": "/api/scrape/revert/:batchId",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 69
+        "order": 70
       },
       {
         "method": "POST",
         "path": "/api/scrape/record/revert/:recordId",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 70
+        "order": 71
       },
       {
         "method": "POST",
         "path": "/api/scrape/binding/resolve",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 71
+        "order": 72
       },
       {
         "method": "GET",
         "path": "/api/scrape/inbox",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 72
+        "order": 73
       },
       {
         "method": "POST",
         "path": "/api/scrape/search-candidates",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 73
+        "order": 74
       },
       {
         "method": "POST",
         "path": "/api/scrape/run-scheduled",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 74
+        "order": 75
       },
       {
         "method": "GET",
         "path": "/api/scrape/overview",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 75
+        "order": 76
       },
       {
         "method": "POST",
         "path": "/api/tmdb-organize/scan",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 76
+        "order": 77
       },
       {
         "method": "POST",
         "path": "/api/tmdb-organize/preview",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 77
+        "order": 78
       },
       {
         "method": "POST",
         "path": "/api/tmdb-organize/probe",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 78
+        "order": 79
       },
       {
         "method": "POST",
         "path": "/api/tmdb-organize/execute",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 79
+        "order": 80
       },
       {
         "method": "GET",
         "path": "/api/tmdb-organize/history",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 80
+        "order": 81
       },
       {
         "method": "DELETE",
         "path": "/api/tmdb-organize/history/:id",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 81
+        "order": 82
       },
       {
         "method": "POST",
         "path": "/api/tmdb-organize/history/batch-delete",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 82
+        "order": 83
       },
       {
         "method": "POST",
         "path": "/api/tmdb-organize/history/clear-protected",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 83
+        "order": 84
       },
       {
         "method": "POST",
         "path": "/api/tmdb-organize/rollback",
         "domain": "tmdbOrganize",
         "sourceFile": "src/routes/api.js",
-        "order": 84
+        "order": 85
+      },
+      {
+        "method": "GET",
+        "path": "/api/tmdb-organize/unrecognized",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 86
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/search-tmdb",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 87
+      },
+      {
+        "method": "POST",
+        "path": "/api/tmdb-organize/resolve-unrecognized",
+        "domain": "tmdbOrganize",
+        "sourceFile": "src/routes/api.js",
+        "order": 88
       },
       {
         "method": "GET",
         "path": "/api/strm/stream/:fileId/:filename?",
         "domain": "strm",
         "sourceFile": "src/routes/api.js",
-        "order": 85
+        "order": 89
       },
       {
         "method": "GET",
         "path": "/api/strm/stream",
         "domain": "strm",
         "sourceFile": "src/routes/api.js",
-        "order": 86
+        "order": 90
       },
       {
         "method": "POST",
         "path": "/api/strm/generate-organized",
         "domain": "strm",
         "sourceFile": "src/routes/api.js",
-        "order": 87
+        "order": 91
       },
       {
         "method": "POST",
         "path": "/api/scrape/sandbox-preview",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 88
+        "order": 92
       },
       {
         "method": "POST",
         "path": "/api/scrape/manual-organize",
         "domain": "scrape",
         "sourceFile": "src/routes/api.js",
-        "order": 89
+        "order": 93
       },
       {
         "method": "GET",
         "path": "/api/cloud139/files",
         "domain": "files",
         "sourceFile": "src/routes/api.js",
-        "order": 90
+        "order": 94
       },
       {
         "method": "POST",
         "path": "/api/cloud139/rename",
         "domain": "files",
         "sourceFile": "src/routes/api.js",
-        "order": 91
+        "order": 95
       },
       {
         "method": "POST",
         "path": "/api/cloud139/trash",
         "domain": "files",
         "sourceFile": "src/routes/api.js",
-        "order": 92
+        "order": 96
       },
       {
         "method": "GET",
         "path": "/api/channel-monitors",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
-        "order": 93
+        "order": 97
       },
       {
         "method": "POST",
         "path": "/api/channel-monitors",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
-        "order": 94
+        "order": 98
       },
       {
         "method": "PUT",
         "path": "/api/channel-monitors/:id",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
-        "order": 95
+        "order": 99
       },
       {
         "method": "DELETE",
         "path": "/api/channel-monitors/:id",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
-        "order": 96
+        "order": 100
       },
       {
         "method": "POST",
         "path": "/api/channel-monitors/:id/scan",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
-        "order": 97
+        "order": 101
       },
       {
         "method": "GET",
         "path": "/api/channel-monitors/history",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
-        "order": 98
+        "order": 102
       },
       {
         "method": "POST",
         "path": "/api/channel-monitors/history/:id/retry",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
-        "order": 99
-      },
-      {
-        "method": "GET",
-        "path": "/api/channel/global-config",
-        "domain": "channel",
-        "sourceFile": "src/routes/api.js",
-        "order": 100
-      },
-      {
-        "method": "POST",
-        "path": "/api/channel/global-config",
-        "domain": "channel",
-        "sourceFile": "src/routes/api.js",
-        "order": 101
-      },
-      {
-        "method": "POST",
-        "path": "/api/channel/sync-now",
-        "domain": "channel",
-        "sourceFile": "src/routes/api.js",
-        "order": 102
-      },
-      {
-        "method": "GET",
-        "path": "/api/channel/organize-prerequisites",
-        "domain": "channel",
-        "sourceFile": "src/routes/api.js",
         "order": 103
       },
       {
-        "method": "POST",
-        "path": "/api/channel/organize-now",
+        "method": "GET",
+        "path": "/api/channel/global-config",
         "domain": "channel",
         "sourceFile": "src/routes/api.js",
         "order": 104
       },
       {
         "method": "POST",
+        "path": "/api/channel/global-config",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 105
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel/sync-now",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 106
+      },
+      {
+        "method": "GET",
+        "path": "/api/channel/organize-prerequisites",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 107
+      },
+      {
+        "method": "POST",
+        "path": "/api/channel/organize-now",
+        "domain": "channel",
+        "sourceFile": "src/routes/api.js",
+        "order": 108
+      },
+      {
+        "method": "POST",
         "path": "/api/ai/test",
         "domain": "ai",
         "sourceFile": "src/routes/api.js",
-        "order": 105
+        "order": 109
       },
       {
         "method": "POST",
         "path": "/api/ai/parse",
         "domain": "ai",
         "sourceFile": "src/routes/api.js",
-        "order": 106
-      },
-      {
-        "method": "GET",
-        "path": "/api/sync/config",
-        "domain": "sync",
-        "sourceFile": "src/routes/api.js",
-        "order": 107
-      },
-      {
-        "method": "POST",
-        "path": "/api/sync/config",
-        "domain": "sync",
-        "sourceFile": "src/routes/api.js",
-        "order": 108
-      },
-      {
-        "method": "POST",
-        "path": "/api/sync/pan123/test",
-        "domain": "sync",
-        "sourceFile": "src/routes/api.js",
-        "order": 109
-      },
-      {
-        "method": "GET",
-        "path": "/api/sync/pan123/folders",
-        "domain": "sync",
-        "sourceFile": "src/routes/api.js",
         "order": 110
       },
       {
-        "method": "POST",
-        "path": "/api/sync/pan123/mkdir",
+        "method": "GET",
+        "path": "/api/sync/config",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 111
       },
       {
-        "method": "GET",
-        "path": "/api/sync/pan123/tasks",
+        "method": "POST",
+        "path": "/api/sync/config",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 112
       },
       {
         "method": "POST",
-        "path": "/api/sync/pan123/tasks/delete",
+        "path": "/api/sync/pan123/test",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 113
       },
       {
-        "method": "POST",
-        "path": "/api/sync/cross-account/scan",
+        "method": "GET",
+        "path": "/api/sync/pan123/folders",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 114
       },
       {
         "method": "POST",
-        "path": "/api/sync/cross-account/execute",
+        "path": "/api/sync/pan123/mkdir",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 115
       },
       {
-        "method": "POST",
-        "path": "/api/sync/rapid-links/export",
+        "method": "GET",
+        "path": "/api/sync/pan123/tasks",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 116
       },
       {
         "method": "POST",
-        "path": "/api/sync/rapid-links/import",
+        "path": "/api/sync/pan123/tasks/delete",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 117
       },
       {
         "method": "POST",
-        "path": "/api/sync/offline/push",
+        "path": "/api/sync/cross-account/scan",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 118
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/cross-account/execute",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 119
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/rapid-links/export",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 120
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/rapid-links/import",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 121
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/offline/push",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 122
+      },
+      {
+        "method": "POST",
+        "path": "/api/pansou/search",
+        "domain": "pansou",
+        "sourceFile": "src/routes/api.js",
+        "order": 123
+      },
+      {
+        "method": "GET",
+        "path": "/api/pansou/health",
+        "domain": "pansou",
+        "sourceFile": "src/routes/api.js",
+        "order": 124
       },
       {
         "method": "GET",
         "path": "*",
         "domain": "spa",
         "sourceFile": "src/routes/index.js",
-        "order": 119
+        "order": 125
       }
     ]
   }

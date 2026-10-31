@@ -31,7 +31,17 @@ try {
 }
 
 const AppDataSource = new DataSource({
-    type: 'better-sqlite3',
+    type: (() => {
+        try {
+            const Database = require('better-sqlite3');
+            const testDb = new Database(':memory:');
+            testDb.close();
+            return 'better-sqlite3';
+        } catch (e) {
+            logger.warn(`[Database] better-sqlite3 原生模块未就绪 (${e.message})，自适应切换至 sqlite3 驱动`);
+            return 'sqlite';
+        }
+    })(),
     database: dbPath,
     synchronize: false,  // 禁止自动同步，使用migration管理schema变更
     logging: false,
@@ -78,3 +88,4 @@ module.exports = {
     getChannelMonitorHistoryRepository,
     getMaintenanceJobRepository
 };
+

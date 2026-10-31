@@ -530,7 +530,16 @@ class TgChannelMonitorService {
                 }
             }
 
-            // 5. 剥离常见的更新、集数、季数、画质等状态后缀
+            // 提取末尾纯数字作为集数候选 (如 "璀璨之城 11" 中的 11，避免被误当普通后缀丢弃)
+            let trailingEpNum = null;
+            const trailingNumMatch = candidateText.match(/\s+(\d{1,4})(?:\s+.*)?$/);
+            if (trailingNumMatch) {
+                const parsedTrailing = parseInt(trailingNumMatch[1], 10);
+                if (parsedTrailing > 0 && parsedTrailing <= 1500 && parsedTrailing !== 2024 && parsedTrailing !== 2025 && parsedTrailing !== 2026 && parsedTrailing !== 2027) {
+                    trailingEpNum = parsedTrailing;
+                }
+            }
+
             candidateText = candidateText
                 .replace(/(?:更新至|连载至|更新到|更新)\s*(?:第\s*)?\d+(?:[-~至到]\d+)?\s*[集话期]?.*$/i, '')
                 .replace(/(?:完结季|完结篇|终结篇|特别篇|第[一二三四五六七八九十\d]+季).*$/i, '')
@@ -555,13 +564,13 @@ class TgChannelMonitorService {
 
             // 5.6 连载集数与连载状态判定
             const epMatch = (line + ' ' + rawText).match(/(?:更新至|连载至|更新到|更新|第)\s*(\d+)\s*[集话期]/i);
-            const currentEpisode = epMatch ? parseInt(epMatch[1], 10) : null;
+            const currentEpisode = epMatch ? parseInt(epMatch[1], 10) : (trailingEpNum || null);
             const isLaterSeasonOrOngoing = (postSeason && postSeason > 1) || (currentEpisode && currentEpisode > 24) || /年番/i.test(line) || /年番/i.test(rawText);
 
             // 核心铁律：国漫“年番”代表年度企划/播出周期，而非 TV 分季！
             // 当集数明确为绝对大集数（如 196 集）时，代表全剧绝对总集数，绝不能被“年番4”篡改为 Season 4！
             // 否则在 TMDB/Emby 将造成致命刮削失败（TMDB 上凡人修仙传等国漫全剧统一建档于 Season 1）！
-            if (isNianfanSeason && currentEpisode && currentEpisode > 40) {
+            if (isNianfanSeason && currentEpisode && currentEpisode > 120) {
                 postSeason = null;
             }
 
@@ -1350,9 +1359,10 @@ class TgChannelMonitorService {
         const totalTransferred = coPathLst.length + caPathLst.length;
         const targetResolved = this.resolveTargetFolder(post.text, monitor);
 
-        // 若开启了 autoOrganize，在 process.nextTick 异步触发独立整理，仅对本批次子目录执行，10 秒内即可归档入库！
+        // 若开启了 autoOrganize 且已明确配置有效的归档目标目录，在 process.nextTick 异步触发独立整理
         const cmConfig = ConfigService.getConfigValue('channelMonitor') || {};
-        if (cmConfig.autoOrganize !== false) {
+        const isTargetValid = Boolean(targetResolved?.folderId && String(targetResolved.folderId).trim() && String(targetResolved.folderId).trim() !== '/' && String(targetResolved.folderId).trim() !== '0');
+        if (cmConfig.autoOrganize !== false && isTargetValid) {
             process.nextTick(async () => {
                 try {
                     await this.organizeStagingFolder({
@@ -1373,6 +1383,8 @@ class TgChannelMonitorService {
                     logger.warn(`[频道监控-异步整理] 后台整理异常: ${orgErr.message}`);
                 }
             });
+        } else if (cmConfig.autoOrganize !== false && !isTargetValid) {
+            logger.warn(`[频道监控-整理跳过] 未选定独立的归档目标目录，转存文件保留在批次暂存区，跳过自动归档`);
         }
 
         return {

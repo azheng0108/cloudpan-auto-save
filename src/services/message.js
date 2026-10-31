@@ -55,12 +55,21 @@ class MessageUtil {
     }
 
     // 发送消息
-    async sendMessage(message) {
-        await messageManager.sendMessage(message);
+    // options: { level?: 'info'|'success'|'warning'|'error', cardType?: string } 显式声明卡片元数据，缺省走通道自动识别
+    async sendMessage(message, options) {
+        if (options !== undefined) {
+            await messageManager.sendMessage(message, options);
+        } else {
+            await messageManager.sendMessage(message);
+        }
     }
     // 发送刮削消息
-    async sendScrapeMessage(message) {
-        await messageManager.sendScrapeMessage(message);
+    async sendScrapeMessage(message, options) {
+        if (options !== undefined) {
+            await messageManager.sendScrapeMessage(message, options);
+        } else {
+            await messageManager.sendScrapeMessage(message);
+        }
     }
 }
 

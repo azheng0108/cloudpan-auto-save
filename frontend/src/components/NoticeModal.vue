@@ -28,7 +28,10 @@ const emit = defineEmits<{
   (e: 'acknowledged'): void;
 }>();
 
-const agreed = ref(false);
+import { ElMessage } from 'element-plus';
+import { settingsApi } from '../api/settings';
+
+const agreed = ref(true);
 const activeTab = ref<'updates' | 'disclaimer'>('updates');
 
 const ACK_KEY = 'cloudpan_v2415_notice_ack';
@@ -37,27 +40,49 @@ watch(
   () => props.modelValue,
   (val) => {
     if (val) {
-      agreed.value = localStorage.getItem(ACK_KEY) === 'true';
+      const stored = localStorage.getItem(ACK_KEY);
+      agreed.value = stored !== null ? stored === 'true' : true;
     }
   }
 );
 
 onMounted(() => {
-  agreed.value = localStorage.getItem(ACK_KEY) === 'true';
+  const stored = localStorage.getItem(ACK_KEY);
+  agreed.value = stored !== null ? stored === 'true' : true;
 });
 
 function handleClose() {
   if (props.forceAcknowledge && !agreed.value) {
     return;
   }
+  try {
+    sessionStorage.setItem('cloudpan_notice_dismissed_session', 'true');
+    localStorage.setItem('cloudpan_notice_dismissed', 'true');
+  } catch (e) {}
   emit('update:modelValue', false);
 }
 
 function handleConfirm() {
-  if (!agreed.value) return;
+  agreed.value = true;
   try {
     localStorage.setItem(ACK_KEY, 'true');
+    localStorage.setItem('cloudpan_notice_ack', 'true');
+    localStorage.setItem('cloudpan_notice_dismissed', 'true');
+    sessionStorage.setItem('cloudpan_notice_dismissed_session', 'true');
+    document.cookie = 'cloudpan_notice_ack=true; path=/; max-age=315360000; SameSite=Lax';
   } catch (e) {}
+
+  try {
+    settingsApi.getSettings().then(cfg => {
+      if (cfg) {
+        cfg.system = cfg.system || {};
+        cfg.system.noticeAck = true;
+        settingsApi.saveSettings(cfg).catch(() => {});
+      }
+    }).catch(() => {});
+  } catch (e) {}
+
+  ElMessage.success('已确认规范须知，后续将不再弹出');
   emit('acknowledged');
   emit('update:modelValue', false);
 }
@@ -268,8 +293,7 @@ function handleConfirm() {
             </button>
             <button
               type="button"
-              :disabled="!agreed"
-              class="btn-primary text-xs px-4 py-1.5 flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              class="btn-primary text-xs px-4 py-1.5 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
               @click="handleConfirm"
             >
               <FileCheck class="w-3.5 h-3.5" />

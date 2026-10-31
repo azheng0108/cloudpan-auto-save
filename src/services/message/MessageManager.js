@@ -71,23 +71,29 @@ class MessageManager {
     /**
      * 发送消息到所有已启用的服务
      * @param {string} message - 要发送的消息内容
+     * @param {object} [options] - 可选卡片元数据声明 { level?, cardType? }，透传至各渠道
      * @returns {Promise<Array<boolean>>} - 各个服务的发送结果
      */
-    async sendMessage(message) {
+    async sendMessage(message, options) {
         const results = await Promise.all(
-            this.services.map(service => service.sendMessage(message))
+            options !== undefined
+                ? this.services.map(service => service.sendMessage(message, options))
+                : this.services.map(service => service.sendMessage(message))
         );
         return results;
     }
 
     /**
      * 发送刮削消息到所有已启用的服务
-     * @param {string} message - 要发送的消息内容
+     * @param {object} message - 要发送的消息内容
+     * @param {object} [options] - 可选卡片元数据声明，透传至各渠道
      * @returns {Promise<Array<boolean>>} - 各个服务的发送结果
      */
-    async sendScrapeMessage(message) {
+    async sendScrapeMessage(message, options) {
         const results = await Promise.all(
-            this.services.map(service => service.sendScrapeMessage(message))
+            options !== undefined
+                ? this.services.map(service => service.sendScrapeMessage(message, options))
+                : this.services.map(service => service.sendScrapeMessage(message))
         );
         return results;
     }

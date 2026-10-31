@@ -50,14 +50,14 @@ service.interceptors.response.use(
           window.location.href = '/login';
         }
         return Promise.reject(new Error('会话已过期，请重新登录'));
+      } else if (error.response.data?.error) {
+        friendlyMessage = error.response.data.error;
       } else if (status === 502 || status === 504) {
         friendlyMessage = `后端服务未启动或连接断开 (${status})`;
       } else if (status === 404) {
-        friendlyMessage = `请求的接口不存在 (${status})`;
+        friendlyMessage = `请求的资源不存在 (${status})`;
       } else if (status === 500) {
-        friendlyMessage = error.response.data?.error || error.response.data?.message || '后端服务内部异常 (500)';
-      } else if (error.response.data?.error) {
-        friendlyMessage = error.response.data.error;
+        friendlyMessage = error.response.data?.message || '后端服务内部异常 (500)';
       }
     } else if (error.code === 'ECONNABORTED') {
       friendlyMessage = '网络请求超时，请检查后端服务';

@@ -7,8 +7,14 @@ const { RecognitionEngine } = require('./RecognitionEngine');
 const { TmdbOrganizeService } = require('./TmdbOrganizeService');
 const { TMDBService } = require('./tmdb');
 
-const CACHE_FILE = path.resolve(process.cwd(), 'data/missing_episodes_cache.json');
-const TMDB_OVERRIDES_FILE = path.resolve(process.cwd(), 'data/episode_tmdb_overrides.json');
+const resolveDataFile = (filename) => {
+    const fromDir = path.resolve(__dirname, '../../data', filename);
+    if (fs.existsSync(fromDir)) return fromDir;
+    return path.resolve(process.cwd(), 'data', filename);
+};
+
+const CACHE_FILE = resolveDataFile('missing_episodes_cache.json');
+const TMDB_OVERRIDES_FILE = resolveDataFile('episode_tmdb_overrides.json');
 
 /**
  * 规范化目录路径键（剥除反斜杠、末尾斜杠、季子目录后缀，转小写），作为全局绝对目录唯一索引
@@ -275,6 +281,8 @@ class EpisodeInspectionService {
 
         // 4. 保存持久化缓存
         this.saveCache(this.scanJob.result, this.scanJob.targetPath, this.scanJob.durationMs);
+        // 5. 同步修剪 SQLite 历史作业中的快照数据，防止刷新页面后死灰复燃
+        this.pruneHistoricalJobsForShow({ showKey, folderPath, tmdbId }).catch(() => {});
         logger.info(`[缺集巡检] 已成功从当前巡检清单中移除剧集: showKey="${showKey}", folderPath="${folderPath}"`);
 
         return {
@@ -282,6 +290,86 @@ class EpisodeInspectionService {
             message: '已成功移除该剧集',
             result: this.scanJob.result
         };
+    }
+
+    /**
+     * 同步修剪数据库 maintenance_jobs 中所有 missing_scan 类型的历史作业快照
+     */
+    static async pruneHistoricalJobsForShow({ showKey = '', folderPath = '', tmdbId = '' } = {}) {
+        try {
+            const { getMaintenanceJobRepository } = require('../database');
+            const repo = getMaintenanceJobRepository();
+            if (!repo) return;
+            const normTarget = normalizePathKey(folderPath);
+            const targetShowKey = showKey || (normTarget ? `dir:${normTarget}` : '');
+
+            const jobs = await repo.find({ where: { type: 'missing_scan' } });
+            for (const job of jobs) {
+                if (!job.findingsJson) continue;
+                let findings;
+                try {
+                    findings = JSON.parse(job.findingsJson);
+                } catch (_) {
+                    continue;
+                }
+                if (!findings) continue;
+
+                let modified = false;
+                if (Array.isArray(findings.shows)) {
+                    const prevLen = findings.shows.length;
+                    findings.shows = findings.shows.filter(show => {
+                        const showNorm = normalizePathKey(show.folderPath);
+                        if (normTarget && (showNorm === normTarget || showNorm.startsWith(normTarget + '/'))) return false;
+                        if (showKey && show.showKey === showKey) return false;
+                        if (targetShowKey && show.showKey === targetShowKey) return false;
+                        if (!normTarget && tmdbId && String(show.tmdbId) === String(tmdbId)) return false;
+                        return true;
+                    });
+                    if (findings.shows.length !== prevLen) {
+                        modified = true;
+                    }
+                }
+
+                if (Array.isArray(findings.items)) {
+                    const prevLen = findings.items.length;
+                    findings.items = findings.items.filter(item => {
+                        const itemNorm = normalizePathKey(item.folderPath);
+                        if (normTarget && (itemNorm === normTarget || itemNorm.startsWith(normTarget + '/'))) return false;
+                        if (showKey && item.showKey === showKey) return false;
+                        if (targetShowKey && item.showKey === targetShowKey) return false;
+                        if (!normTarget && tmdbId && String(item.tmdbId) === String(tmdbId)) return false;
+                        return true;
+                    });
+                    if (findings.items.length !== prevLen) {
+                        modified = true;
+                    }
+                }
+
+                if (modified) {
+                    const unidentifiedShows = (findings.shows || []).filter(s => s.isUnidentified || !s.tmdbId);
+                    const identifiedShows = (findings.shows || []).filter(s => !s.isUnidentified && s.tmdbId);
+                    const missingShows = identifiedShows.filter(s => s.hasMissing || s.totalMissingCount > 0);
+                    const completeShows = identifiedShows.filter(s => !s.hasMissing && s.totalMissingCount === 0);
+
+                    findings.scannedShowsCount = (findings.shows || []).length;
+                    findings.unidentifiedShowsCount = unidentifiedShows.length;
+                    findings.missingShowsCount = missingShows.length;
+                    findings.completeShowsCount = completeShows.length;
+                    findings.totalMissingCount = identifiedShows.reduce((acc, s) => acc + (s.totalMissingCount || 0), 0);
+
+                    job.findingsJson = JSON.stringify(findings);
+                    job.scannedFolders = findings.scannedShowsCount;
+                    job.bannedCount = findings.missingShowsCount;
+                    job.cleanedCount = findings.totalMissingCount;
+                    job.freedFormatted = `${findings.totalMissingCount} 集`;
+                    job.summary = `分析 ${findings.scannedShowsCount} 部剧集 · 缺更 ${findings.missingShowsCount} 部 · 未识别 ${findings.unidentifiedShowsCount} 部 (累计缺 ${findings.totalMissingCount} 集)`;
+                    await repo.save(job);
+                    logger.info(`[缺集巡检] 同步修剪历史作业 #${job.id} 剔除已删除/移除剧集: ${folderPath || showKey}`);
+                }
+            }
+        } catch (e) {
+            logger.warn(`[缺集巡检] 同步修剪历史作业快照失败: ${e.message}`);
+        }
     }
 
     /**
@@ -531,7 +619,7 @@ class EpisodeInspectionService {
                 this.scanJob.percent = 100;
                 this.scanJob.finishedAt = Date.now();
                 this.scanJob.durationMs = this.scanJob.finishedAt - this.scanJob.startedAt;
-                this.scanJob.result = { ...result, isScanning: false };
+                this.scanJob.result = { ...result, isScanning: false, jobId: maintenanceJob ? maintenanceJob.id : undefined };
                 this.scanJob.lastMessage = `巡检完成，共耗时 ${(this.scanJob.durationMs / 1000).toFixed(1)} 秒`;
                 this.saveCache(result, rootPath, this.scanJob.durationMs);
 
@@ -883,12 +971,13 @@ class EpisodeInspectionService {
                             const totalSeasons = Number(tvDetails.totalSeasons || 1);
 
                             // 检查整剧开播日期：若首播日期晚于今天，整剧未播，绝非完结
-                            const isPremiered = tvDetails.first_air_date && String(tvDetails.first_air_date).slice(0, 10) <= nowStr;
+                            const firstAir = tvDetails.first_air_date || tvDetails.firstAirDate;
+                            const isFuturePremiere = firstAir && String(firstAir).slice(0, 10) > nowStr;
 
                             if (isShowEnded) {
                                 isEnded = true;
                                 airStatus = '已完结';
-                            } else if (!isPremiered) {
+                            } else if (isFuturePremiere) {
                                 isEnded = false;
                                 airStatus = '未开播';
                             } else {

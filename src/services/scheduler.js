@@ -577,10 +577,14 @@ class SchedulerService {
                 this.removeTaskJob('139云盘暂存区定时整理'); // 清理历史旧任务键
                 this.saveDefaultTaskJob('自动定时整理', organizeCron, async () => {
                     try {
+                        const cmConfig = ConfigService.getConfigValue('channelMonitor') || {};
+                        if (cmConfig.autoOrganize === false) {
+                            return;
+                        }
                         const { StagingOrganizeService } = require('./StagingOrganizeService');
                         const prereq = await StagingOrganizeService.validateOrganizePrerequisites({ skipChannelCheck: true });
                         if (!prereq.ready) {
-                            logger.warn(`[定时检查] 跳过自动定时整理（前置配置未完成）: ${prereq.reason}`);
+                            logger.warn(`[定时检查] 跳过自动定时整理（前置门禁未通过）: ${prereq.reason}`);
                             return;
                         }
                         logTaskEvent(`[定时检查] 自动定时整理触发（表达式: ${organizeCron}）`);
