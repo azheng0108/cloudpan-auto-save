@@ -612,7 +612,7 @@ onUnmounted(() => {
               id="proxyQuickUrl"
               v-model="proxyQuickUrl"
               type="text"
-              placeholder="例如: http://127.0.0.1:7890 或留空直连"
+              placeholder="http://127.0.0.1:7890"
               class="input-base font-mono text-xs flex-1 w-full"
               @input="handleQuickProxyInput(($event.target as HTMLInputElement).value)"
               @blur="normalizeQuickProxyUrl"
@@ -751,7 +751,7 @@ onUnmounted(() => {
             <input
               v-model="form.tmdb.tmdbApiKey"
               :type="showTmdbKey ? 'text' : 'password'"
-              placeholder="例如: 32位 API Key 或 eyJhbGciOi... Read Access Token"
+              placeholder="API Key / Token"
               class="input-base font-mono text-xs pr-10 w-full"
             />
             <button
@@ -776,7 +776,7 @@ onUnmounted(() => {
           <input
             v-model="form.tmdb.apiBaseUrl"
             type="text"
-            placeholder="默认: https://api.themoviedb.org/3 （国内加速反代可填如: https://api.tmdb.org/3 或自建反代域名）"
+            placeholder="https://api.themoviedb.org/3"
             class="input-base font-mono text-xs w-full"
           />
           <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
@@ -793,7 +793,7 @@ onUnmounted(() => {
             <input
               v-model="form.tmdb.proxy"
               type="text"
-              placeholder="例如: http://127.0.0.1:7890 （留空则跟随全局代理）"
+              placeholder="http://127.0.0.1:7890"
               class="input-base font-mono text-xs flex-1 w-full"
             />
             <button
@@ -860,7 +860,7 @@ onUnmounted(() => {
               id="pansouBaseUrl"
               v-model="form.pansou.baseUrl"
               type="text"
-              placeholder="默认: http://127.0.0.1:8888"
+              placeholder="http://127.0.0.1:8888"
               class="input-base font-mono text-xs w-full"
             />
           </div>
@@ -874,7 +874,7 @@ onUnmounted(() => {
               id="pansouApiKey"
               v-model="form.pansou.apiKey"
               type="password"
-              placeholder="无鉴权则留空"
+              placeholder="API Key"
               class="input-base font-mono text-xs w-full"
             />
           </div>
@@ -961,7 +961,7 @@ onUnmounted(() => {
               id="botToken"
               v-model="form.bot.botToken"
               :type="showBotToken ? 'text' : 'password'"
-              placeholder="由 @BotFather 生成的 Token，留空则关闭"
+              placeholder="Bot Token"
               class="input-base text-xs font-mono pr-10"
             />
             <button
@@ -985,7 +985,7 @@ onUnmounted(() => {
               id="chatId"
               v-model="form.bot.chatId"
               type="text"
-              placeholder="向 @userinfobot 获取的纯数字 ID"
+              placeholder="Chat ID"
               class="input-base text-xs font-mono flex-1 w-full"
             />
             <button
@@ -1060,7 +1060,7 @@ onUnmounted(() => {
               v-model.number="form.task.taskExpireDays"
               type="number"
               min="1"
-              placeholder="默认 10 天"
+              placeholder="10"
               class="input-base text-xs font-mono"
             />
           </div>
@@ -1074,7 +1074,7 @@ onUnmounted(() => {
               v-model.number="form.task.maxRetries"
               type="number"
               min="0"
-              placeholder="默认 3 次"
+              placeholder="3"
               class="input-base text-xs font-mono"
             />
           </div>
@@ -1088,7 +1088,7 @@ onUnmounted(() => {
               v-model.number="form.task.retryInterval"
               type="number"
               min="60"
-              placeholder="默认 300 秒"
+              placeholder="300"
               class="input-base text-xs font-mono"
             />
           </div>
@@ -1102,7 +1102,7 @@ onUnmounted(() => {
               v-model.number="form.task.cloud139Concurrency"
               type="number"
               min="1"
-              placeholder="推荐 3"
+              placeholder="3"
               class="input-base text-xs font-mono"
             />
           </div>
@@ -1170,7 +1170,7 @@ onUnmounted(() => {
             id="mediaSuffix"
             v-model="form.task.mediaSuffix"
             type="text"
-            placeholder="例如: .mkv;.iso;.mp4;.ts"
+            placeholder=".mkv;.mp4;.ts;.iso"
             class="input-base text-xs font-mono"
           />
         </div>
@@ -1286,7 +1286,7 @@ onUnmounted(() => {
           <input
             v-model="form.bark.serverUrl"
             type="text"
-            placeholder="官方服务直接留空即可"
+            placeholder="https://api.day.app"
             class="input-base text-xs"
           />
         </div>
@@ -1295,7 +1295,7 @@ onUnmounted(() => {
           <input
             v-model="form.bark.key"
             type="text"
-            placeholder="Bark 设备 Key"
+            placeholder="Device Key"
             class="input-base text-xs font-mono"
           />
         </div>
@@ -1307,7 +1307,7 @@ onUnmounted(() => {
         <input
           v-model="form.wxpusher.spt"
           type="text"
-          placeholder="spt_xxxxxxxxxxxxxxxxxxxx"
+          placeholder="spt_xxxxxxxxxxxx"
           class="input-base text-xs font-mono"
         />
       </div>
@@ -1319,7 +1319,7 @@ onUnmounted(() => {
           <input
             v-model="form.pushplus.token"
             type="text"
-            placeholder="PushPlus 个人 Token"
+            placeholder="Token"
             class="input-base text-xs font-mono"
           />
         </div>
@@ -1328,7 +1328,7 @@ onUnmounted(() => {
           <input
             v-model="form.pushplus.topic"
             type="text"
-            placeholder="群组编码，留空即默认一对一"
+            placeholder="Topic"
             class="input-base text-xs"
           />
         </div>
@@ -1366,11 +1366,11 @@ onUnmounted(() => {
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">管理员用户名</label>
-              <input v-model="form.system.username" type="text" placeholder="留空即免密直接访问" class="input-base text-xs bg-white dark:bg-gray-900" />
+              <input v-model="form.system.username" type="text" placeholder="admin" class="input-base text-xs bg-white dark:bg-gray-900" />
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">重置登录密码</label>
-              <input v-model="form.system.password" type="password" placeholder="留空保持原密码不变" class="input-base text-xs bg-white dark:bg-gray-900" />
+              <input v-model="form.system.password" type="password" placeholder="新密码（不修改请留空）" class="input-base text-xs bg-white dark:bg-gray-900" />
             </div>
           </div>
         </div>
