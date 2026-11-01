@@ -2469,66 +2469,7 @@ onUnmounted(() => {
             <el-switch v-model="strategyConfig.linkStrm" />
           </div>
 
-          <!-- 排除与跳过规则 (小白大白话) -->
-          <div class="rounded-xl border border-gray-200/90 dark:border-gray-800 bg-white dark:bg-gray-850 p-3.5 space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2.5">
-                <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                  <Shield class="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 class="text-xs font-bold text-gray-900 dark:text-white">过滤与排除规则</h4>
-                  <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                    设置哪些杂乱文件不需要整理进媒体库（如文本说明、广告、无字幕外语片等）
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                class="text-xs font-medium text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 shrink-0"
-                @click="excludeStrategyExpanded = !excludeStrategyExpanded"
-              >
-                <span>{{ excludeStrategyExpanded ? '收起规则' : '展开规则' }}</span>
-                <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': excludeStrategyExpanded }" />
-              </button>
-            </div>
 
-            <!-- 展开后的三个过滤子项 -->
-            <div v-show="excludeStrategyExpanded" class="space-y-2.5 pt-2 border-t border-gray-100 dark:border-gray-800">
-              <!-- 子项 1: 排除非视频文件 -->
-              <div class="p-3 rounded-lg bg-gray-50/70 dark:bg-gray-800/40 flex items-center justify-between gap-2">
-                <div class="pr-2">
-                  <div class="text-xs font-bold text-gray-800 dark:text-gray-200">跳过非视频文件</div>
-                  <p class="text-[11px] text-gray-400 mt-0.5">
-                    遇到 txt 文本、图片、网页链接等非视频文件时自动忽略，不移入媒体库
-                  </p>
-                </div>
-                <el-switch v-model="strategyConfig.excludeNonVideo" />
-              </div>
-
-              <!-- 子项 2: 排除无中文字幕文件 -->
-              <div class="p-3 rounded-lg bg-gray-50/70 dark:bg-gray-800/40 flex items-center justify-between gap-2">
-                <div class="pr-2">
-                  <div class="text-xs font-bold text-gray-800 dark:text-gray-200">跳过无中文字幕的外语影视</div>
-                  <p class="text-[11px] text-gray-400 mt-0.5">
-                    仅针对外国影视：若文件名及所在文件夹中没有中文字幕标识（如中字、双语、CHS 等），则自动跳过不入库
-                  </p>
-                </div>
-                <el-switch v-model="strategyConfig.excludeNoChineseSubtitle" />
-              </div>
-
-              <!-- 子项 3: 排除预告片及广告样本 -->
-              <div class="p-3 rounded-lg bg-gray-50/70 dark:bg-gray-800/40 flex items-center justify-between gap-2">
-                <div class="pr-2">
-                  <div class="text-xs font-bold text-gray-800 dark:text-gray-200">跳过预告片与宣传短片</div>
-                  <p class="text-[11px] text-gray-400 mt-0.5">
-                    自动过滤文件名含有 sample、trailer、preview 等预告片段或广告宣传小文件
-                  </p>
-                </div>
-                <el-switch v-model="strategyConfig.excludeTrailersAndSamples" />
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -2589,23 +2530,24 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 模块 4: 整理规则与重命名 -->
+      <!-- 模块 4: 资源过滤与排除策略 (全站排除规则集中化收拢，彻底消除重复与分散) -->
       <div class="settings-card">
-        <div class="flex items-center gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
-          <div class="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-            <FileCode class="w-5 h-5" />
+        <div class="flex items-center gap-3 pb-3.5 mb-4 border-b border-slate-100 dark:border-slate-800">
+          <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Shield class="w-5 h-5" />
           </div>
           <div>
-            <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">整理规则与重命名</h3>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              小文件过滤、有声书拦截与点分规范重命名
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug">资源过滤与排除策略</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              集中设置哪些杂乱或非目标文件不被整理入库（支持按文件体积、敏感关键词、非视频及有声书精准过滤）
             </p>
           </div>
         </div>
 
+        <!-- 基础体积与敏感词过滤 -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
-            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+            <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               小文件过滤 (MB)
             </label>
             <input
@@ -2616,11 +2558,11 @@ onUnmounted(() => {
               placeholder="50"
               class="input-base text-xs font-mono"
             />
-            <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1">小于此大小的文件将被跳过整理 (默认 50MB)</p>
+            <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-1">小于此大小的文件将被跳过整理 (默认 50MB，自动拦截宣传短片/样片)</p>
           </div>
 
           <div>
-            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+            <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               忽略关键词
             </label>
             <input
@@ -2629,45 +2571,93 @@ onUnmounted(() => {
               placeholder="广告, 样片, 预告, sample"
               class="input-base text-xs"
             />
-            <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1">包含关键词的文件将被跳过整理，支持多个关键词逗号分隔</p>
+            <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-1">包含关键词的文件将被跳过整理，支持多个关键词逗号分隔</p>
           </div>
         </div>
 
+        <!-- 智能类型与内容排除开关组 -->
         <div class="space-y-3">
-          <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between">
-            <div>
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">过滤有声书与纯音频</h4>
-              <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                自动识别并拦截有声书、广播剧、评书、听书、相声及纯音频小说资源，仅聚焦影视媒体
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 p-3.5 flex items-center justify-between">
+            <div class="pr-2">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-white">跳过非视频与说明文件</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                遇到 txt 文本、图片、网页链接等非视频文件时自动忽略，不移入媒体库
+              </p>
+            </div>
+            <el-switch v-model="strategyConfig.excludeNonVideo" />
+          </div>
+
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 p-3.5 flex items-center justify-between">
+            <div class="pr-2">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-white">过滤有声书与纯音频</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                自动识别并拦截有声书、广播剧、评书、相声及纯音频小说资源，仅聚焦影视媒体
               </p>
             </div>
             <el-switch v-model="strategyConfig.ignoreAudiobooks" />
           </div>
 
-          <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between">
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 p-3.5 flex items-center justify-between">
+            <div class="pr-2">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-white">跳过预告片与宣传短片</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                自动过滤文件名含有 sample、trailer、preview 等预告片段或广告宣传小文件
+              </p>
+            </div>
+            <el-switch v-model="strategyConfig.excludeTrailersAndSamples" />
+          </div>
+
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 p-3.5 flex items-center justify-between">
+            <div class="pr-2">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-white">跳过无中文字幕的外语影视</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                仅针对外国影视：若文件名及所在文件夹中没有中文字幕标识（如中字、双语、CHS 等），则自动跳过不入库
+              </p>
+            </div>
+            <el-switch v-model="strategyConfig.excludeNoChineseSubtitle" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 模块 5: TMDB 规范重命名 (纯粹聚焦于命名规则) -->
+      <div class="settings-card">
+        <div class="flex items-center gap-3 pb-3.5 mb-4 border-b border-slate-100 dark:border-slate-800">
+          <div class="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+            <FileCode class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug">TMDB 规范重命名</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              结构化点分规范命名、官方单集小标题注入与真实画质规格提取
+            </p>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 p-3.5 flex items-center justify-between">
             <div>
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">TMDB 规范重命名</h4>
-              <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-white">TMDB 规范重命名</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                 启用时按 TMDB 识别结果改为结构化点分规范命名；关闭时保留原盘文件名
               </p>
             </div>
             <el-switch v-model="strategyConfig.enableRename" />
           </div>
 
-          <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between">
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 p-3.5 flex items-center justify-between">
             <div>
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">显示官方单集标题</h4>
-              <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-white">显示官方单集标题</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                 启用时在剧集文件名中注入 TMDB 官方单集小标题（如 S01E08.萧龙女李信法庭对决.2160p）；关闭时仅保留季集编号（如 S01E08.2160p）
               </p>
             </div>
             <el-switch v-model="strategyConfig.includeEpisodeTitle" />
           </div>
 
-          <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between">
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 p-3.5 flex items-center justify-between">
             <div>
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">媒体信息提取完善命名</h4>
-              <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-white">媒体信息提取完善命名</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                 启用时通过二进制探针提取真实流属性（分辨率、HDR、音频编码等）完善文件名
               </p>
             </div>
