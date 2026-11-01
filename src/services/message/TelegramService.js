@@ -43,10 +43,64 @@ class TelegramService extends MessageService {
      * @param {object} [options] - 可选卡片元数据声明 { level?, cardType? }
      * @returns {Promise<boolean>} - 发送结果
      */
-    async _send(message, options) {
+    async _send(message, options = {}) {
         let html = '';
+        let rawContent = typeof message === 'string' ? message : (message?.text || message?.caption || String(message || ''));
+
+        // 自动提取可能嵌入的海报图片 URL
+        let image = (options && options.image) || (message && typeof message === 'object' && message.image);
+        if (!image && typeof rawContent === 'string') {
+            const posterMatch = rawContent.match(/<!--\s*poster:\s*(https?:\/\/[^\s>]+)\s*-->/i);
+            if (posterMatch) {
+                image = posterMatch[1];
+            }
+        }
+
+        // 清理隐藏的海报注释标签
+        if (typeof rawContent === 'string') {
+            rawContent = rawContent.replace(/<!--\s*poster:\s*https?:\/\/[^\s>]+\s*-->/gi, '').trim();
+        }
+
+        // 如果正文已经包含结构化影视卡片 (📺 <b>)，将首行标记美化为标准状态头部
+        if (/📺\s*<b>/i.test(rawContent)) {
+            rawContent = rawContent.replace(/^\[追更通知\][^\n]*\n+/i, '✅ <b>139 移动云盘转存成功</b>\n\n');
+            html = MessageService.truncateForTelegram(rawContent, image ? 1024 : 4096);
+        } else if (/<[a-z][\s\S]*>/i.test(rawContent)) {
+            html = MessageService.truncateForTelegram(rawContent, image ? 1024 : 4096);
+        } else {
+            html = MessageService.renderCardHtml(rawContent, options);
+        }
+
+        // 若存在高清海报，优先调用 Telegram 官方 sendPhoto 发送图文一体卡片 (Photo Caption)
+        if (image && typeof image === 'string' && image.startsWith('http')) {
+            try {
+                const photoOptions = {
+                    json: {
+                        chat_id: this.config.chatId,
+                        photo: image,
+                        caption: MessageService.truncateForTelegram(html, 1024),
+                        parse_mode: 'HTML'
+                    },
+                    timeout: {
+                        request: 8000
+                    },
+                    agent: this._proxy()
+                };
+
+                let apiUrl = 'https://api.telegram.org';
+                if (this.config.cfProxyDomain) {
+                    photoOptions.proxy = false;
+                    apiUrl = this.config.cfProxyDomain;
+                }
+
+                await got.post(`${apiUrl}/bot${this.config.botToken}/sendPhoto`, photoOptions).json();
+                return true;
+            } catch (photoError) {
+                logger.warn(`[Telegram推送] 发送海报卡片失败，安全降级为普通消息: ${photoError.message}`);
+            }
+        }
+
         try {
-            html = MessageService.renderCardHtml(message, options);
             const requestOptions = {
                 json: {
                     chat_id: this.config.chatId,
