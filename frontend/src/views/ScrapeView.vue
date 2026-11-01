@@ -2398,71 +2398,65 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="space-y-3.5">
-          <!-- 核心开关 1: 后台定时检查暂存区 (小白大白话) -->
-          <div class="p-3.5 rounded-xl border border-gray-200/90 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/40 transition-all">
-            <div class="flex items-center justify-between gap-3">
-              <div class="space-y-0.5 flex-1 pr-2">
-                <div class="flex items-center gap-2">
-                  <h4 class="text-xs font-bold text-gray-900 dark:text-white">
-                    后台定时自动整理（自动处理遗漏或手动上传的视频）
-                  </h4>
-                  <span class="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded font-medium">推荐开启</span>
-                </div>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                  平时每次追更转存成功时系统都会<strong>立刻自动整理</strong>。开启本功能后，系统还会在后台定时巡查待整理文件夹；即使是您<strong>自己在网盘里手动转存、手动上传</strong>，或之前网络中断漏掉的视频，系统也会自动帮您识别并整理进媒体库。
-                </p>
-              </div>
-              <el-switch v-model="strategyConfig.autoOrganize" />
-            </div>
-
-            <!-- 展开的检查间隔时间 -->
-            <div v-if="strategyConfig.autoOrganize" class="mt-3 pt-3 border-t border-gray-200/70 dark:border-gray-700/60 flex flex-wrap items-center justify-between gap-2">
-              <div class="text-[11px] text-gray-600 dark:text-gray-300 font-medium">
-                后台自动检查间隔（建议 15~60 分钟检查一次）：
-              </div>
-              <div class="flex items-center gap-2">
-                <input
-                  v-model.number="strategyConfig.organizeInterval"
-                  type="number"
-                  min="1"
-                  max="1440"
-                  placeholder="30"
-                  class="input-base font-mono text-xs w-20 text-center"
-                />
-                <span class="text-xs text-gray-400">分钟</span>
-                <div class="flex items-center gap-1 text-xs ml-1">
-                  <button
-                    v-for="min in [15, 30, 60, 120]"
-                    :key="min"
-                    type="button"
-                    class="px-2 py-0.5 rounded border text-[11px] font-mono cursor-pointer transition-colors"
-                    :class="strategyConfig.organizeInterval === min ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-gray-300'"
-                    @click="strategyConfig.organizeInterval = min"
-                  >
-                    {{ min }}分
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 核心开关 2: 整理后自动清理空文件夹 (小白大白话) -->
-          <div class="p-3.5 rounded-xl border border-gray-200/90 dark:border-gray-800 bg-white dark:bg-gray-850 flex items-center justify-between gap-3">
-            <div class="space-y-0.5 flex-1 pr-2">
+        <!-- 核心开关 1: 后台定时检查暂存区 (对齐 ChannelView 规范) -->
+        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between mb-4">
+          <div class="space-y-0.5 pr-3">
+            <div class="flex items-center gap-2">
               <h4 class="text-xs font-bold text-gray-900 dark:text-white">
-                整理后自动删除空文件夹
+                后台定时自动整理（自动处理遗漏或手动上传的视频）
               </h4>
-              <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                当视频被分类改名搬移到媒体库后，自动删除源目录中已经被搬空的无用空文件夹，保持网盘整洁清爽。
-              </p>
+              <span class="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded font-medium">推荐开启</span>
             </div>
-            <el-switch v-model="strategyConfig.sweepEmptyFolders" />
+            <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+              平时每次追更转存成功时系统都会立刻自动整理。开启本功能后，系统还会在后台定时巡查待整理文件夹：即使是您自己在网盘里手动转存、手动上传，或之前网络中断漏掉的视频，系统也会自动帮您识别并整理进媒体库。
+            </p>
           </div>
+          <el-switch v-model="strategyConfig.autoOrganize" />
+        </div>
 
+        <!-- 整理轮询周期（对齐 ChannelView 规范） -->
+        <div v-if="strategyConfig.autoOrganize" class="mb-4">
+          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+            后台自动检查频率 (分钟)
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            <input
+              v-model.number="strategyConfig.organizeInterval"
+              type="number"
+              min="1"
+              max="1440"
+              placeholder="30"
+              class="input-base font-mono text-xs w-28 sm:w-32"
+            />
+            <div class="flex flex-wrap items-center gap-1 text-xs">
+              <button
+                v-for="min in [10, 15, 30, 60, 120]"
+                :key="min"
+                type="button"
+                class="px-2 py-1 rounded-md border text-xs font-mono cursor-pointer transition-colors"
+                :class="strategyConfig.organizeInterval === min ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-gray-300'"
+                @click="strategyConfig.organizeInterval = min"
+              >
+                {{ min }}分
+              </button>
+            </div>
+          </div>
+          <span class="form-text">
+            后台自动巡查待整理中转目录的周期，发现待处理影视即刻自动识别并规范整理归档（建议 15~60 分钟）
+          </span>
+        </div>
 
-
-
+        <!-- 核心开关 2: 整理后自动清理空文件夹 (对齐 ChannelView 规范) -->
+        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between">
+          <div class="space-y-0.5 pr-3">
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">
+              整理后自动删除空文件夹
+            </h4>
+            <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+              当视频被分类改名搬移到媒体库后，自动删除源目录中已经被搬空的无用空文件夹，保持网盘整洁清爽。
+            </p>
+          </div>
+          <el-switch v-model="strategyConfig.sweepEmptyFolders" />
         </div>
       </div>
 
