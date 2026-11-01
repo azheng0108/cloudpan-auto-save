@@ -144,7 +144,7 @@ class Cloud139Service {
         if (statusCode === 401 || statusCode === 403) {
             return true;
         }
-        return message.includes('认证失败') || message.includes('authorization') || message.includes('cookie') || message.includes('token 失效');
+        return message.includes('认证失败') || message.includes('authorization') || message.includes('cookie') || message.includes('token 失效') || message.includes('05050006') || message.includes('04000005') || message.includes('暂无权限');
     }
 
     /**
@@ -286,6 +286,14 @@ class Cloud139Service {
         this.limit = pLimit(Math.max(1, concurrency));
     }
 
+    get maskedPhone() {
+        const p = String(this.phone || '').trim();
+        if (/^1\d{10}$/.test(p)) {
+            return `${p.slice(0, 3)}****${p.slice(7)}`;
+        }
+        return p || '139账号';
+    }
+
     /** 公共账号信息 */
     get _account() {
         return { account: this.phone, accountType: 1 };
@@ -312,7 +320,19 @@ class Cloud139Service {
                 headers: SHARE_HEADERS,
             }).json();
             if (res && res.code !== undefined && String(res.code) !== '0') {
-                const err = new Error(`139 分享API 错误 [${res.code}]: ${res.desc || res.message || '未知错误'}`);
+                const rawDesc = res.desc || res.message || '未知错误';
+                let diagnosis = '';
+                const codeStr = String(res.code);
+                if (codeStr === '04000005' || codeStr === '05050006') {
+                    diagnosis = ' (账号凭证Token/Cookie已失效过期，请在【云盘账号】页面重新扫码登录或更新凭证)';
+                } else if (codeStr === '200000727') {
+                    diagnosis = ' (外链不存在或已被分享者取消/删除)';
+                } else if (codeStr === '200000401') {
+                    diagnosis = ' (分享链接已过期)';
+                } else if (codeStr === '200000402') {
+                    diagnosis = ' (外链访问次数已达到上限)';
+                }
+                const err = new Error(`139 分享API 错误 [${res.code}]: ${rawDesc}${diagnosis}`);
                 err.apiCode = String(res.code);
                 // 致命错误：外链不存在/被取消/用户信息查询失败等，无需重试
                 const FATAL_CODES = new Set([
@@ -372,7 +392,13 @@ class Cloud139Service {
                 headers: USER_NJS_HEADERS,
             }).json();
             if (res && res.code !== undefined && String(res.code) !== '0000' && String(res.code) !== '0') {
-                const err = new Error(`[139] user-njs 接口错误 [${res.code}]: ${res.desc || res.message || '未知错误'}`);
+                const rawDesc = res.desc || res.message || '未知错误';
+                let diagnosis = '';
+                const codeStr = String(res.code);
+                if (codeStr === '04000005' || codeStr === '05050006') {
+                    diagnosis = ' (账号凭据已过期失效，请在【云盘账号】重新扫码登录授权)';
+                }
+                const err = new Error(`[139] user-njs 接口错误 [${res.code}]: ${rawDesc}${diagnosis}`);
                 err.apiCode = String(res.code);
                 if (err.apiCode === '04000005' || err.apiCode === '05050006') {
                     err.statusCode = 401;
@@ -1082,7 +1108,15 @@ class Cloud139Service {
                     // 目标资源在云端已不存在或已在回收站中，属于正常幂等达成，不输出报错
                     return { success: true, code: '0000', data: { idempotent: true, note: '资源已不存在或已在回收站' } };
                 }
-                const msg = `[139] personal-kd-njs 接口错误 [${res.code}]: ${res.desc || res.message || ''}`;
+                const rawDesc = res.desc || res.message || '';
+                let diagnosis = '';
+                const codeStr = String(res.code);
+                if (codeStr === '04000005' || codeStr === '05050006') {
+                    diagnosis = ' (账号凭证Token/Cookie已失效过期，请在【云盘账号】页面重新扫码登录或更新凭证)';
+                } else if (codeStr === '100000005' || rawDesc.includes('空间不足')) {
+                    diagnosis = ' (网盘空间配额已满)';
+                }
+                const msg = `[139] personal-kd-njs 接口错误 [${res.code}]: ${rawDesc}${diagnosis}`;
                 logTaskEvent(msg);
                 const apiError = new Error(msg);
                 apiError.apiCode = String(res.code);

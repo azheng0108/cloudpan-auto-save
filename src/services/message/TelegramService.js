@@ -94,10 +94,37 @@ class TelegramService extends MessageService {
                     return false;
                 }
             }
-            logger.error('Telegram消息推送异常', { error: error.message, stack: error.stack });
+            logger.error(this._formatError(error), { error: error.message, stack: error.stack });
             return false;
         }
     }
+
+    _formatError(error) {
+        let reason = '';
+        const body = error.response?.body;
+        if (body) {
+            try {
+                const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+                if (parsed && parsed.description) {
+                    reason = `Telegram官方返回: ${parsed.description}`;
+                }
+            } catch (_) {
+                reason = `HTTP ${error.response?.statusCode}: ${String(body).slice(0, 150)}`;
+            }
+        }
+        if (!reason && error.errors && Array.isArray(error.errors)) {
+            reason = error.errors.map(e => e.message || e.code).filter(Boolean).join('; ');
+        }
+        if (!reason) {
+            if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || (error.stack && error.stack.includes('ETIMEDOUT'))) {
+                reason = '连接 Telegram API 超时或网络不可达（建议在系统设置中配置代理或 Cloudflare 反代域名）';
+            } else {
+                reason = error.message || error.code || '未知网络错误';
+            }
+        }
+        return `[Telegram推送失败] 目标chatId: ${this.config.chatId} | 原因: ${reason}`;
+    }
+
      // 发送刮削结果, {title: mediaDetails.title,image: mediaDetails.backdropPath,description: mediaDetails.overview,rating: mediaDetails.voteAverage}
      async _sendScrapeMessage(message) {
         logger.info('准备发送刮削结果')
@@ -155,7 +182,7 @@ class TelegramService extends MessageService {
             }
             return true;
         } catch (error) {
-            logger.error('Telegram消息推送异常', { error: error.message, stack: error.stack });
+            logger.error(this._formatError(error), { error: error.message, stack: error.stack });
             return false;
         }
     }
