@@ -93,6 +93,9 @@ const currentSelectedAccount = computed(() => {
 function handleAccountSwitch(acc: AccountSwitcherItem) {
   selectedAccountId.value = acc.id;
   strategyConfig.value.accountId = acc.id;
+  try {
+    localStorage.setItem('cloudpan_preferred_account_id_v1', String(acc.id));
+  } catch (_) {}
   ElMessage.success({
     message: `已切换当前操作账号为: [${acc.accountName || acc.username || acc.id}]`,
     grouping: true
@@ -1351,7 +1354,11 @@ async function loadAccounts() {
   try {
     const list = await accountApi.getAccounts();
     accounts.value = (list || []).filter((a: AccountItem) => a.accountType === 'cloud139');
-    const targetId = strategyConfig.value.accountId || selectedAccountId.value;
+    let savedAccountId: string | null = null;
+    try {
+      savedAccountId = localStorage.getItem('cloudpan_preferred_account_id_v1');
+    } catch (_) {}
+    const targetId = strategyConfig.value.accountId || savedAccountId || selectedAccountId.value;
     const exists = accounts.value.find((a: AccountItem) => String(a.id) === String(targetId));
     if (exists) {
       selectedAccountId.value = exists.id;

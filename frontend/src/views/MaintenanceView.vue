@@ -170,12 +170,25 @@ const currentAccount = computed<(AccountSwitcherItem & { capacity?: any }) | nul
   return accounts.value.find((a) => a.id === activeAccountId.value) || accounts.value[0] || null;
 });
 
-// 账号切换（由 AccountSwitcher select 事件触发：父组件更新状态源并统一提示，子组件无副作用）
+const ACTIVE_ACCOUNT_KEY = 'cloudpan_preferred_account_id_v1';
+
+// 账号切换（由 AccountSwitcher select 事件触发：父组件更新状态源并统一提示，持久化选定账号避免刷新重置）
 function handleAccountSwitch(acc: AccountSwitcherItem) {
   activeAccountId.value = acc.id;
+  try {
+    localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(acc.id));
+  } catch (_) {}
   const name = acc.accountName || acc.username || acc.phone || acc.id;
   ElMessage.success(`已切换 139 移动云盘操作用户: ${name}`);
 }
+
+watch(activeAccountId, (newId) => {
+  if (newId) {
+    try {
+      localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(newId));
+    } catch (_) {}
+  }
+});
 
 const currentCapacity = computed(() => {
   const cap = currentAccount.value?.capacity?.cloudCapacityInfo || currentAccount.value?.capacity?.totalCapacityInfo;
@@ -1887,8 +1900,21 @@ async function initData() {
   try {
     const accList = await accountApi.getAccounts();
     accounts.value = (accList || []).filter((a: any) => a.accountType === 'cloud139');
-    const activeOne = accounts.value.find((a: any) => a.isActive);
-    activeAccountId.value = activeOne ? activeOne.id : '';
+
+    // 优先读取用户在当前页面选定的账号，杜绝刷新页面时被强制切回默认账号
+    let savedAccountId: string | null = null;
+    try {
+      savedAccountId = localStorage.getItem(ACTIVE_ACCOUNT_KEY);
+    } catch (_) {}
+
+    const matchedAccount = savedAccountId ? accounts.value.find((a: any) => String(a.id) === String(savedAccountId)) : null;
+    if (matchedAccount) {
+      activeAccountId.value = matchedAccount.id;
+    } else {
+      const defaultAcc = accounts.value.find((a: any) => a.isDefault);
+      const activeOne = accounts.value.find((a: any) => a.isActive);
+      activeAccountId.value = defaultAcc ? defaultAcc.id : (activeOne ? activeOne.id : (accounts.value[0]?.id || ''));
+    }
     accountsLoaded.value = true;
 
     const cfg = await settingsApi.getSettings();
