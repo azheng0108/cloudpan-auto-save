@@ -16,6 +16,7 @@ const MessageService = require('./message/MessageService');
  * 帮助文本（buildHelpText）三处均由本常量同源派生，消除清单漂移。
  */
 const COMMANDS = Object.freeze([
+    Object.freeze({ name: 'start', aliases: [], group: '基础命令', description: '启动机器人并查看指南', pattern: /^\/start$/, handler: 'showHelp', registerMenu: true, requireAccount: false }),
     Object.freeze({ name: 'help', aliases: [], group: '基础命令', description: '显示帮助信息', pattern: /^\/help$/, handler: 'showHelp', registerMenu: true, requireAccount: false }),
     Object.freeze({ name: 'accounts', aliases: [], group: '基础命令', description: '账号列表与切换', pattern: /^\/accounts$/, handler: 'showAccounts', registerMenu: true, requireAccount: false }),
     Object.freeze({ name: 'tasks', aliases: [], group: '基础命令', description: '显示下载任务列表', pattern: /^\/tasks$/, handler: 'showTasks', registerMenu: true, requireAccount: true }),
@@ -37,7 +38,7 @@ const COMMAND_GROUP_ORDER = ['基础命令', '任务操作', '云盘运维', '�
 const COMMAND_GROUP_ICONS = { '基础命令': '📋', '任务操作': '📝', '云盘运维': '🛠', '媒体查询': '🎬' };
 
 // 指令挂载时仅需要 chatId 的 handler（其第二参数为按钮回调场景专用，指令场景不传）
-const CHAT_ONLY_HANDLERS = new Set(['showAccounts', 'showTasks', 'showCommonFolders', 'showFolderTree']);
+const CHAT_ONLY_HANDLERS = new Set(['showHelp', 'showAccounts', 'showTasks', 'showCommonFolders', 'showFolderTree']);
 
 /**
  * 由 COMMANDS 注册表按分组模板化生成帮助文本：条目全局连续编号，
@@ -127,6 +128,11 @@ class TelegramBotService {
                 description: cmd.description,
             }))
         );
+        try {
+            await this.bot.setChatMenuButton({
+                menu_button: { type: 'commands' }
+            });
+        } catch (_) {}
         // 从数据库中加载默认的账号
         const account = await this.accountRepo.findOne({
             where: { tgBotActive: true }
@@ -913,7 +919,8 @@ class TelegramBotService {
     }
     // 校验是否是当前chatId
     _checkChatId(chatId) {
-        if (chatId != this.chatId) return false;
+        if (!this.chatId) return true;
+        if (String(chatId).trim() !== String(this.chatId).trim()) return false;
         return true;
     }
     // 账号名脱敏：前 3 后 4 特征保留、中间掩码（短名仅保留首字符）
