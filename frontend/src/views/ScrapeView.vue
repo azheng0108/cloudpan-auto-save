@@ -2245,20 +2245,20 @@ onUnmounted(() => {
     <template v-if="activeMainTab === 'organize'">
       <!-- 模块 1: 两级落盘目录中枢 -->
       <div class="settings-card">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 mb-4 border-b border-slate-100 dark:border-slate-800">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
               <Folder class="w-5 h-5" />
             </div>
             <div>
-              <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">全站统一路径中枢（两级落盘目录）</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                全系统唯一的路径配置中枢：暂存区（所有追更/监控汇总中转）与媒体库（TMDB 规范归档）
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug">全站统一路径中枢</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                全系统唯一的路径配置中枢：中转目录（追更与监控汇聚）与媒体库（规范归档入库）
               </p>
             </div>
           </div>
 
-          <!-- 账号切换选择器 (多账号时可切换指定账号选择目录) -->
+          <!-- 账号切换选择器 (紧凑贴合，切换按钮动线一体化) -->
           <div class="flex items-center gap-2 shrink-0">
             <AccountSwitcher
               v-model="selectedAccountId"
@@ -2268,35 +2268,26 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 当前账号指示条 -->
-        <div v-if="currentSelectedAccount" class="flex items-center justify-between px-3.5 py-2 mb-4 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100/80 dark:border-indigo-900/40 rounded-xl text-xs text-indigo-800 dark:text-indigo-300">
-          <div class="flex items-center gap-2">
-            <HardDrive class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span>当前配置云盘账号：<strong>{{ currentSelectedAccount.alias || currentSelectedAccount.username }}</strong></span>
-            <span v-if="currentSelectedAccount.isDefault" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300 font-medium">默认</span>
-          </div>
-          <span class="text-[11px] text-indigo-600/70 dark:text-indigo-400/70 hidden sm:inline-block">下方【选择暂存目录】与【选择归档目录】将基于此账号加载</span>
-        </div>
-
+        <!-- 说明信息（柔和科技蓝与中性灰，彻底根除突兀紫色） -->
         <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 space-y-2 mb-4">
           <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-            <Info class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
             <span>全系统路径中枢与协同机制说明</span>
           </div>
           <ul class="space-y-1.5 pl-1 leading-relaxed text-slate-600 dark:text-slate-300">
             <li>• <strong>全站唯一事实源</strong>：此处为全站唯一修改云盘路径的地方。修改后，频道监控转存、追更任务、自动定时归档、手动双栏整理及 STRM 扫描全部自动共用此配置。</li>
-            <li>• <strong>源暂存目录</strong>：单链追更与 Telegram 频道监控转存的初始汇聚点。未识别影视在此暂存等待整理归档。</li>
+            <li>• <strong>源中转目录</strong>：单链追更与 Telegram 频道监控转存的初始汇聚点。待整理影视在此中转等待整理归档。</li>
             <li>• <strong>目标媒体库目录</strong>：经 TMDB 识别比对与结构化点分规范重命名后，最终分类归档入库的媒体库根路径。</li>
-            <li>• <strong>互斥防环保护</strong>：源暂存目录与目标归档目录<strong>绝对禁止配置为同一路径</strong>，系统内嵌门禁拦截，杜绝循环归档死锁。</li>
+            <li>• <strong>互斥防环保护</strong>：源目录与目标归档目录<strong>绝对禁止配置为同一路径</strong>，系统内嵌门禁拦截，杜绝循环归档死锁。</li>
           </ul>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <!-- 1. 源暂存区 -->
+          <!-- 1. 源中转目录 (彻底清除暂存区字样) -->
           <div>
             <div class="flex items-center justify-between mb-1.5">
-              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300">
-                源目录（待整理暂存区）
+              <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                源目录（待整理中转）
               </label>
               <span class="text-[11px] text-amber-600 dark:text-amber-400 font-medium">转存资源汇流</span>
             </div>
@@ -2305,7 +2296,7 @@ onUnmounted(() => {
                 :value="strategyConfig.stagingFolderName || ''"
                 type="text"
                 readonly
-                placeholder="请点击右侧按钮选择网盘源暂存目录 (必填)"
+                placeholder="请点击右侧按钮选择网盘源中转目录 (必填)"
                 class="input-base font-mono text-xs flex-1 w-full cursor-default bg-slate-50 dark:bg-slate-800/50"
                 :class="{ 'border-amber-400 dark:border-amber-600': !strategyConfig.stagingFolderId }"
               />
@@ -2315,7 +2306,7 @@ onUnmounted(() => {
                 @click="openFolderPicker('staging')"
               >
                 <Folder class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                <span>选择暂存目录</span>
+                <span>选择源目录</span>
               </button>
             </div>
             <div class="flex items-center justify-between mt-1">
@@ -2328,13 +2319,13 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 2. 目标媒体库 -->
+          <!-- 2. 目标媒体库 (全部使用蓝色与灰色调) -->
           <div>
             <div class="flex items-center justify-between mb-1.5">
-              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                 目标目录（媒体库归档根目录）
               </label>
-              <span class="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">最终规范归档</span>
+              <span class="text-[11px] text-blue-600 dark:text-blue-400 font-medium">最终规范归档</span>
             </div>
             <div class="flex flex-col sm:flex-row gap-2">
               <input
@@ -2350,7 +2341,7 @@ onUnmounted(() => {
                 class="btn-default text-xs h-[38px] px-3.5 w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 cursor-pointer font-medium"
                 @click="openFolderPicker('target')"
               >
-                <Folder class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <Folder class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span>选择归档目录</span>
               </button>
             </div>
@@ -2371,7 +2362,7 @@ onUnmounted(() => {
           class="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex items-center gap-2"
         >
           <AlertCircle class="w-4 h-4 shrink-0" />
-          <span>安全警告：源暂存目录与目标归档目录不能相同，否则会导致重复扫描与死循环归档！</span>
+          <span>安全警告：源目录与目标归档目录不能相同，否则会导致重复扫描与死循环归档！</span>
         </div>
       </div>
 
@@ -2386,7 +2377,7 @@ onUnmounted(() => {
             <div>
               <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">影视自动整理与归档</h3>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                转存到暂存区的影视会自动识别并规范改名入库；您也可以随时点击右侧按钮立即扫描整理
+                新转存的影视会自动识别并规范改名入库；您也可以随时点击右侧按钮立即扫描整理
               </p>
             </div>
           </div>
@@ -2396,7 +2387,7 @@ onUnmounted(() => {
             :disabled="organizingNow"
             @click="handleOrganizeNow"
             class="btn-default text-xs h-8 px-3.5 w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 cursor-pointer font-semibold text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors shadow-xs"
-            title="立即扫描暂存区中的视频文件并执行识别入库"
+            title="立即扫描待整理目录中的视频文件并执行识别入库"
           >
             <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': organizingNow }" />
             <span>{{ organizingNow ? '正在整理中...' : '立即整理 139 云盘' }}</span>
@@ -2415,7 +2406,7 @@ onUnmounted(() => {
                   <span class="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded font-medium">推荐开启</span>
                 </div>
                 <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                  平时每次追更转存成功时系统都会<strong>立刻自动整理</strong>。开启本功能后，系统还会在后台定时巡查暂存文件夹；即使是您<strong>自己在网盘里手动转存、手动上传</strong>，或之前网络中断漏掉的视频，系统也会自动帮您识别并整理进媒体库。
+                  平时每次追更转存成功时系统都会<strong>立刻自动整理</strong>。开启本功能后，系统还会在后台定时巡查待整理文件夹；即使是您<strong>自己在网盘里手动转存、手动上传</strong>，或之前网络中断漏掉的视频，系统也会自动帮您识别并整理进媒体库。
                 </p>
               </div>
               <el-switch v-model="strategyConfig.autoOrganize" />
