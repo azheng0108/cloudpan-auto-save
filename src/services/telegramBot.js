@@ -31,6 +31,7 @@ const COMMANDS = Object.freeze([
     Object.freeze({ name: 'clean_empty', aliases: ['sweep_empty'], group: '云盘运维', description: '修剪空文件夹', pattern: /^\/(?:clean_empty|sweep_empty)$/, handler: 'handleSweepEmpty', registerMenu: true, requireAccount: true }),
     Object.freeze({ name: 'dedup', aliases: ['dedup_scan'], group: '云盘运维', description: '多版本资产去重巡检', pattern: /^\/(?:dedup|dedup_scan)$/, handler: 'handleScanDedup', registerMenu: true, requireAccount: true }),
     Object.freeze({ name: 'dedup_clean', aliases: [], group: '云盘运维', description: '一键清理冗余多版本', pattern: /^\/dedup_clean$/, handler: 'handleCleanDedup', registerMenu: true, requireAccount: true }),
+    Object.freeze({ name: 'test_card', aliases: ['test_notify'], group: '媒体查询', description: '测试影视入库通知卡片效果', pattern: /^\/test_card(?:@\w+)?(?:\s+(.+))?$/, paramHint: '[片名]', handler: 'testMediaCard', registerMenu: true, requireAccount: false }),
     Object.freeze({ name: 'tmdb', aliases: [], group: '媒体查询', description: 'TMDB 影视信息查询', pattern: /^\/tmdb(?:\s+(.+))?$/, paramHint: '[片名] [年份]', handler: 'handleTmdb', registerMenu: true, requireAccount: false }),
 ]);
 
@@ -56,7 +57,7 @@ function buildHelpText() {
         return `${COMMAND_GROUP_ICONS[group]} ${group}：\n${items.join('\n')}`;
     });
     return '🤖 云盘机器人使用指南\n\n' + sections.join('\n\n') +
-        '\n\n📥 创建任务：\n直接发送移动云盘(139)分享链接即可创建任务\n格式：链接（支持访问码的链接）';
+        '\n\n📥 快捷创建与秒传导入：\n1. 移动云盘(139)分享链接：直接发送链接（支持访问码）\n2. 秒传文档入库：直接发送 .cas 文件、JSON 特征码文件或文本清单\n3. 快链秒传导入：直接发送 139FSLink、139:// 或 文件名#大小#SHA256 (仅限64位SHA256)';
 }
 
 class TelegramBotService {
@@ -193,6 +194,14 @@ class TelegramBotService {
             });
         }
 
+        // 监听文件/文档消息 (支持 .cas 秒传文件、.json 特征码文件、.txt 快链清单)
+        this.bot.on('document', async (msg) => {
+            const chatId = msg.chat.id;
+            if (!this._checkChatId(chatId)) return;
+            if (!this._checkUserId(chatId)) return;
+            await this.handleDocumentMessage(chatId, msg);
+        });
+
         // 139 移动云盘分享链接直接识别（消息任意位置含链接即触发）
         this.bot.onText(/(?:yun|caiyun)\.139\.com/i, async (msg) => {
             const chatId = msg.chat.id;
@@ -223,6 +232,15 @@ class TelegramBotService {
                 }
                 return;
             }
+            // 检查是否包含秒传特征码 / 快链 (139FSLink / 139:// / CAS / JSON / 文件名#大小#SHA256)
+            const { RapidLinkParser } = require('../utils/RapidLinkParser');
+            const parseResult = RapidLinkParser.parse(text);
+            if (parseResult.success && parseResult.count > 0) {
+                if (!this._checkUserId(chatId)) return;
+                await this.promptRapidTransferFolderSelection(chatId, parseResult, parseResult.items[0].name);
+                return;
+            }
+
             // 含 139 分享链接的混合消息由链接识别分支处理，避免双重响应
             if (/(?:yun|caiyun)\.139\.com/i.test(text)) return;
             this._throttledGuide(chatId, '🔍 资源搜索功能已下线。\n发送 /help 查看可用指令，或直接发送 139 分享链接创建任务');
@@ -280,6 +298,9 @@ class TelegramBotService {
                         break;
                     case 'm_dc': // 一键清理冗余多版本
                         await this.handleCleanDedup(chatId);
+                        break;
+                    case 'rf': // 秒传目标目录确认与执行
+                        await this.executeRapidTransfer(chatId, data, messageId);
                         break;
                 }
             } catch (error) {
@@ -1298,6 +1319,242 @@ class TelegramBotService {
         } catch (err) {
             logger.error('多版本资产清理失败', { error: err.message, stack: err.stack });
             await this._safeEditMessageText(chatId, placeholder?.message_id, `❌ 清理失败: ${err.message}`);
+        }
+    }
+
+    // 处理发送的文档（.cas、.json、.txt 等秒传文件）
+    async handleDocumentMessage(chatId, msg) {
+        const doc = msg.document;
+        if (!doc) return;
+        const fileName = doc.file_name || 'unknown.cas';
+        const fileId = doc.file_id;
+
+        const loadingMsg = await this._safeSendMessage(chatId, `📥 收到文档【${fileName}】，正在解析 139 秒传特征码...`);
+
+        try {
+            const fileLink = await this.bot.getFileLink(fileId);
+            const got = require('got');
+            const agent = this.proxyAgent ? { https: this.proxyAgent } : undefined;
+            const res = await got(fileLink, { agent, timeout: { request: 15000 } });
+            const content = res.body;
+
+            const { RapidLinkParser } = require('../utils/RapidLinkParser');
+            const parseResult = RapidLinkParser.parse(content);
+
+            if (!parseResult.success || parseResult.count === 0) {
+                if (loadingMsg) await this.bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+                await this._safeSendMessage(chatId, `⚠️ 文档【${fileName}】未能识别出秒传特征码。\n请确保为标准的 .cas 文件、JSON 数组或包含「文件名#大小#SHA256」的文本清单。`);
+                return;
+            }
+
+            if (loadingMsg) await this.bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+            await this.promptRapidTransferFolderSelection(chatId, parseResult, fileName);
+        } catch (err) {
+            logger.error(`处理文档秒传异常: ${err.message}`, { error: err });
+            if (loadingMsg) await this.bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+            await this._safeSendMessage(chatId, `❌ 解析文档失败: ${err.message}`);
+        }
+    }
+
+    // 提示用户选择秒传落盘目录
+    async promptRapidTransferFolderSelection(chatId, parseResult, sourceTitle) {
+        if (!await this._ensureAccountType(chatId, 'cloud139')) return;
+
+        // 检验是否有合法的 64 位 SHA256 特征码（移动仅接受 SHA256）
+        const validItems = parseResult.items.filter(i => i.validFor139 && i.sha256 && i.sha256.length === 64);
+        if (validItems.length === 0) {
+            await this._safeSendMessage(chatId, '⚠️ 移动云盘（139）仅接受 64 位 SHA256 算法秒传！\n当前识别到的快链未包含 64 位 SHA256 特征码（如 123 网盘仅有 32 位 MD5），无法在 139 秒传。');
+            return;
+        }
+
+        if (!this._rapidSessions) this._rapidSessions = new Map();
+        const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        this._rapidSessions.set(sessionId, {
+            items: validItems,
+            sourceTitle,
+            count: validItems.length,
+            totalSizeFormatted: parseResult.totalSizeFormatted,
+            createdAt: Date.now()
+        });
+
+        // 获取用户常用目录
+        const folders = await this.commonFolderRepo.find({ where: { accountId: this.currentAccountId } });
+
+        const keyboard = [];
+        keyboard.push([{
+            text: '⚡ 秒传落地到云盘根目录 (/)',
+            callback_data: JSON.stringify({ t: 'rf', s: sessionId, f: '/', fp: '/' })
+        }]);
+
+        for (const folder of folders) {
+            const shortPath = folder.path.length > 25
+                ? '.../' + folder.path.split('/').slice(-2).join('/')
+                : folder.path;
+            keyboard.push([{
+                text: `📁 ${shortPath}`,
+                callback_data: JSON.stringify({ t: 'rf', s: sessionId, f: folder.id, fp: folder.path })
+            }]);
+        }
+
+        keyboard.push([{
+            text: '❌ 取消秒传',
+            callback_data: JSON.stringify({ t: 'fc' })
+        }]);
+
+        const sampleItems = validItems.slice(0, 3).map(it => `  • ${it.name} (${it.sizeReadable})`).join('\n');
+        const moreHint = validItems.length > 3 ? `\n  ... 等共 ${validItems.length} 个文件` : '';
+
+        const msgText = [
+            `⚡ <b>识别到 139 秒传 / 快链资源！</b>`,
+            `━━━━━━━━━━━━━━━━━━`,
+            `📦 <b>有效秒传项</b>：${validItems.length} 个文件 (${parseResult.totalSizeFormatted})`,
+            `👤 <b>目标账号</b>：${this._getDesensitizedUserName()}`,
+            `📄 <b>文件清单预览</b>：\n${sampleItems}${moreHint}`,
+            `\n请选择 139 移动云盘落盘目录：`
+        ].join('\n');
+
+        await this._safeSendMessage(chatId, msgText, {
+            replyMarkup: { inline_keyboard: keyboard }
+        });
+    }
+
+    // 执行秒传落地
+    async executeRapidTransfer(chatId, data, messageId) {
+        const sessionId = data.s;
+        const targetFolderId = data.f || '/';
+        const targetFolderPath = data.fp || '/';
+        const session = this._rapidSessions ? this._rapidSessions.get(sessionId) : null;
+
+        if (!session) {
+            await this._safeEditMessageText(chatId, messageId, '⚠️ 秒传会话已过期，请重新发送快链或文档');
+            return;
+        }
+
+        await this._safeEditMessageText(chatId, messageId, `⚡ 正在调用 139 PC 纯协议秒传建盘... (共 ${session.count} 项)`);
+
+        try {
+            const cloud139 = Cloud139Service.getInstance(this.currentAccount);
+            const pLimit = require('p-limit');
+            const limit = pLimit(3);
+
+            let successCount = 0;
+            let existCount = 0;
+            let failCount = 0;
+            const createdFiles = [];
+
+            const tasks = session.items.map(entry => limit(async () => {
+                try {
+                    const uploadRes = await cloud139.createManualUploadFile({
+                        name: entry.name,
+                        contentHash: entry.sha256,
+                        size: entry.size,
+                        parentFileId: targetFolderId
+                    });
+                    const createdId = uploadRes?.fileId || uploadRes?.id;
+                    if (uploadRes?.exist || uploadRes?.rapidUpload || createdId) {
+                        successCount++;
+                        createdFiles.push({
+                            fileId: createdId,
+                            name: entry.name,
+                            size: entry.size,
+                            targetFolderPath
+                        });
+                    } else {
+                        failCount++;
+                    }
+                } catch (err) {
+                    if (err?.message?.includes('exist') || err?.message?.includes('已存在')) {
+                        existCount++;
+                    } else {
+                        failCount++;
+                    }
+                }
+            }));
+
+            await Promise.all(tasks);
+            this._rapidSessions.delete(sessionId);
+
+            const resultText = [
+                `✅ <b>139 秒传落盘执行完毕！</b>`,
+                `━━━━━━━━━━━━━━━━━━`,
+                `📁 <b>落盘目录</b>：<code>${MessageService.escapeHtmlEntities(targetFolderPath)}</code>`,
+                `📊 <b>执行结果</b>：成功 <b>${successCount}</b> 项，已存在跳过 <b>${existCount}</b> 项，未命中失败 <b>${failCount}</b> 项`
+            ].join('\n');
+
+            await this._safeEditMessageText(chatId, messageId, resultText);
+
+            // 触发自动整理入库
+            const autoOrganize = ConfigService.getConfigValue('task.autoOrganize', true);
+            if (successCount > 0 && autoOrganize) {
+                try {
+                    const { StagingOrganizeService } = require('./StagingOrganizeService');
+                    StagingOrganizeService.getInstance().organizeStagingFolder({
+                        accountId: this.currentAccountId,
+                        silentIfEmpty: true
+                    }).catch(orgErr => {
+                        logger.warn(`秒传后自动整理入库异常: ${orgErr.message}`);
+                    });
+                } catch (_) {}
+            }
+        } catch (err) {
+            logger.error(`执行秒传异常: ${err.message}`, { error: err });
+            await this._safeEditMessageText(chatId, messageId, `❌ 秒传执行失败: ${err.message}`);
+        }
+    }
+
+    // 测试影视入库通知卡片效果：/test_card [片名]
+    async testMediaCard(chatId, match) {
+        const query = (match && match[1] ? String(match[1]).trim() : '') || '玉簟秋';
+        const loadMsg = await this._safeSendMessage(chatId, `🔍 正在查询《${query}》的 TMDB 影视元数据并渲染测试入库卡片...`);
+        try {
+            const { TmdbService } = require('./tmdb');
+            const tmdb = new TmdbService();
+            const candidates = await tmdb.searchCandidates(query);
+            const media = (candidates && candidates.length > 0) ? candidates[0] : null;
+
+            const title = media ? `${media.title || media.name} (${media.year || '2026'})` : `${query} (2026)`;
+            const rating = media?.voteAverage ? Number(media.voteAverage).toFixed(1) : '8.0';
+            const starCount = Math.min(5, Math.max(1, Math.round(Number(rating) / 2)));
+            const stars = '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
+            const category = media?.secondaryCategory || media?.category || (media?.mediaType === 'movie' ? '电影' : '电视剧');
+            const overview = media?.overview || '20世纪20年代的乱世中，少帅虞昶轩与女学生叶平君因一场邂逅深陷爱恨漩涡，彻底改写二人的人生轨迹。纵然身份悬殊、前路艰险，二人仍毅然冲破一切阻隔，在战火与命运的洪流中坚定携手，沙场硝烟与儿女情长交织，将热血、信仰与挚爱，共同谱写成一段荡气回肠的传奇。';
+            const image = media?.backdropPath || media?.posterPath || 'https://image.tmdb.org/t/p/w500/vD84yLJVVd7cC2lKF8sEukQG2A3.jpg';
+
+            const caption = [
+                `🎉 <b>影视入库通知 · 《${MessageService.escapeHtmlEntities(title)}》</b>`,
+                `━━━━━━━━━━━━━━━━━━`,
+                `🏷️ <b>类型</b>：${MessageService.escapeHtmlEntities(category)}`,
+                `⭐ <b>评分</b>：${rating} ${stars}`,
+                `📅 <b>年份</b>：${media?.year || '2026'}`,
+                `📦 <b>入库规格</b>：S01E01-E12 · 2160p 4K HDR · 12 集已入库`,
+                `📁 <b>归档目录</b>：<code>/媒体库/电视剧/${MessageService.escapeHtmlEntities(title)}/Season 1/</code>`,
+                `📝 <b>影视简介</b>：`,
+                `${MessageService.escapeHtmlEntities(overview.slice(0, 160))}${overview.length > 160 ? '...' : ''}`
+            ].join('\n');
+
+            let sent = false;
+            if (image) {
+                try {
+                    await this.bot.sendPhoto(chatId, image, {
+                        caption: MessageService.truncateForTelegram(caption, 1024),
+                        parse_mode: 'HTML'
+                    });
+                    sent = true;
+                } catch (photoErr) {
+                    logger.warn(`发送测试海报失败，降级为纯文本: ${photoErr.message}`);
+                }
+            }
+
+            if (!sent) {
+                await this._safeSendMessage(chatId, caption);
+            }
+            if (loadMsg) {
+                await this.bot.deleteMessage(chatId, loadMsg.message_id).catch(() => {});
+            }
+        } catch (err) {
+            logger.error(`测试入库卡片异常: ${err.message}`, { error: err });
+            if (loadMsg) await this.bot.deleteMessage(chatId, loadMsg.message_id).catch(() => {});
+            await this._safeSendMessage(chatId, `❌ 测试卡片生成失败: ${err.message}`);
         }
     }
 }
