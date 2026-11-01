@@ -941,6 +941,12 @@ function parsePostDetails(item: any) {
           const sNum = sOnlyMatch[1] ? Number(sOnlyMatch[1]) : 1;
           seasonEpisode = `S${String(sNum).padStart(2, '0')}`;
           hasSeasonEpInTitle = true;
+        } else {
+          // 纯集数（如 "嫁金钗 25"）
+          const isolatedNum = `${title} ${raw}`.match(/(?:^|\s)(\d{1,4})(?:\s|$)/);
+          if (isolatedNum && Number(isolatedNum[1]) > 0 && Number(isolatedNum[1]) < 3000) {
+            seasonEpisode = `E${isolatedNum[1]}`;
+          }
         }
       }
     }
@@ -994,16 +1000,6 @@ function parsePostDetails(item: any) {
     cleanTitle = bookMatch[1].trim();
   }
 
-  // 6.2 历史条目权威兜底：若推文正则清洗残留脏词(如"小城良方已")，且转存成功原因包含《正名》，权威纠偏
-  const reasonMatch = (item.reason || '').match(/《([^》]+)》/);
-  if (reasonMatch && reasonMatch[1]) {
-    const canonicalName = reasonMatch[1].trim();
-    if (canonicalName && (cleanTitle.endsWith('已') || cleanTitle.endsWith('更') || cleanTitle.length <= 1 || cleanTitle !== canonicalName)) {
-      cleanTitle = canonicalName;
-    }
-  }
-
-
   // 6. 提取分类 (优先推文显式标注: 类型: 日番 / 分类: [有声书])
   let category = '';
   const typeMatch = raw.match(/(?:类型|分类|题材)[：:\s]*\[?([^\]\s,，|·#]+)\]?/i);
@@ -1038,26 +1034,17 @@ function parsePostDetails(item: any) {
     if (!category) category = '综艺';
     mediaTypeLabel = '综艺';
     isTv = true;
-  } else if (seasonEpisode || progress || /剧|季|集/i.test(`${raw} ${title}`) || /\b\d{1,4}\b/.test(title)) {
+  } else if (seasonEpisode || progress || /剧|季|集/i.test(`${raw} ${title}`) || /\d+/.test(title)) {
     if (!category) category = '剧集';
     mediaTypeLabel = '剧集';
     isTv = true;
   } else {
-    // 既无季集号，也无电影/动漫明确关键词（例如仅有短标题+网盘链接且未入库刮削）
-    // 工业规范：若已入库成功则默认为影视，未入库保持为待识别
+    // 若入库成功或包含 TMDB，则绝不应显示待识别
     if (!category) {
-      category = (item.status === 'success' || item.reason?.includes('TMDB')) ? '剧集' : '待识别';
+      category = (item.status === 'success' || (item.reason && /TMDB|转存至暂存区成功/i.test(item.reason))) ? '剧集' : '待识别';
     }
     mediaTypeLabel = category;
-    isTv = true;
-  }
-
-  // 组装 分类 / 年份 胶囊副文本 (如: 日番 / 2023, 电影 / 2026, 剧集, 待识别)
-  let categoryYearLabel = category;
-  if (category && year) {
-    categoryYearLabel = `${category} / ${year}`;
-  } else if (year) {
-    categoryYearLabel = `${mediaTypeLabel} / ${year}`;
+    isTv = (category !== '电影');
   }
 
   // 6.5 提取转存详情与海报路径
@@ -1068,6 +1055,19 @@ function parsePostDetails(item: any) {
   let sampleFilename = '';
   let fileSize = 0;
   let episodeTitle = '';
+  let categoryYearLabel = category || mediaTypeLabel;
+
+  // ★ 核心权威兜底 1：若后端执行结果已识别出 TMDB 与权威正名（如 reason 包含 《嫁金钗》 [TMDB #300146]），无条件优先采纳！
+  const reasonMatch = (item.reason || '').match(/《([^》]+)》/);
+  if (reasonMatch && reasonMatch[1]) {
+    cleanTitle = reasonMatch[1].trim();
+  }
+  const tmdbReasonMatch = (item.reason || '').match(/\[TMDB\s*#(\d+)\]/i);
+  if (tmdbReasonMatch && tmdbReasonMatch[1]) {
+    tmdbId = tmdbReasonMatch[1];
+    if (category === '待识别' || !category) category = '剧集';
+    mediaTypeLabel = category;
+  }
   if (item.transferredDetails) {
     try {
       const details = typeof item.transferredDetails === 'string' ? JSON.parse(item.transferredDetails) : item.transferredDetails;
@@ -1181,6 +1181,13 @@ function parsePostDetails(item: any) {
         }
       }
     } catch {}
+  }
+
+  // ★ 终极保障：成功入库或已命中 TMDB 的条目，绝对禁止出现"待识别"！
+  if ((isSuccess(item) || tmdbId) && (!category || category === '待识别')) {
+    category = '剧集';
+    mediaTypeLabel = '剧集';
+    categoryYearLabel = year ? `剧集 / ${year}` : '剧集';
   }
 
   // 7. 单行推文原文摘要 (清除换行与多余空格)
