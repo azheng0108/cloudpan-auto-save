@@ -227,7 +227,7 @@ export const maintenanceApi = {
     excludePaths?: string[];
     ignoredIds?: string[];
   }): Promise<BannedScanResult> {
-    return http.post('/api/maintenance/banned/scan', data || {});
+    return http.post('/api/maintenance/banned/scan', data || {}, { timeout: 900000 });
   },
 
   cleanBanned(data: {
@@ -239,7 +239,7 @@ export const maintenanceApi = {
     notifyEmby?: boolean;
     pruneEmptyParent?: boolean;
   }): Promise<BannedCleanResult> {
-    return http.post('/api/maintenance/banned/clean', data);
+    return http.post('/api/maintenance/banned/clean', data, { timeout: 300000 });
   },
 
   sweepEmpty(data?: {

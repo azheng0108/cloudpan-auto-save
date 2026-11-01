@@ -263,6 +263,13 @@ const totalMissingEpisodesSum = computed(() => {
 // 巡检与清理记录过滤 ('all' | 'banned_scan' | 'banned_clean' | 'missing_scan' | 'empty_prune' | 'cron' | 'manual')
 const activeRecordsFilter = ref<'all' | 'banned_scan' | 'banned_clean' | 'missing_scan' | 'empty_prune' | 'cron' | 'manual'>('all');
 
+// 历史记录分类计数
+const countBannedScan = computed(() => maintenanceJobs.value.filter((j) => j.type === 'banned_scan').length);
+const countBannedClean = computed(() => maintenanceJobs.value.filter((j) => j.type === 'banned_clean').length);
+const countMissingScan = computed(() => maintenanceJobs.value.filter((j) => j.type === 'missing_scan').length);
+const countEmptyPrune = computed(() => maintenanceJobs.value.filter((j) => j.type === 'empty_prune').length);
+const countCronJobs = computed(() => maintenanceJobs.value.filter((j) => j.triggerType === 'cron').length);
+
 const filteredMaintenanceJobs = computed(() => {
   if (isMissingRoute.value) {
     const list = maintenanceJobs.value.filter((j) => j.type === 'missing_scan');
@@ -275,11 +282,10 @@ const filteredMaintenanceJobs = computed(() => {
     return list;
   }
 
-  // maintenance 模式: 过滤仅保留违规清理、空目录修剪，排除 missing_scan
-  const list = maintenanceJobs.value.filter((j) => j.type !== 'missing_scan');
-  if (activeRecordsFilter.value === 'all') return list;
-  if (activeRecordsFilter.value === 'cron') return list.filter((j) => j.triggerType === 'cron');
-  return list.filter((j) => j.type === activeRecordsFilter.value);
+  // maintenance 模式: 当指定过滤类型时，精准展示对应任务；全量时展示所有记录
+  if (activeRecordsFilter.value === 'all') return maintenanceJobs.value;
+  if (activeRecordsFilter.value === 'cron') return maintenanceJobs.value.filter((j) => j.triggerType === 'cron');
+  return maintenanceJobs.value.filter((j) => j.type === activeRecordsFilter.value);
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -1601,6 +1607,18 @@ async function loadMaintenanceJobs() {
     if (scanBatches.value.length > 0 && !scanBatches.value.some(b => b.isExpanded)) {
       toggleBatchExpand(scanBatches.value[0]);
     }
+    // 自动将最近一次已完成的违规巡检检出数据水合至主视图，杜绝进入界面空白、需要用户手动去历史记录查找点击载入
+    if (!bannedScanResult.value || !bannedScanResult.value.bannedFiles || bannedScanResult.value.bannedFiles.length === 0) {
+      const latestBannedJob = maintenanceJobs.value.find((j) => j.type === 'banned_scan' && (j.status === 'completed' || j.status === 'cleaned'));
+      if (latestBannedJob && (latestBannedJob.bannedCount || 0) > 0) {
+        try {
+          const detail = await maintenanceApi.getJobDetail(latestBannedJob.id);
+          if (detail && detail.findings && detail.findings.length > 0) {
+            loadJobFindingsIntoInspection(detail, true);
+          }
+        } catch (_) {}
+      }
+    }
   } catch (err: any) {
     console.error('Failed to load maintenance jobs:', err);
   } finally {
@@ -1683,9 +1701,9 @@ async function handleClearAllMaintenanceJobs() {
   }
 }
 
-function loadJobFindingsIntoInspection(jobDetail: MaintenanceJobDetail) {
+function loadJobFindingsIntoInspection(jobDetail: MaintenanceJobDetail, silent = false) {
   if (!jobDetail.findings || jobDetail.findings.length === 0) {
-    ElMessage.info('该次巡检快照未包含违规文件记录');
+    if (!silent) ElMessage.info('该次巡检快照未包含违规文件记录');
     return;
   }
   bannedScanResult.value = {
@@ -1697,13 +1715,16 @@ function loadJobFindingsIntoInspection(jobDetail: MaintenanceJobDetail) {
     totalBannedSizeFormatted: jobDetail.freedFormatted || '',
     durationMs: jobDetail.durationMs,
   };
+  saveBannedScanResult(bannedScanResult.value);
   selectedBannedIds.value = new Set(jobDetail.findings.map((f) => f.id));
   if (isMissingRoute.value) {
     router.push('/maintenance');
   }
   activeTab.value = 'banned';
-  ElMessage.success(`已成功载入 ${jobDetail.findings.length} 项违规快照至待处置区，已为您默认全选！`);
-  window.scrollTo({ top: 300, behavior: 'smooth' });
+  if (!silent) {
+    ElMessage.success(`已成功载入 ${jobDetail.findings.length} 项违规快照至待处置区，已为您默认全选！`);
+    window.scrollTo({ top: 300, behavior: 'smooth' });
+  }
 }
 
 function getJobFindingsList(jobDetail: any): any[] {
@@ -1956,6 +1977,67 @@ function toggleSelectBanned(id: string) {
   }
 }
 
+function scrollToCleanPanel() {
+  setTimeout(() => {
+    const el = document.querySelector('.inline-panel--rose');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
+}
+
+// 一键导出和谐/违规文件清单 (txt + 复制剪贴板)
+function handleExportBannedFiles() {
+  const list = filteredBannedFiles.value && filteredBannedFiles.value.length > 0
+    ? filteredBannedFiles.value
+    : (bannedScanResult.value?.bannedFiles || []);
+  if (!list || list.length === 0) {
+    ElMessage.warning('暂无违规文件可供导出');
+    return;
+  }
+
+  const dateStr = new Date().toLocaleString('zh-CN', { hour12: false });
+  const lines: string[] = [
+    `# 139网盘违规与死链文件排查清单`,
+    `# 导出时间: ${dateStr}`,
+    `# 违规文件总数: ${list.length} 项`,
+    `# -------------------------------------------------------------`,
+  ];
+
+  list.forEach((item, index) => {
+    lines.push(`[#${index + 1}] ${item.name} (${item.sizeFormatted || '未知大小'})`);
+    lines.push(`    拦截原因: ${item.reason || '特征违规'}`);
+    lines.push(`    网盘路径: ${item.path || '/'}`);
+    lines.push(``);
+  });
+
+  const fullContent = lines.join('\n');
+
+  try {
+    const blob = new Blob([fullContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `139网盘违规死链清单_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('下载文件失败:', err);
+  }
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(fullContent).then(() => {
+      ElMessage.success(`已导出并复制 ${list.length} 项违规文件清单至剪贴板！`);
+    }).catch(() => {
+      ElMessage.success(`已成功导出 ${list.length} 项违规文件清单！`);
+    });
+  } else {
+    ElMessage.success(`已成功导出 ${list.length} 项违规文件清单！`);
+  }
+}
+
 function handleCleanBanned() {
   if (!bannedScanResult.value || selectedBannedIds.value.size === 0) {
     ElMessage.warning('请至少选择一个待处置的违规文件');
@@ -1963,6 +2045,9 @@ function handleCleanBanned() {
   }
   // 内联展开处置设置面板（替代 el-dialog；处置方式与联动开关为持久偏好，收起不重置）
   cleanSettingPanelOpen.value = !cleanSettingPanelOpen.value;
+  if (cleanSettingPanelOpen.value) {
+    scrollToCleanPanel();
+  }
 }
 
 async function executeCleanBanned() {
@@ -3303,9 +3388,9 @@ onUnmounted(() => {
         <!-- 卡片头部 (参照缺集检测规范: 左侧标题说明 + 右侧处置行动) -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
           <div>
-            <h3 class="text-sm font-bold text-gray-900 dark:text-white">网盘和谐与违规检测</h3>
+            <h3 class="text-sm font-bold text-gray-900 dark:text-white">网盘违规与死链排查</h3>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              排查网盘审核拦截、特征封禁与损坏死链，支持资产柔性隔离与 Emby 联动下架
+              排查网盘被封禁和谐文件与损坏失效死链，支持一键隔离或移入回收站
             </p>
           </div>
 
@@ -3313,12 +3398,13 @@ onUnmounted(() => {
             <button
               v-if="bannedScanResult && bannedScanResult.bannedCount > 0"
               type="button"
-              class="bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs py-2 px-4 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
+              class="font-medium text-xs py-2 px-4 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 cursor-pointer shadow-xs text-white"
+              :class="cleanAction === 'quarantine' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-rose-600 hover:bg-rose-700'"
               :disabled="isBannedCleaning || selectedBannedIds.size === 0"
               @click="handleCleanBanned"
             >
-              <Trash2 class="w-3.5 h-3.5" />
-              <span>{{ cleanSettingPanelOpen ? '收起处置设置' : '处置违规文件' }} ({{ selectedBannedIds.size }})</span>
+              <component :is="cleanAction === 'quarantine' ? ShieldCheck : Trash2" class="w-3.5 h-3.5" />
+              <span>{{ cleanSettingPanelOpen ? '收起设置' : (cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站') }} ({{ selectedBannedIds.size }})</span>
             </button>
           </div>
         </div>
@@ -3328,7 +3414,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <div class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
               <Trash2 class="w-3.5 h-3.5 text-rose-500" />
-              <span>违规失效文件处置确认与联动</span>
+              <span>违规文件清理设置（移入回收站或移入隔离区）</span>
             </div>
             <button
               type="button"
@@ -3357,7 +3443,7 @@ onUnmounted(() => {
           <!-- 处置方式单选二选一 -->
           <div class="space-y-2">
             <div class="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
-              <span>处置去向（单选二选一）:</span>
+              <span>选择处理去向:</span>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <!-- 选项 A：回收站 -->
@@ -3370,7 +3456,7 @@ onUnmounted(() => {
                   <div>
                     <div class="font-bold text-gray-900 dark:text-white text-xs">移入网盘回收站</div>
                     <div class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                      彻底移入 139 回收站释放存储空间（保留 30 天后悔期，可找回）。
+                      彻底移入网盘回收站释放存储空间（保留 30 天后悔期，30天内可在网盘网页端随时还原）。
                     </div>
                   </div>
                 </div>
@@ -3386,7 +3472,7 @@ onUnmounted(() => {
                   <div>
                     <div class="font-bold text-gray-900 dark:text-white text-xs">移动到隔离目录</div>
                     <div class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                      保留原始资产，移出影视库刮削路径，方便后期重命名或重新上传。
+                      保留原始文件，移动到指定的隔离文件夹（如 /.quarantine），避免影响媒体库正常刮削。
                     </div>
                   </div>
                 </div>
@@ -3411,7 +3497,7 @@ onUnmounted(() => {
           <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <div class="font-semibold text-gray-800 dark:text-gray-200">高级联动与自愈选项:</div>
 
-            <!-- 级联伴生清理 -->
+            <!-- 清理字幕清理 -->
             <label class="flex items-start gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
               <input type="checkbox" v-model="cascadeCompanion" class="mt-0.5 rounded text-blue-600" />
               <div class="space-y-0.5">
@@ -3437,7 +3523,7 @@ onUnmounted(() => {
             <label class="flex items-start gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
               <input type="checkbox" v-model="pruneEmptyParent" class="mt-0.5 rounded text-blue-600" />
               <div class="space-y-0.5">
-                <span class="font-medium text-gray-800 dark:text-gray-200 text-xs">若处置后父目录变为空文件夹，顺手清理</span>
+                <span class="font-medium text-gray-800 dark:text-gray-200 text-xs">若文件移走后文件夹变空，自动删除空文件夹</span>
                 <p class="text-[11px] text-gray-400 leading-relaxed">
                   若原季目录或剧集目录在移走后已无其他文件，同步修剪该空目录保持目录树整洁。
                 </p>
@@ -3462,7 +3548,7 @@ onUnmounted(() => {
               @click="executeCleanBanned"
             >
               <span v-if="isBannedCleaning" class="animate-spin mr-1">⏳</span>
-              <span>确认执行{{ cleanAction === 'quarantine' ? '隔离' : '移入回收站' }}</span>
+              <span>确认{{ cleanAction === 'quarantine' ? '移入隔离文件夹' : '移入网盘回收站' }}</span>
             </button>
           </div>
         </div>
@@ -3583,14 +3669,14 @@ onUnmounted(() => {
           >
             <div class="flex items-center gap-2 flex-wrap min-w-0">
               <Sliders class="w-4 h-4 text-blue-500 shrink-0" />
-              <span class="text-xs font-semibold text-slate-800 dark:text-slate-200">高级治理与排查配置</span>
+              <span class="text-xs font-semibold text-slate-800 dark:text-slate-200">清理与排查配置</span>
               <!-- 收起时展示当前设置摘要胶囊 -->
               <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
                 <span class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 font-mono">
                   {{ bannedScanScope === 'all' ? '全类型文件排查' : '视频媒体(14种格式)' }}
                 </span>
                 <span class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
-                  {{ cleanAction === 'quarantine' ? '柔性隔离暂存' : '直接移入回收站' }}
+                  {{ cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站' }}
                 </span>
                 <span v-if="cascadeCompanion" class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
                   级联伴生
@@ -3599,7 +3685,7 @@ onUnmounted(() => {
                   Emby通知
                 </span>
                 <span v-if="pruneEmptyParent" class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
-                  修剪空目录
+                  删除空文件夹
                 </span>
               </div>
             </div>
@@ -3619,9 +3705,9 @@ onUnmounted(() => {
             <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 space-y-2.5">
               <div class="flex items-center justify-between">
                 <div class="space-y-0.5 pr-3">
-                  <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">全类型文件深度排查</span>
+                  <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">排查所有文件类型</span>
                   <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                    开启后遍历排查所有格式（含文档、压缩包等）；关闭则仅快速巡检视频媒体文件 (默认推荐)
+                    开启后扫描网盘内所有文件（含文档、压缩包等）；关闭则仅扫描视频文件（推荐，速度更快）
                   </p>
                 </div>
                 <el-switch
@@ -3684,9 +3770,9 @@ onUnmounted(() => {
             <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 space-y-2.5">
               <div class="flex items-center justify-between">
                 <div class="space-y-0.5 pr-3">
-                  <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">隔离区柔性暂存模式</span>
+                  <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">移至隔离文件夹（防误删）</span>
                   <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                    开启后将违规死链移动到隔离目录（保留实体供救回，防 Emby 404）；关闭则直接移入云盘回收站释放空间
+                    开启后将违规文件移动到指定隔离文件夹；关闭则直接移入网盘回收站释放存储空间
                   </p>
                 </div>
                 <el-switch
@@ -3710,9 +3796,9 @@ onUnmounted(() => {
             <!-- 开关 3: 级联清理伴生文件 -->
             <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 flex items-center justify-between">
               <div class="space-y-0.5 pr-3">
-                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">级联清理伴生文件</span>
+                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">同步清理字幕与刮削文件</span>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                  处置违规视频时连带清理同名伴生文件（如 .nfo 刮削元数据、.strm 与外挂字幕）
+                  清理违规视频时，一并清理同名的字幕文件与 .nfo 刮削元数据
                 </p>
               </div>
               <el-switch v-model="cascadeCompanion" @change="saveCleanPref" />
@@ -3721,9 +3807,9 @@ onUnmounted(() => {
             <!-- 开关 4: Emby 增量刷新下架通知 -->
             <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 flex items-center justify-between">
               <div class="space-y-0.5 pr-3">
-                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">Emby 增量刷新下架通知</span>
+                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">通知 Emby 刷新媒体库</span>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                  处置完成后自动精准通知 Emby 刷新受影响剧集目录，消除幽灵剧集杜绝 404 报错
+                  清理违规视频后，自动通知 Emby 刷新受影响的剧集，避免播放失效视频
                 </p>
               </div>
               <el-switch v-model="notifyEmby" @change="saveCleanPref" />
@@ -3732,9 +3818,9 @@ onUnmounted(() => {
             <!-- 开关 5: 自动修剪父级空目录 -->
             <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 flex items-center justify-between">
               <div class="space-y-0.5 pr-3">
-                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">自动修剪父级空目录</span>
+                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">清理后自动删除空文件夹</span>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                  违规文件移出或清理后，若父级文件夹变空，自动向上递归安全修剪清理
+                  文件移走后若原文件夹变空，自动顺手删除空文件夹保持网盘整洁
                 </p>
               </div>
               <el-switch v-model="pruneEmptyParent" @change="saveCleanPref" />
@@ -3798,27 +3884,27 @@ onUnmounted(() => {
 
         <!-- 违规列表表格与分类胶囊 -->
         <div v-if="bannedScanResult && bannedScanResult.bannedCount > 0" class="space-y-3">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-gray-500 px-1">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 text-xs">
             <div class="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
-                class="hover:text-blue-600 flex items-center gap-1 cursor-pointer font-medium"
+                class="hover:text-blue-600 flex items-center gap-1 cursor-pointer font-medium text-slate-700 dark:text-slate-300"
                 @click="toggleSelectAllBanned"
               >
                 <CheckSquare v-if="isAllFilteredBannedSelected" class="w-3.5 h-3.5 text-blue-600" />
                 <Square v-else class="w-3.5 h-3.5" />
-                <span>全选当前</span>
+                <span>全选</span>
               </button>
-              <span>(已选中 {{ selectedBannedIds.size }} / {{ bannedScanResult.bannedFiles.length }} 项)</span>
+              <span class="text-slate-500 font-mono text-[11px]">(已选 {{ selectedBannedIds.size }} / {{ bannedScanResult.bannedFiles.length }} 项)</span>
 
-              <div class="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] ml-2">
+              <div class="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] ml-1">
                 <button
                   type="button"
                   class="px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer"
                   :class="activeBannedFilter === 'all' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
                   @click="activeBannedFilter = 'all'"
                 >
-                  全部违规 ({{ bannedScanResult.bannedCount }})
+                  全部 ({{ bannedScanResult.bannedCount }})
                 </button>
                 <button
                   v-if="bannedHarmonizedCount > 0"
@@ -3827,7 +3913,7 @@ onUnmounted(() => {
                   :class="activeBannedFilter === 'harmonized' ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
                   @click="activeBannedFilter = 'harmonized'"
                 >
-                  审核封禁 ({{ bannedHarmonizedCount }})
+                  封禁违规 ({{ bannedHarmonizedCount }})
                 </button>
                 <button
                   v-if="bannedDeadLinkCount > 0"
@@ -3840,7 +3926,32 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
-            <span>安全保护：删除操作统一移入回收站，严禁硬删除</span>
+
+            <!-- 右侧操作区：导出清单 + 快捷处理（直接在列表上方操作，不需滚动到页面最顶） -->
+            <div class="flex items-center gap-2 flex-wrap shrink-0">
+              <!-- 一键导出和谐文件 -->
+              <button
+                type="button"
+                class="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium flex items-center gap-1.5 transition-colors cursor-pointer text-xs shadow-2xs"
+                title="导出和谐文件清单为文本文件并复制到剪贴板"
+                @click="handleExportBannedFiles"
+              >
+                <FileText class="w-3.5 h-3.5 text-slate-500" />
+                <span>一键导出清单</span>
+              </button>
+
+              <!-- 快捷处理按钮：移入回收站 / 移至隔离区 -->
+              <button
+                type="button"
+                class="px-3.5 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors text-white"
+                :class="cleanAction === 'quarantine' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-rose-600 hover:bg-rose-700'"
+                :disabled="isBannedCleaning || selectedBannedIds.size === 0"
+                @click="handleCleanBanned"
+              >
+                <component :is="cleanAction === 'quarantine' ? ShieldCheck : Trash2" class="w-3.5 h-3.5" />
+                <span>{{ cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站' }} ({{ selectedBannedIds.size }})</span>
+              </button>
+            </div>
           </div>
 
           <!-- 违规文件行卡片列表（对齐频道监控规范 ChannelView:1659-1663 历史行卡片形态；整卡点击切换勾选等价原行点击） -->
@@ -3889,6 +4000,38 @@ onUnmounted(() => {
               <div class="text-[11px] text-gray-500 dark:text-gray-400 font-mono truncate mt-1.5" :title="item.path">
                 {{ item.path }}
               </div>
+            </div>
+          </div>
+
+          <!-- 悬浮底部操作栏（查阅长列表时常驻底部，随时一键处理或导出） -->
+          <div
+            v-if="selectedBannedIds.size > 0"
+            class="sticky bottom-4 z-30 mx-auto max-w-2xl p-2.5 px-4 rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-slate-200/90 dark:border-slate-700/90 shadow-xl backdrop-blur-md flex items-center justify-between gap-3 text-xs"
+          >
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="font-bold text-gray-900 dark:text-white">已选 {{ selectedBannedIds.size }} 项</span>
+              <span class="text-gray-400 font-mono text-[11px] hidden sm:inline">占用 {{ selectedBannedSizeFormatted }}</span>
+            </div>
+
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
+                @click="handleExportBannedFiles"
+              >
+                <FileText class="w-3.5 h-3.5" />
+                <span>导出清单</span>
+              </button>
+              <button
+                type="button"
+                class="px-3.5 py-1.5 rounded-lg font-medium text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                :class="cleanAction === 'quarantine' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-rose-600 hover:bg-rose-700'"
+                :disabled="isBannedCleaning"
+                @click="handleCleanBanned"
+              >
+                <component :is="cleanAction === 'quarantine' ? ShieldCheck : Trash2" class="w-3.5 h-3.5" />
+                <span>{{ cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站' }} ({{ selectedBannedIds.size }})</span>
+              </button>
             </div>
           </div>
         </div>
@@ -3966,27 +4109,26 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 和谐封禁留痕档案库 (和谐墓碑) 专区 -->
-        <div class="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800 space-y-3">
+        <!-- 已处置违规剧集历史归档 (仅在有归档记录时展示，杜绝无记录时用空状态干扰用户巡检判断) -->
+        <div v-if="tombstones.length > 0" class="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800 space-y-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <ShieldAlert class="w-4 h-4 text-purple-600 dark:text-purple-400" />
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">已留痕网盘封禁剧集档案库 (共 {{ tombstones.length }} 集)</h4>
-              <span class="text-[11px] text-gray-400">记录已处置隔离或清理的违规剧集（若仅巡检未处置或未发现违规，此处显示为 0）</span>
+              <h4 class="text-xs font-bold text-gray-900 dark:text-white">已处理违规剧集归档 (共 {{ tombstones.length }} 集)</h4>
+              <span class="text-[11px] text-gray-400">此前已移入回收站或隔离区的违规剧集记录</span>
             </div>
             <button
-              v-if="tombstones.length > 0"
               type="button"
               class="text-[11px] text-slate-500 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 cursor-pointer"
               @click="clearAllTombstones"
             >
               <Trash2 class="w-3 h-3" />
-              <span>清空和谐档案</span>
+              <span>清空归档</span>
             </button>
           </div>
 
-          <!-- 档案清单：紧凑行卡片（对齐频道监控规范 ChannelView:1488 折叠区行卡片形态，字段完整保留） -->
-          <div v-if="tombstones.length > 0" class="space-y-2">
+          <!-- 档案清单：紧凑行卡片 -->
+          <div class="space-y-2">
             <div
               v-for="t in tombstones"
               :key="t.id"
@@ -4003,7 +4145,7 @@ onUnmounted(() => {
                   class="status-pill"
                   :class="t.action === 'quarantine' ? 'status-pill--info' : 'status-pill--danger'"
                 >
-                  {{ t.action === 'quarantine' ? ('隔离 (' + (t.quarantinePath || '/.quarantine') + ')') : '移入回收站' }}
+                  {{ t.action === 'quarantine' ? ('已隔离: ' + (t.quarantinePath || '/.quarantine')) : '已移入回收站' }}
                 </span>
                 <span class="text-[11px] text-gray-400 font-mono ml-auto shrink-0">
                   {{ t.timeFormatted }}
@@ -4013,10 +4155,6 @@ onUnmounted(() => {
                 {{ t.fileName }}
               </div>
             </div>
-          </div>
-
-          <div v-else class="p-4 text-center text-gray-400 text-xs bg-slate-50/50 dark:bg-slate-900/20 rounded-xl border border-dashed border-gray-200 dark:border-gray-800">
-            暂无被封禁剧集的留痕记录。在违规处置时将自动归档被和谐的剧集信息。
           </div>
         </div>
       </div>
@@ -5515,7 +5653,7 @@ onUnmounted(() => {
         </div>
 
         <!-- 快速过滤标签胶囊栏（实心彩色激活改为白色凸起胶囊，对齐频道监控规范 ChannelView:1603-1636 过滤胶囊组） -->
-        <div class="list-toolbar__filters">
+        <div class="list-toolbar__filters flex flex-wrap gap-1.5">
           <button
             type="button"
             class="tab-pill"
@@ -5530,7 +5668,7 @@ onUnmounted(() => {
             :class="{ 'tab-pill--active': activeRecordsFilter === 'banned_scan' }"
             @click="activeRecordsFilter = 'banned_scan'"
           >
-            违规巡检
+            违规巡检 ({{ countBannedScan }})
           </button>
           <button
             type="button"
@@ -5538,7 +5676,7 @@ onUnmounted(() => {
             :class="{ 'tab-pill--active': activeRecordsFilter === 'banned_clean' }"
             @click="activeRecordsFilter = 'banned_clean'"
           >
-            违规处置
+            违规处置 ({{ countBannedClean }})
           </button>
           <button
             type="button"
@@ -5546,7 +5684,7 @@ onUnmounted(() => {
             :class="{ 'tab-pill--active': activeRecordsFilter === 'missing_scan' }"
             @click="activeRecordsFilter = 'missing_scan'"
           >
-            剧集缺更
+            剧集缺更 ({{ countMissingScan }})
           </button>
           <button
             type="button"
@@ -5554,7 +5692,7 @@ onUnmounted(() => {
             :class="{ 'tab-pill--active': activeRecordsFilter === 'empty_prune' }"
             @click="activeRecordsFilter = 'empty_prune'"
           >
-            空目录修剪
+            空目录修剪 ({{ countEmptyPrune }})
           </button>
           <button
             type="button"
@@ -5562,7 +5700,7 @@ onUnmounted(() => {
             :class="{ 'tab-pill--active': activeRecordsFilter === 'cron' }"
             @click="activeRecordsFilter = 'cron'"
           >
-            仅定时任务
+            仅定时任务 ({{ countCronJobs }})
           </button>
         </div>
 
@@ -5790,15 +5928,37 @@ onUnmounted(() => {
         <!-- 空状态 -->
         <div v-else class="p-12 text-center text-gray-400">
           <History class="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-          <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">暂无维护流水记录</h4>
+          <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">
+            {{
+              activeRecordsFilter === 'banned_clean'
+                ? '暂无违规文件处置记录'
+                : activeRecordsFilter === 'empty_prune'
+                ? '暂无空目录修剪记录'
+                : activeRecordsFilter === 'missing_scan'
+                ? '暂无剧集缺更检测记录'
+                : activeRecordsFilter === 'cron'
+                ? '暂无后台定时任务执行记录'
+                : '暂无维护流水记录'
+            }}
+          </h4>
           <p class="text-xs text-gray-400 mt-1">
-            在违规死链巡检、剧集缺集检测中发起扫描，或系统定时 Cron 触发后，所有执行进度与快照均将自动持久化保存在此
+            {{
+              activeRecordsFilter === 'banned_clean'
+                ? '当在违规扫描中对文件执行「移入回收站」或「移至隔离区」后，将自动在此记录处置流水'
+                : activeRecordsFilter === 'empty_prune'
+                ? '当网盘执行空目录清理后，将在此记录修剪的空目录流水'
+                : activeRecordsFilter === 'missing_scan'
+                ? '在剧集缺更检测中发起扫描或定时扫描后，将在此展示缺更历史'
+                : activeRecordsFilter === 'cron'
+                ? '系统后台按 Cron 定时自动执行巡检后，将在此自动记录执行快照'
+                : '发起扫描或定时任务触发后，所有执行进度与快照均将自动持久化保存在此'
+            }}
           </p>
         </div>
 
 
 
-        <!-- 底部归档：永久忽略白名单档案库区域 (仅网盘清理模式下显示) -->
+        <!-- 底部归档：永久忽略白名单区域 (仅网盘清理模式下显示) -->
         <div v-if="!isMissingRoute" class="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800 space-y-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div class="flex items-center gap-2">
