@@ -2377,15 +2377,16 @@ onUnmounted(() => {
 
       <!-- 模块 2: 整理执行与定时调度 -->
       <div class="settings-card">
+        <!-- 顶栏标题与立即整理操作 -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
               <Clock class="w-5 h-5" />
             </div>
             <div>
-              <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">整理执行与暂存区巡检</h3>
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">影视自动整理与归档</h3>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                频道转存自动即时整理入库；可手动触发立即扫描暂存区并识别归档
+                转存到暂存区的影视会自动识别并规范改名入库；您也可以随时点击右侧按钮立即扫描整理
               </p>
             </div>
           </div>
@@ -2394,155 +2395,145 @@ onUnmounted(() => {
             type="button"
             :disabled="organizingNow"
             @click="handleOrganizeNow"
-            class="btn-default text-xs h-8 px-3.5 w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 cursor-pointer font-medium text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors shadow-xs"
-            title="立即扫描暂存区影视并执行识别归档"
+            class="btn-default text-xs h-8 px-3.5 w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 cursor-pointer font-semibold text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors shadow-xs"
+            title="立即扫描暂存区中的视频文件并执行识别入库"
           >
             <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': organizingNow }" />
             <span>{{ organizingNow ? '正在整理中...' : '立即整理 139 云盘' }}</span>
           </button>
         </div>
 
-        <!-- 自动定时整理开关 -->
-        <div class="mb-4 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 flex items-center justify-between">
-          <div>
-            <h4 class="text-xs font-bold text-gray-900 dark:text-white">暂存区自动兜底整理</h4>
-            <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-              频道转存落盘时已自动触发即时整理；开启本开关将在后台定期巡检暂存区，自动补齐手动放入或遗留的待整理资源
-            </p>
-          </div>
-          <el-switch v-model="strategyConfig.autoOrganize" />
-        </div>
+        <div class="space-y-3.5">
+          <!-- 核心开关 1: 后台定时检查暂存区 (小白大白话) -->
+          <div class="p-3.5 rounded-xl border border-gray-200/90 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/40 transition-all">
+            <div class="flex items-center justify-between gap-3">
+              <div class="space-y-0.5 flex-1 pr-2">
+                <div class="flex items-center gap-2">
+                  <h4 class="text-xs font-bold text-gray-900 dark:text-white">
+                    后台定时自动整理（自动处理遗漏或手动上传的视频）
+                  </h4>
+                  <span class="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded font-medium">推荐开启</span>
+                </div>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                  平时每次追更转存成功时系统都会<strong>立刻自动整理</strong>。开启本功能后，系统还会在后台定时巡查暂存文件夹；即使是您<strong>自己在网盘里手动转存、手动上传</strong>，或之前网络中断漏掉的视频，系统也会自动帮您识别并整理进媒体库。
+                </p>
+              </div>
+              <el-switch v-model="strategyConfig.autoOrganize" />
+            </div>
 
-        <!-- 调度周期 -->
-        <div v-if="strategyConfig.autoOrganize" class="mb-4">
-          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-            暂存区兜底巡检周期 (分钟，建议 15~60 分钟避免频繁空转)
-          </label>
-          <div class="flex flex-wrap items-center gap-2">
-            <input
-              v-model.number="strategyConfig.scanInterval"
-              type="number"
-              min="1"
-              max="1440"
-              placeholder="30"
-              class="input-base font-mono text-xs w-36"
-            />
-            <div class="flex items-center gap-1.5 text-xs">
-              <button
-                v-for="min in [10, 15, 30, 60, 120]"
-                :key="min"
-                type="button"
-                class="px-2.5 py-1 rounded-md border text-xs font-mono cursor-pointer transition-colors"
-                :class="strategyConfig.scanInterval === min ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-gray-300'"
-                @click="strategyConfig.scanInterval = min"
-              >
-                {{ min }}分
-              </button>
+            <!-- 展开的检查间隔时间 -->
+            <div v-if="strategyConfig.autoOrganize" class="mt-3 pt-3 border-t border-gray-200/70 dark:border-gray-700/60 flex flex-wrap items-center justify-between gap-2">
+              <div class="text-[11px] text-gray-600 dark:text-gray-300 font-medium">
+                后台自动检查间隔（建议 15~60 分钟检查一次）：
+              </div>
+              <div class="flex items-center gap-2">
+                <input
+                  v-model.number="strategyConfig.scanInterval"
+                  type="number"
+                  min="1"
+                  max="1440"
+                  placeholder="30"
+                  class="input-base font-mono text-xs w-20 text-center"
+                />
+                <span class="text-xs text-gray-400">分钟</span>
+                <div class="flex items-center gap-1 text-xs ml-1">
+                  <button
+                    v-for="min in [15, 30, 60, 120]"
+                    :key="min"
+                    type="button"
+                    class="px-2 py-0.5 rounded border text-[11px] font-mono cursor-pointer transition-colors"
+                    :class="strategyConfig.scanInterval === min ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-gray-300'"
+                    @click="strategyConfig.scanInterval = min"
+                  >
+                    {{ min }}分
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- 整理后清理空文件夹 (对齐截图) -->
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-4 space-y-3">
-          <div>
-            <h4 class="text-xs font-bold text-gray-900 dark:text-white">
-              整理后清理空文件夹: <span class="font-normal text-[11px] text-gray-500 dark:text-gray-400">启用时整理完成后会删除已整理为空的源子目录；关闭时保留空文件夹</span>
-            </h4>
-          </div>
-          <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
-            <span class="text-xs font-medium" :class="strategyConfig.sweepEmptyFolders ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-              {{ strategyConfig.sweepEmptyFolders ? '已启用' : '未启用' }}
-            </span>
+          <!-- 核心开关 2: 整理后自动清理空文件夹 (小白大白话) -->
+          <div class="p-3.5 rounded-xl border border-gray-200/90 dark:border-gray-800 bg-white dark:bg-gray-850 flex items-center justify-between gap-3">
+            <div class="space-y-0.5 flex-1 pr-2">
+              <h4 class="text-xs font-bold text-gray-900 dark:text-white">
+                整理后自动删除空文件夹
+              </h4>
+              <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                当视频被分类改名搬移到媒体库后，自动删除暂存区里已经被搬空的无用空文件夹，保持网盘整洁清爽。
+              </p>
+            </div>
             <el-switch v-model="strategyConfig.sweepEmptyFolders" />
           </div>
-        </div>
 
-        <!-- 联动生成 STRM (对齐截图) -->
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-4 space-y-3">
-          <div>
-            <h4 class="text-xs font-bold text-gray-900 dark:text-white">联动生成 STRM</h4>
-            <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-              启用时每轮整理后会增量生成 STRM 并清理失效 STRM；关闭时只整理网盘文件，不联动 STRM。需先配置「139 云盘 - STRM 生成」
-            </p>
-          </div>
-          <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
-            <span class="text-xs font-medium" :class="strategyConfig.linkStrm ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-              {{ strategyConfig.linkStrm ? '已启用' : '未启用' }}
-            </span>
+          <!-- 核心开关 3: 联动生成 STRM (小白大白话) -->
+          <div class="p-3.5 rounded-xl border border-gray-200/90 dark:border-gray-800 bg-white dark:bg-gray-850 flex items-center justify-between gap-3">
+            <div class="space-y-0.5 flex-1 pr-2">
+              <h4 class="text-xs font-bold text-gray-900 dark:text-white">
+                自动同步生成 STRM 在线播放文件
+              </h4>
+              <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                每次影视整理完成后，自动为 Emby / Jellyfin / 播放器生成或更新对应的 <code class="text-blue-600 dark:text-blue-400">.strm</code> 文件，无需下载即可在线播放（需在系统左侧「STRM 生成」中预先设置路径）。
+              </p>
+            </div>
             <el-switch v-model="strategyConfig.linkStrm" />
           </div>
-        </div>
 
-        <!-- 排除策略 (对标截图: 盾牌图标 + 展开收起 + 三个开关) -->
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-4 space-y-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <Shield class="w-5 h-5" />
+          <!-- 排除与跳过规则 (小白大白话) -->
+          <div class="rounded-xl border border-gray-200/90 dark:border-gray-800 bg-white dark:bg-gray-850 p-3.5 space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <Shield class="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-gray-900 dark:text-white">过滤与排除规则</h4>
+                  <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                    设置哪些杂乱文件不需要整理进媒体库（如文本说明、广告、无字幕外语片等）
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 class="text-xs font-bold text-gray-900 dark:text-white">排除策略</h4>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">
-                  按文件类型及中文字幕情况排除源文件；仅检查 TMDB 国家/地区不含中国大陆、中国台湾、中国香港、中国澳门的资源；三个开关默认关闭
-                </p>
-              </div>
+              <button
+                type="button"
+                class="text-xs font-medium text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 shrink-0"
+                @click="excludeStrategyExpanded = !excludeStrategyExpanded"
+              >
+                <span>{{ excludeStrategyExpanded ? '收起规则' : '展开规则' }}</span>
+                <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': excludeStrategyExpanded }" />
+              </button>
             </div>
-            <button
-              type="button"
-              class="text-xs font-medium text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer transition-colors px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 shrink-0"
-              @click="excludeStrategyExpanded = !excludeStrategyExpanded"
-            >
-              <span>{{ excludeStrategyExpanded ? '收起' : '展开' }}</span>
-              <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': excludeStrategyExpanded }" />
-            </button>
-          </div>
 
-          <!-- 展开后的三个开关卡片 -->
-          <div v-show="excludeStrategyExpanded" class="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
-            <!-- 开关 1: 排除非视频文件 -->
-            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-3.5 space-y-2">
-              <div>
-                <h5 class="text-xs font-bold text-gray-900 dark:text-white">排除非视频文件</h5>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                  仅整理识别为视频的文件，遇到非视频格式源文件（如 txt、nfo、jpg、url 等）时直接排除，不移入媒体库
-                </p>
-              </div>
-              <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
-                <span class="text-xs font-medium" :class="strategyConfig.excludeNonVideo ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                  {{ strategyConfig.excludeNonVideo ? '已启用' : '未启用' }}
-                </span>
+            <!-- 展开后的三个过滤子项 -->
+            <div v-show="excludeStrategyExpanded" class="space-y-2.5 pt-2 border-t border-gray-100 dark:border-gray-800">
+              <!-- 子项 1: 排除非视频文件 -->
+              <div class="p-3 rounded-lg bg-gray-50/70 dark:bg-gray-800/40 flex items-center justify-between gap-2">
+                <div class="pr-2">
+                  <div class="text-xs font-bold text-gray-800 dark:text-gray-200">跳过非视频文件</div>
+                  <p class="text-[11px] text-gray-400 mt-0.5">
+                    遇到 txt 文本、图片、网页链接等非视频文件时自动忽略，不移入媒体库
+                  </p>
+                </div>
                 <el-switch v-model="strategyConfig.excludeNonVideo" />
               </div>
-            </div>
 
-            <!-- 开关 2: 排除无中文字幕文件 -->
-            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-3.5 space-y-2">
-              <div>
-                <h5 class="text-xs font-bold text-gray-900 dark:text-white">排除无中文字幕文件 (针对外语片)</h5>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                  仅检查 TMDB 制片国家/地区不含中国大陆、中国台湾、中国香港、中国澳门的外语资源；若文件名及同级无中文字幕标识（中字/CHS/CHT/双语等），则予以排除跳过
-                </p>
-              </div>
-              <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
-                <span class="text-xs font-medium" :class="strategyConfig.excludeNoChineseSubtitle ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                  {{ strategyConfig.excludeNoChineseSubtitle ? '已启用' : '未启用' }}
-                </span>
+              <!-- 子项 2: 排除无中文字幕文件 -->
+              <div class="p-3 rounded-lg bg-gray-50/70 dark:bg-gray-800/40 flex items-center justify-between gap-2">
+                <div class="pr-2">
+                  <div class="text-xs font-bold text-gray-800 dark:text-gray-200">跳过无中文字幕的外语影视</div>
+                  <p class="text-[11px] text-gray-400 mt-0.5">
+                    仅针对外国影视：若文件名及所在文件夹中没有中文字幕标识（如中字、双语、CHS 等），则自动跳过不入库
+                  </p>
+                </div>
                 <el-switch v-model="strategyConfig.excludeNoChineseSubtitle" />
               </div>
-            </div>
 
-            <!-- 开关 3: 排除预告片及广告样本 -->
-            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 p-3.5 space-y-2">
-              <div>
-                <h5 class="text-xs font-bold text-gray-900 dark:text-white">排除预告片与样品文件</h5>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                  自动过滤文件名含 sample、trailer、preview、featurette 等副片及广告宣传小文件
-                </p>
-              </div>
-              <div class="rounded-lg bg-gray-50/80 dark:bg-gray-800/60 p-2.5 px-3 flex items-center justify-between border border-gray-100 dark:border-gray-750">
-                <span class="text-xs font-medium" :class="strategyConfig.excludeTrailersAndSamples ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                  {{ strategyConfig.excludeTrailersAndSamples ? '已启用' : '未启用' }}
-                </span>
+              <!-- 子项 3: 排除预告片及广告样本 -->
+              <div class="p-3 rounded-lg bg-gray-50/70 dark:bg-gray-800/40 flex items-center justify-between gap-2">
+                <div class="pr-2">
+                  <div class="text-xs font-bold text-gray-800 dark:text-gray-200">跳过预告片与宣传短片</div>
+                  <p class="text-[11px] text-gray-400 mt-0.5">
+                    自动过滤文件名含有 sample、trailer、preview 等预告片段或广告宣传小文件
+                  </p>
+                </div>
                 <el-switch v-model="strategyConfig.excludeTrailersAndSamples" />
               </div>
             </div>
