@@ -10,10 +10,10 @@
 </div>
 
 > [!IMPORTANT]
-> **🚀 新版本指路与开发分支（dev）：**
-> 本项目核心功能与界面已进行现代化大规模重构升级（包含全新 Vue 3 界面、TG 频道流式转存、移动云盘 302 直链 STRM 媒体库、智能影视刮削整理等全新特性）。**所有最新功能与活跃迭代均在 [`dev` 分支](https://github.com/139-auto-save/cloudpan-auto-save/tree/dev) 持续发布**。
+> **🚀 新版本测试指路（dev 分支）：**
+> 本项目核心功能与界面正在进行大规模重构升级（包含全新 Vue 3 界面、TG 频道流式转存、移动云盘 302 直链 STRM 媒体库、智能影视刮削整理等特性）。目前新版本正在 **[`dev` 分支](https://github.com/139-auto-save/cloudpan-auto-save/tree/dev)** 进行测试与验证，待测试完善后将合并回主分支（`main`）。
 > 
-> **体验最新完整功能与持续特性更新，请前往并切换至 👉 [`dev` 分支](https://github.com/139-auto-save/cloudpan-auto-save/tree/dev)**。
+> **如需抢先体验新版测试特性，请前往并切换至 👉 [`dev` 分支](https://github.com/139-auto-save/cloudpan-auto-save/tree/dev)**。
 
 > [!WARNING]
 > **⚠️ 使用风险提示与免责声明：**
