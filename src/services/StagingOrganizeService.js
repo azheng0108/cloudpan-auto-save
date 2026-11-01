@@ -10,6 +10,7 @@ const { CloudMaintenanceService } = require('./CloudMaintenanceService');
 const { EventService } = require('./eventService');
 const ConfigService = require('./ConfigService');
 const { MessageUtil } = require('./message');
+const MediaCardFormatter = require('../utils/mediaCardFormatter');
 const logger = require('../utils/logger');
 const { logTaskEvent } = require('../utils/logUtils');
 
