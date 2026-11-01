@@ -432,6 +432,7 @@ async function processCloud139Task(taskService, task, account) {
             task.lastFileUpdateTime = new Date();
             task.retryCount = 0;
             task.nextRetryTime = null;
+            task.lastError = null;
             task.lastCheckTime = new Date();
             await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
 
@@ -811,6 +812,7 @@ async function processCloud139Task(taskService, task, account) {
         task.currentEpisodes = existingMediaCount + fileCount;
         task.retryCount = 0;
         task.nextRetryTime = null;
+        task.lastError = null;
         task.lastCheckTime = new Date();
         
         // P1-01: 清除检查点（任务完成）
