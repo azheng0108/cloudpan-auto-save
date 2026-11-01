@@ -67,8 +67,8 @@ const registerAuthRoutes = (app, publicDir, assetVersion) => {
         try {
             const { TMDBService } = require('../services/tmdb');
             const tmdb = new TMDBService();
-            const posters = await tmdb.getTrendingWallPosters();
-            res.json({ success: true, data: posters || [] });
+            const wallpapers = await tmdb.getTrendingWallpapers();
+            res.json({ success: true, data: wallpapers || [] });
         } catch (_) {
             res.json({ success: true, data: [] });
         }
