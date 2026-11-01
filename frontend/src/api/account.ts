@@ -50,11 +50,11 @@ export const accountApi = {
   cancelDefault(id: number | string): Promise<any> {
     return http.delete(`/api/accounts/${id}/default`);
   },
-  getQrCode(): Promise<{ qrUrl: string; sessionKey: string }> {
-    return http.post('/api/accounts/qr-code');
+  createQrCode(): Promise<{ sID: string; dID: string; qrUrl: string; qrDataUrl: string; expiresIn: number }> {
+    return http.get('/api/accounts/qrcode/create');
   },
-  checkQrStatus(sessionKey: string): Promise<{ status: string; message?: string }> {
-    return http.get(`/api/accounts/qr-status/${sessionKey}`);
+  checkQrStatus(sID: string): Promise<{ status: 'waiting' | 'confirmed' | 'expired'; account?: string; message?: string }> {
+    return http.get('/api/accounts/qrcode/status', { params: { sID } });
   },
   getFolders(accountId: number | string, parentId?: string): Promise<CloudFileItem[]> {
     return http.get(`/api/folders/${accountId}`, { params: { folderId: parentId || '-11' } });

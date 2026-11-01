@@ -1228,6 +1228,20 @@
         "domain": "spa",
         "sourceFile": "src/routes/index.js",
         "order": 125
+      },
+      {
+        "method": "GET",
+        "path": "/api/accounts/qrcode/create",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api/accounts.js",
+        "order": 126
+      },
+      {
+        "method": "GET",
+        "path": "/api/accounts/qrcode/status",
+        "domain": "accounts",
+        "sourceFile": "src/routes/api/accounts.js",
+        "order": 127
       }
     ]
   }
