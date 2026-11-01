@@ -74,7 +74,7 @@ const aiForm = computed<ChannelAiConfig>(() => config.value.ai ?? AI_DEFAULTS);
 
 const config = ref<ChannelGlobalConfig>({
   enabled: true,
-  channels: ['https://t.me/yunpan139'],
+  channels: [],
   stagingFolderId: '',
   stagingFolderName: '/暂存区/频道转存',
   defaultTargetFolderId: '/',
@@ -116,6 +116,8 @@ const config = ref<ChannelGlobalConfig>({
 // 云盘账号 ID 与全局在线状态
 const defaultAccountId = ref<number | string>('');
 const hasActiveAccount = ref(false);
+const accountsLoaded = ref(false);
+const configLoaded = ref(false);
 
 function checkAccountGuard(actionName = '此操作'): boolean {
   if (!hasActiveAccount.value) {
@@ -781,6 +783,7 @@ async function loadInitialData() {
     } else {
       defaultAccountId.value = '';
     }
+    accountsLoaded.value = true;
 
     // 2. 加载频道监控集中配置
     const res = await channelApi.getGlobalConfig();
@@ -788,7 +791,7 @@ async function loadInitialData() {
       config.value = {
         ...config.value,
         ...res,
-        channels: Array.isArray(res.channels) && res.channels.length ? res.channels : ['https://t.me/yunpan139'],
+        channels: Array.isArray(res.channels) ? res.channels : [],
         stagingFolderId: res.stagingFolderId || '',
         stagingFolderName: res.stagingFolderName || '/暂存区/频道转存',
         defaultTargetFolderId: res.defaultTargetFolderId || '/',
@@ -815,6 +818,8 @@ async function loadInitialData() {
     ElMessage.error(`加载配置失败: ${err.message || '未知错误'}`);
   } finally {
     loading.value = false;
+    accountsLoaded.value = true;
+    configLoaded.value = true;
   }
 }
 
@@ -1319,7 +1324,7 @@ onUnmounted(() => {
 <template>
   <div class="channel-container space-y-6 w-full pb-16 text-slate-800 dark:text-slate-100">
     <!-- 全局未登录 / 凭证失效防空防护提示条 -->
-    <div v-if="!hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+    <div v-if="accountsLoaded && !hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
       <div class="flex items-center gap-2.5 text-xs">
         <AlertCircle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，频道监控转存已处于受保护防空状态。</span>
@@ -1520,7 +1525,19 @@ onUnmounted(() => {
         </div>
 
         <!-- 频道列表卡片网格展示 (对齐 AccountsView.vue) -->
-        <div v-if="!config.channels || !config.channels.length" class="text-center py-12 border border-dashed border-gray-200 dark:border-gray-800 rounded-xl">
+        <div v-if="!configLoaded" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div v-for="i in 2" :key="i" class="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111827] animate-pulse space-y-3">
+            <div class="flex items-center gap-2.5">
+              <div class="w-10 h-10 rounded-xl bg-gray-200 dark:bg-gray-800"></div>
+              <div class="space-y-1.5 flex-1">
+                <div class="h-3.5 bg-gray-200 dark:bg-gray-800 rounded w-1/3"></div>
+                <div class="h-2.5 bg-gray-200 dark:bg-gray-800 rounded w-2/3"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="!config.channels || !config.channels.length" class="text-center py-12 border border-dashed border-gray-200 dark:border-gray-800 rounded-xl">
           <Send class="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
           <p class="text-xs text-gray-400">暂无监控频道，点击上方「添加监控频道」开始自动追更</p>
         </div>
