@@ -1119,20 +1119,20 @@
       },
       {
         "method": "POST",
-        "path": "/api/ai/parse",
+        "path": "/api/ai/models",
         "domain": "ai",
         "sourceFile": "src/routes/api.js",
         "order": 110
       },
       {
-        "method": "GET",
-        "path": "/api/sync/config",
-        "domain": "sync",
+        "method": "POST",
+        "path": "/api/ai/parse",
+        "domain": "ai",
         "sourceFile": "src/routes/api.js",
         "order": 111
       },
       {
-        "method": "POST",
+        "method": "GET",
         "path": "/api/sync/config",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
@@ -1140,108 +1140,115 @@
       },
       {
         "method": "POST",
-        "path": "/api/sync/pan123/test",
+        "path": "/api/sync/config",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
         "order": 113
+      },
+      {
+        "method": "POST",
+        "path": "/api/sync/pan123/test",
+        "domain": "sync",
+        "sourceFile": "src/routes/api.js",
+        "order": 114
       },
       {
         "method": "GET",
         "path": "/api/sync/pan123/folders",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 114
+        "order": 115
       },
       {
         "method": "POST",
         "path": "/api/sync/pan123/mkdir",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 115
+        "order": 116
       },
       {
         "method": "GET",
         "path": "/api/sync/pan123/tasks",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 116
+        "order": 117
       },
       {
         "method": "POST",
         "path": "/api/sync/pan123/tasks/delete",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 117
+        "order": 118
       },
       {
         "method": "POST",
         "path": "/api/sync/cross-account/scan",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 118
+        "order": 119
       },
       {
         "method": "POST",
         "path": "/api/sync/cross-account/execute",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 119
+        "order": 120
       },
       {
         "method": "POST",
         "path": "/api/sync/rapid-links/export",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 120
+        "order": 121
       },
       {
         "method": "POST",
         "path": "/api/sync/rapid-links/import",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 121
+        "order": 122
       },
       {
         "method": "POST",
         "path": "/api/sync/offline/push",
         "domain": "sync",
         "sourceFile": "src/routes/api.js",
-        "order": 122
+        "order": 123
       },
       {
         "method": "POST",
         "path": "/api/pansou/search",
         "domain": "pansou",
         "sourceFile": "src/routes/api.js",
-        "order": 123
+        "order": 124
       },
       {
         "method": "GET",
         "path": "/api/pansou/health",
         "domain": "pansou",
         "sourceFile": "src/routes/api.js",
-        "order": 124
+        "order": 125
       },
       {
         "method": "GET",
         "path": "*",
         "domain": "spa",
         "sourceFile": "src/routes/index.js",
-        "order": 125
+        "order": 126
       },
       {
         "method": "GET",
         "path": "/api/accounts/qrcode/create",
         "domain": "accounts",
         "sourceFile": "src/routes/api/accounts.js",
-        "order": 126
+        "order": 127
       },
       {
         "method": "GET",
         "path": "/api/accounts/qrcode/status",
         "domain": "accounts",
         "sourceFile": "src/routes/api/accounts.js",
-        "order": 127
+        "order": 128
       }
     ]
   }

@@ -162,6 +162,64 @@ class AIService {
             error: testRes.error || '连接超时或鉴权失败'
         };
     }
+    /**
+     * 动态拉取指定服务商的可用模型列表（兼容 OpenAI, DeepSeek, GLM, Gemini 等）
+     * @param {object} [customConfig]
+     * @returns {Promise<{ success: boolean, models?: string[], error?: string }>}
+     */
+    async fetchModels(customConfig = null) {
+        const eff = this.getEffectiveConfig(customConfig);
+        if (eff.provider === 'mobile') {
+            return {
+                success: true,
+                models: ['移动灵犀智能大模型 (内置免配置)']
+            };
+        }
+        if (!eff.apiKey) {
+            return { success: false, error: '请先填写 API Key' };
+        }
+        if (!eff.baseUrl) {
+            return { success: false, error: '请先填写服务地址 (Base URL)' };
+        }
+        const proxy = ProxyUtil.getProxyAgent('ai') || ProxyUtil.getProxyAgent('openai');
+        try {
+            let url = `${eff.baseUrl}/models`;
+            const headers = {
+                'Authorization': `Bearer ${eff.apiKey}`,
+                'Content-Type': 'application/json'
+            };
+            if (eff.baseUrl.includes('googleapis.com') && !eff.baseUrl.includes('/openai')) {
+                url = `${eff.baseUrl}/v1beta/models?key=${eff.apiKey}`;
+                delete headers['Authorization'];
+            }
+            const res = await got.get(url, {
+                headers,
+                agent: proxy,
+                timeout: { connect: 5000, request: 15000 },
+                responseType: 'json'
+            });
+            const data = res.body?.data || res.body?.models || [];
+            const models = (Array.isArray(data) ? data : [])
+                .map(item => {
+                    if (typeof item === 'string') return item;
+                    return (item.id || item.name || '').replace(/^models\//, '');
+                })
+                .filter(Boolean);
+
+            if (!models.length) {
+                return { success: false, error: '服务商未返回任何可用模型，请手动输入模型名称' };
+            }
+            return { success: true, models };
+        } catch (err) {
+            let errorDetails = err.message;
+            if (err.response?.body) {
+                const b = err.response.body;
+                errorDetails += ` (${typeof b === 'object' ? (b.error?.message || JSON.stringify(b)) : b})`;
+            }
+            return { success: false, error: `获取模型列表失败: ${errorDetails}` };
+        }
+    }
+
 
     /**
      * AI 深度解析影视元信息（支持处理混淆文件夹、Telegram 复杂推文、复杂文件名）

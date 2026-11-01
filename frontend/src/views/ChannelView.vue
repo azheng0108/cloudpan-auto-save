@@ -420,6 +420,62 @@ const selectedProviderId = ref<string>('mobile');
 const currentProviderName = ref<string>('移动灵犀');
 const showApiKey = ref<boolean>(false);
 const modelInputMode = ref<'select' | 'manual'>('select');
+const isFetchingModels = ref<boolean>(false);
+const dynamicModelsMap = ref<Record<string, string[]>>({});
+
+const availableModelList = computed<string[]>(() => {
+  const dynamic = dynamicModelsMap.value[selectedProviderId.value];
+  if (dynamic && dynamic.length > 0) return dynamic;
+  return currentProviderPreset.value?.models || [];
+});
+
+async function handleFetchModelList() {
+  if (selectedProviderId.value === 'mobile') {
+    ElMessage.info('移动灵犀为内置全天候模型，已自动免密配置');
+    return;
+  }
+  if (!aiForm.value.baseUrl?.trim()) {
+    ElMessage.warning('请先填写服务地址 (Base URL)');
+    return;
+  }
+  if (!aiForm.value.apiKey?.trim()) {
+    ElMessage.warning('请先填写 API Key');
+    return;
+  }
+
+  isFetchingModels.value = true;
+  try {
+    const models = await channelApi.fetchAiModels({
+      baseUrl: aiForm.value.baseUrl.trim(),
+      apiKey: aiForm.value.apiKey.trim(),
+      provider: selectedProviderId.value,
+    });
+    if (models && models.length > 0) {
+      dynamicModelsMap.value[selectedProviderId.value] = models;
+      modelInputMode.value = 'select';
+      if (!aiForm.value.model || !models.includes(aiForm.value.model)) {
+        aiForm.value.model = models[0];
+      }
+      ElMessage.success(`成功拉取 ${models.length} 个可用模型！`);
+    } else {
+      ElMessage.warning('未拉取到可用模型，请手动输入');
+    }
+  } catch (err: any) {
+    ElMessage.error(`拉取模型列表失败: ${err.message || '服务异常'}`);
+  } finally {
+    isFetchingModels.value = false;
+  }
+}
+
+function handleModelSelectChange(val: string) {
+  if (val === '__ACTION_REFRESH__') {
+    handleFetchModelList();
+  } else if (val === '__ACTION_MANUAL__') {
+    modelInputMode.value = 'manual';
+  } else {
+    aiForm.value.model = val;
+  }
+}
 
 const currentProviderPreset = computed(() => {
   return AI_PROVIDERS.find(p => p.id === selectedProviderId.value);
@@ -2128,7 +2184,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 5. 模型 -->
+          <!-- 5. 模型 (完全对齐图4交互规范：支持刷新模型列表、手动输入与可选列表) -->
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">模型</label>
             <div class="flex-1 max-w-xl">
@@ -2137,39 +2193,69 @@ onUnmounted(() => {
                 class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-600 dark:text-gray-300 flex items-center justify-between"
               >
                 <span>灵犀多模态大模型 (移动云盘内置)</span>
-                <span class="text-[11px] text-blue-600 dark:text-blue-400 font-medium">免配置</span>
+                <span class="text-[10px] text-blue-600 dark:text-blue-400 font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40">免配置</span>
               </div>
               <div v-else class="space-y-2">
-                <div class="flex items-center gap-2">
+                <!-- 下拉选择模式 (包含刷新模型列表与手动输入选项) -->
+                <div v-if="modelInputMode === 'select'" class="flex items-center gap-2">
                   <div class="flex-1">
                     <el-select
-                      v-if="modelInputMode === 'select' && currentProviderPreset?.models.length"
-                      v-model="aiForm.model"
-                      placeholder="请选择模型"
+                      :model-value="aiForm.model || '未选择'"
+                      placeholder="请选择或刷新模型"
                       class="w-full !text-xs"
+                      @change="handleModelSelectChange"
                     >
-                      <el-option
-                        v-for="m in currentProviderPreset.models"
-                        :key="m"
-                        :label="m"
-                        :value="m"
-                      />
+                      <el-option-group label="快捷操作">
+                        <el-option value="__ACTION_REFRESH__">
+                          <div class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
+                            <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isFetchingModels }" />
+                            <span>{{ isFetchingModels ? '正在从服务商拉取模型...' : '刷新模型列表' }}</span>
+                          </div>
+                        </el-option>
+                        <el-option value="__ACTION_MANUAL__">
+                          <div class="flex items-center gap-1.5 text-gray-700 dark:text-gray-200 font-medium">
+                            <Edit3 class="w-3.5 h-3.5 text-gray-500" />
+                            <span>手动输入</span>
+                          </div>
+                        </el-option>
+                      </el-option-group>
+                      <el-option-group v-if="availableModelList.length > 0" label="可用模型列表">
+                        <el-option
+                          v-for="m in availableModelList"
+                          :key="m"
+                          :label="m"
+                          :value="m"
+                        />
+                      </el-option-group>
                     </el-select>
-                    <input
-                      v-else
-                      v-model="aiForm.model"
-                      type="text"
-                      placeholder="例如: gpt-4o 或 deepseek-chat"
-                      class="input-base text-xs w-full font-mono"
-                    />
                   </div>
                   <button
-                    v-if="currentProviderPreset?.models.length"
                     type="button"
-                    class="btn-default text-xs h-[34px] px-2.5 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer"
-                    @click="modelInputMode = modelInputMode === 'select' ? 'manual' : 'select'"
+                    class="btn-default text-xs h-[34px] px-2.5 text-blue-600 dark:text-blue-400 shrink-0 cursor-pointer flex items-center gap-1"
+                    :disabled="isFetchingModels"
+                    title="从当前服务地址拉取最新模型列表"
+                    @click="handleFetchModelList"
                   >
-                    <span>{{ modelInputMode === 'select' ? '手动输入' : '选择预设' }}</span>
+                    <RotateCw class="w-3 h-3" :class="{ 'animate-spin': isFetchingModels }" />
+                    <span>刷新</span>
+                  </button>
+                </div>
+
+                <!-- 手动自由输入模式 -->
+                <div v-else class="flex items-center gap-2">
+                  <input
+                    v-model="aiForm.model"
+                    type="text"
+                    placeholder="输入模型名称，例如: gpt-4o 或 gemini-1.5-pro"
+                    class="input-base text-xs w-full font-mono"
+                  />
+                  <button
+                    type="button"
+                    class="btn-default text-xs h-[34px] px-2.5 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1"
+                    title="切换为下拉点选模式"
+                    @click="modelInputMode = 'select'"
+                  >
+                    <span>从列表选择</span>
                   </button>
                 </div>
               </div>
@@ -2194,25 +2280,25 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 底部: 测试连接按钮与状态反馈 -->
-          <div class="pt-3 border-t border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center gap-3">
+          <!-- 底部: 测试连接按钮（完全对齐图4大圆角胶囊规范）与状态反馈 -->
+          <div class="pt-4 border-t border-gray-100 dark:border-gray-800 flex flex-col items-center justify-center gap-3">
             <button
               type="button"
-              class="btn-default text-xs h-9 px-4 flex items-center justify-center gap-1.5 cursor-pointer font-semibold shadow-sm w-full sm:w-auto shrink-0"
+              class="w-full py-2.5 px-6 rounded-2xl bg-blue-50 hover:bg-blue-100/80 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/60 font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-[0.99]"
               :disabled="isTestingConnection"
               @click="handleTestConnection"
             >
-              <RotateCw v-if="isTestingConnection" class="w-3.5 h-3.5 animate-spin text-blue-600" />
-              <Send v-else class="w-3.5 h-3.5 text-blue-600" />
-              <span>{{ isTestingConnection ? '测试中...' : '测试连接' }}</span>
+              <RotateCw v-if="isTestingConnection" class="w-4 h-4 animate-spin text-blue-600" />
+              <Send v-else class="w-4 h-4 text-blue-600" />
+              <span>{{ isTestingConnection ? '正在测试连接...' : '测试连接' }}</span>
             </button>
 
-            <div v-if="currentTestResult" class="flex items-center gap-2 min-w-0 flex-wrap">
+            <div v-if="currentTestResult" class="flex items-center justify-center gap-2 min-w-0 flex-wrap">
               <span v-if="currentTestResult.success" class="status-pill status-pill--success font-medium">
-                连接成功 · 延迟 {{ currentTestResult.latencyMs ?? '—' }}ms
+                ✅ 连接成功 · 延迟 {{ currentTestResult.latencyMs ?? '—' }}ms
               </span>
               <span v-else class="status-pill status-pill--danger font-medium">
-                连接失败
+                ❌ 连接失败
               </span>
               <span
                 v-if="currentTestResult.success && (currentTestResult.reply || currentTestResult.model)"
@@ -2223,7 +2309,7 @@ onUnmounted(() => {
               </span>
               <span
                 v-else-if="!currentTestResult.success && currentTestResult.error"
-                class="text-[11px] text-rose-600 dark:text-rose-400 truncate max-w-sm"
+                class="text-[11px] text-rose-600 dark:text-rose-400 truncate max-w-sm font-medium"
                 :title="currentTestResult.error"
               >
                 {{ currentTestResult.error }}

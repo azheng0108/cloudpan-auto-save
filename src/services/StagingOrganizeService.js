@@ -817,8 +817,20 @@ class StagingOrganizeService {
             const notifyOnOrganize = ConfigService.getConfigValue('channelMonitor.notifyOnOrganize', true);
             if (totalMovedFiles.length > 0) {
                 if (notifyOnOrganize) {
-                    const pushMsg = `[139云盘整理] 全量规范整理完成\n已归档 ${totalMovedFiles.length} 个视频文件至媒体库。\n包含作品组: ${readyGroups.length} 部。`;
-                    await this._messageUtil.sendMessage(pushMsg).catch(() => {});
+                    const firstGroup = readyGroups[0];
+                    const payload = MediaCardFormatter.buildMediaNotifyPayload({
+                        task: {
+                            resourceName: firstGroup?.title || '影视媒体库',
+                            tmdbContent: firstGroup?.tmdbEntity,
+                            realFolderName: firstGroup?.targetFolderPath || defaultTargetFolderName
+                        },
+                        fileList: totalMovedFiles.map(f => ({ name: f.finalName || f.originalName, size: f.size })),
+                        fileCount: totalMovedFiles.length,
+                        source: '139 移动云盘',
+                        targetFolder: firstGroup?.targetFolderPath || defaultTargetFolderName,
+                        actionTitle: '影视入库'
+                    });
+                    await this._messageUtil.sendMessage(payload).catch(() => {});
                 }
 
                 // 7.1 媒体整理入库后自动生成对应的 .strm 文件联动

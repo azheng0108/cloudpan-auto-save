@@ -501,6 +501,9 @@ class Cloud139Service {
             };
         } catch (err) {
             logTaskEvent(`获取移动云盘容量失败: ${err.message}`);
+            if (Cloud139Service.isAuthFailure(err) || err.fatal || err.statusCode === 401 || err.apiCode === '04000005' || err.apiCode === '05050006') {
+                throw err;
+            }
             return null;
         }
     }
