@@ -2410,17 +2410,14 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 核心开关 1: 后台定时检查暂存区 (对齐 ChannelView 规范) -->
+        <!-- 核心开关 1: 后台定时自动整理 (默认开启，对齐 ChannelView 规范) -->
         <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between mb-4">
           <div class="space-y-0.5 pr-3">
-            <div class="flex items-center gap-2">
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">
-                后台定时自动整理（自动处理遗漏或手动上传的视频）
-              </h4>
-              <span class="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded font-medium">推荐开启</span>
-            </div>
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">
+              后台定时自动整理
+            </h4>
             <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
-              平时每次追更转存成功时系统都会立刻自动整理。开启本功能后，系统还会在后台定时巡查待整理文件夹：即使是您自己在网盘里手动转存、手动上传，或之前网络中断漏掉的视频，系统也会自动帮您识别并整理进媒体库。
+              开启后按预设周期自动巡检源中转目录并归档入库；关闭则仅在追更转存落盘时触发即时整理
             </p>
           </div>
           <el-switch v-model="strategyConfig.autoOrganize" />
@@ -2465,7 +2462,7 @@ onUnmounted(() => {
               整理后自动删除空文件夹
             </h4>
             <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
-              当视频被分类改名搬移到媒体库后，自动删除源目录中已经被搬空的无用空文件夹，保持网盘整洁清爽。
+              当视频分类改名搬移到媒体库后，自动清理源目录中搬空的无用空文件夹，保持网盘整洁清爽
             </p>
           </div>
           <el-switch v-model="strategyConfig.sweepEmptyFolders" />
