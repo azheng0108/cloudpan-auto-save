@@ -333,6 +333,151 @@ function handleClearAllCards() {
 }
 
 
+
+interface ProviderOption {
+  id: string;
+  name: string;
+  label: string;
+  baseUrl: string;
+  models: string[];
+  isFree?: boolean;
+}
+
+const AI_PROVIDERS: ProviderOption[] = [
+  {
+    id: 'mobile',
+    name: '移动灵犀',
+    label: '移动灵犀 (免配置 · 推荐)',
+    baseUrl: 'https://ai.yun.139.com',
+    models: ['移动灵犀智能大模型 (内置免配置)'],
+    isFree: true,
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    label: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+  },
+  {
+    id: 'glm',
+    name: 'GLM',
+    label: 'GLM (智谱清言)',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    models: ['glm-4-flash', 'glm-4-plus', 'glm-4-air', 'glm-4-long'],
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    label: 'Anthropic (Claude)',
+    baseUrl: 'https://api.anthropic.com/v1',
+    models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    label: 'Gemini (Google)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    models: ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-3.8-flash-tiered'],
+  },
+  {
+    id: 'custom',
+    name: '自定义',
+    label: '自定义 (兼容 OpenAI 协议)',
+    baseUrl: '',
+    models: [],
+  },
+];
+
+const selectedProviderId = ref<string>('mobile');
+const currentProviderName = ref<string>('移动灵犀');
+const showApiKey = ref<boolean>(false);
+const modelInputMode = ref<'select' | 'manual'>('select');
+
+const currentProviderPreset = computed(() => {
+  return AI_PROVIDERS.find(p => p.id === selectedProviderId.value);
+});
+
+const isTestingConnection = computed(() => {
+  return selectedProviderId.value === 'mobile' ? mobileAiTestLoading.value : aiTestLoading.value;
+});
+
+const currentTestResult = computed(() => {
+  return selectedProviderId.value === 'mobile' ? mobileAiTestResult.value : aiTestResult.value;
+});
+
+function syncProviderFromConfig() {
+  const p = (aiForm.value as any).provider;
+  if (p && AI_PROVIDERS.some(item => item.id === p)) {
+    selectedProviderId.value = p;
+    currentProviderName.value = (aiForm.value as any).providerName || AI_PROVIDERS.find(item => item.id === p)?.name || '移动灵犀';
+    return;
+  }
+  const base = (aiForm.value.baseUrl || '').toLowerCase();
+  if (base.includes('deepseek')) {
+    selectedProviderId.value = 'deepseek';
+    currentProviderName.value = 'DeepSeek';
+  } else if (base.includes('bigmodel') || base.includes('zhipu')) {
+    selectedProviderId.value = 'glm';
+    currentProviderName.value = 'GLM';
+  } else if (base.includes('openai.com')) {
+    selectedProviderId.value = 'openai';
+    currentProviderName.value = 'OpenAI';
+  } else if (base.includes('anthropic.com')) {
+    selectedProviderId.value = 'anthropic';
+    currentProviderName.value = 'Anthropic';
+  } else if (base.includes('googleapis.com')) {
+    selectedProviderId.value = 'gemini';
+    currentProviderName.value = 'Gemini';
+  } else if (aiForm.value.apiKey && aiForm.value.baseUrl) {
+    selectedProviderId.value = 'custom';
+    currentProviderName.value = '自定义';
+  } else {
+    selectedProviderId.value = 'mobile';
+    currentProviderName.value = '移动灵犀';
+  }
+}
+
+function onProviderChange(newId: string) {
+  selectedProviderId.value = newId;
+  const p = AI_PROVIDERS.find(item => item.id === newId);
+  if (!p) return;
+  currentProviderName.value = p.name;
+  (aiForm.value as any).provider = newId;
+  (aiForm.value as any).providerName = p.name;
+
+  if (newId === 'mobile') {
+    aiForm.value.baseUrl = p.baseUrl;
+    aiForm.value.model = '移动灵犀智能大模型';
+    mobileFallbackForm.value.enable = true;
+  } else {
+    if (p.baseUrl) {
+      aiForm.value.baseUrl = p.baseUrl;
+    }
+    if (p.models && p.models.length > 0) {
+      aiForm.value.model = p.models[0];
+      modelInputMode.value = 'select';
+    } else {
+      modelInputMode.value = 'manual';
+    }
+  }
+}
+
+function handleTestConnection() {
+  if (selectedProviderId.value === 'mobile') {
+    handleTestMobileAiConnection();
+  } else {
+    handleTestAiConnection();
+  }
+}
+
 // ================= AI 智能识别：体验状态与试算链路（试算与线上转存零副作用隔离） =================
 // 连接测试状态（结果随表单值变更不自动失效，保留最近一次结果避免编辑即闪烁）
 const aiTestLoading = ref<boolean>(false);
@@ -1843,144 +1988,210 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- AI 模型服务双引擎配置 (自定义 AI + 内置免密通道) -->
-        <div class="space-y-3.5 mb-5">
-          <!-- 1. 自定义 AI 服务 (OpenAI 协议兼容) -->
-          <div class="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                自定义 AI 服务 (OpenAI 协议兼容)
-              </span>
-              <span class="text-[11px] text-gray-400">支持 OpenAI / Gemini / DeepSeek / 本地 Ollama 等</span>
-            </div>
+        <!-- API 服务配置卡片 (对齐专业影视系统规范：移动灵犀免配置排首位，兼容 DeepSeek / OpenAI 等) -->
+        <div class="rounded-2xl bg-white dark:bg-[#111827] border border-gray-200/80 dark:border-gray-800 p-5 shadow-sm space-y-4 mb-5">
+          <div class="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+            <span class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <Sparkles class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span>API 服务（AI 模型与提供商）</span>
+            </span>
+            <span class="text-[11px] text-gray-400">支持 移动灵犀免配置 / DeepSeek / GLM / OpenAI / Gemini</span>
+          </div>
 
-            <!-- 服务参数三输入项 -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">服务地址 (Base URL)</label>
-                <input
-                  v-model="aiForm.baseUrl"
-                  type="text"
-                  placeholder="例如: http://127.0.0.1:8045/v1"
-                  class="input-base font-mono text-xs w-full"
-                />
+          <!-- 1. API 服务选择器 -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">API 服务</label>
+            <div class="flex-1 max-w-xl">
+              <el-select
+                v-model="selectedProviderId"
+                placeholder="请选择 API 服务"
+                class="w-full !text-xs"
+                @change="onProviderChange"
+              >
+                <el-option
+                  v-for="p in AI_PROVIDERS"
+                  :key="p.id"
+                  :label="p.label"
+                  :value="p.id"
+                >
+                  <div class="flex items-center justify-between w-full">
+                    <span class="font-medium">{{ p.label }}</span>
+                    <span v-if="p.isFree" class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40">免配置 · 内置</span>
+                  </div>
+                </el-option>
+              </el-select>
+            </div>
+          </div>
+
+          <!-- 2. 名称 -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">名称</label>
+            <div class="flex-1 max-w-xl">
+              <input
+                v-model="currentProviderName"
+                type="text"
+                placeholder="服务名称"
+                class="input-base text-xs w-full font-medium"
+              />
+            </div>
+          </div>
+
+          <!-- 3. 服务地址 (Base URL) -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">服务地址</label>
+            <div class="flex-1 max-w-xl">
+              <div
+                v-if="selectedProviderId === 'mobile'"
+                class="input-base text-xs w-full font-mono !bg-emerald-50/60 dark:!bg-emerald-950/20 !border-emerald-300/60 dark:!border-emerald-800/40 text-emerald-800 dark:text-emerald-300 flex items-center justify-between"
+              >
+                <span>https://ai.yun.139.com</span>
+                <span class="text-[11px] font-sans font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <ShieldCheck class="w-3.5 h-3.5" />
+                  <span>内置免密直连</span>
+                </span>
               </div>
-              <div>
-                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">API Key</label>
+              <input
+                v-else
+                v-model="aiForm.baseUrl"
+                type="text"
+                placeholder="例如: https://api.openai.com/v1"
+                class="input-base text-xs w-full font-mono"
+              />
+            </div>
+          </div>
+
+          <!-- 4. API Key -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">API Key</label>
+            <div class="flex-1 max-w-xl">
+              <div
+                v-if="selectedProviderId === 'mobile'"
+                class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-400 dark:text-gray-500 cursor-not-allowed flex items-center justify-between"
+              >
+                <span>已内置全天候免密通行凭证（无需填写任何 Key）</span>
+                <Lock class="w-3.5 h-3.5 text-gray-400" />
+              </div>
+              <div v-else class="relative w-full">
                 <input
                   v-model="aiForm.apiKey"
-                  type="password"
+                  :type="showApiKey ? 'text' : 'password'"
                   autocomplete="off"
-                  placeholder="sk-...（已配置时以掩码呈现）"
-                  class="input-base font-mono text-xs w-full"
+                  placeholder="必填，例如: sk-..."
+                  class="input-base text-xs w-full font-mono pr-9"
                 />
-              </div>
-              <div>
-                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">模型名称</label>
-                <input
-                  v-model="aiForm.model"
-                  type="text"
-                  placeholder="例如: gemini-3.8-flash-tiered"
-                  class="input-base font-mono text-xs w-full"
-                />
-              </div>
-            </div>
-
-            <!-- 自定义 AI 测试连接按钮与反馈 -->
-            <div class="flex flex-col sm:flex-row sm:items-center gap-3 pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
-              <button
-                type="button"
-                class="btn-default text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer font-medium shrink-0"
-                :disabled="aiTestLoading"
-                @click="handleTestAiConnection"
-              >
-                <RotateCw v-if="aiTestLoading" class="w-3.5 h-3.5 animate-spin" />
-                <Send v-else class="w-3.5 h-3.5" />
-                <span>{{ aiTestLoading ? '测试中...' : '测试自定义 AI 连通' }}</span>
-              </button>
-
-              <div v-if="aiTestResult" class="flex items-center gap-2 min-w-0 flex-wrap">
-                <span v-if="aiTestResult.success" class="status-pill status-pill--success">
-                  连接成功 · 延迟 {{ aiTestResult.latencyMs ?? '—' }}ms · 模型 {{ aiTestResult.model || '—' }}
-                </span>
-                <span v-else class="status-pill status-pill--danger">连接失败</span>
-                <span
-                  v-if="aiTestResult.success && aiTestResult.reply"
-                  class="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-xs"
-                  :title="aiTestResult.reply"
+                <button
+                  type="button"
+                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  @click="showApiKey = !showApiKey"
                 >
-                  {{ aiTestResult.reply }}
-                </span>
-                <span
-                  v-else-if="!aiTestResult.success && aiTestResult.error"
-                  class="text-[11px] text-rose-600 dark:text-rose-400 truncate max-w-xs"
-                  :title="aiTestResult.error"
-                >
-                  {{ aiTestResult.error }}
-                </span>
+                  <EyeOff v-if="showApiKey" class="w-4 h-4" />
+                  <Eye v-else class="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>
 
-          <!-- 2. 内置免密智能通道 (自动兜底) -->
-          <div class="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60">
-            <div class="flex items-center justify-between gap-3 mb-2">
-              <div class="space-y-0.5 pr-3">
-                <span class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                  内置免密智能通道（自动兜底）
-                </span>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                  无需配置额外 API Key；当自定义 AI 未配置或接口不可用时，自动调度系统内置通道完成语义解析与联网校准
-                </p>
+          <!-- 5. 模型 -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">模型</label>
+            <div class="flex-1 max-w-xl">
+              <div
+                v-if="selectedProviderId === 'mobile'"
+                class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-600 dark:text-gray-300 flex items-center justify-between"
+              >
+                <span>灵犀多模态大模型 (移动云盘内置)</span>
+                <span class="text-[11px] text-blue-600 dark:text-blue-400 font-medium">免配置</span>
               </div>
-              <el-switch v-model="mobileFallbackForm.enable" />
-            </div>
-
-            <template v-if="mobileFallbackForm.enable">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/50">
-                <div class="flex items-center justify-between gap-2">
-                  <div class="min-w-0">
-                    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">联网搜索核实</span>
-                    <p class="text-[10px] text-gray-500 dark:text-gray-400 truncate">识别影视时联网核实首播年份与官方正式译名</p>
+              <div v-else class="space-y-2">
+                <div class="flex items-center gap-2">
+                  <div class="flex-1">
+                    <el-select
+                      v-if="modelInputMode === 'select' && currentProviderPreset?.models.length"
+                      v-model="aiForm.model"
+                      placeholder="请选择模型"
+                      class="w-full !text-xs"
+                    >
+                      <el-option
+                        v-for="m in currentProviderPreset.models"
+                        :key="m"
+                        :label="m"
+                        :value="m"
+                      />
+                    </el-select>
+                    <input
+                      v-else
+                      v-model="aiForm.model"
+                      type="text"
+                      placeholder="例如: gpt-4o 或 deepseek-chat"
+                      class="input-base text-xs w-full font-mono"
+                    />
                   </div>
-                  <el-switch v-model="mobileFallbackForm.networkSearch" size="small" />
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <div class="min-w-0">
-                    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">凭证主动续期</span>
-                    <p class="text-[10px] text-gray-500 dark:text-gray-400 truncate">后台自动接力刷新免密凭据，长期稳定免维护</p>
-                  </div>
-                  <el-switch v-model="mobileFallbackForm.proactiveRenew" size="small" />
-                </div>
-              </div>
-
-              <!-- 内置通道连通性测试 -->
-              <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 mt-3 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
-                <button
-                  type="button"
-                  class="btn-default text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer font-medium shrink-0"
-                  :disabled="mobileAiTestLoading"
-                  @click="handleTestMobileAiConnection"
-                >
-                  <RotateCw v-if="mobileAiTestLoading" class="w-3.5 h-3.5 animate-spin" />
-                  <Send v-else class="w-3.5 h-3.5" />
-                  <span>{{ mobileAiTestLoading ? '测试中...' : '测试内置通道连通' }}</span>
-                </button>
-                <div v-if="mobileAiTestResult" class="flex items-center gap-2 min-w-0 flex-wrap">
-                  <span v-if="mobileAiTestResult.success" class="status-pill status-pill--success">
-                    内置通道正常 · 延迟 {{ mobileAiTestResult.latencyMs ?? '—' }}ms
-                  </span>
-                  <span v-else class="status-pill status-pill--danger">内置通道不可达</span>
-                  <span
-                    v-if="!mobileAiTestResult.success && mobileAiTestResult.error"
-                    class="text-[11px] text-rose-600 dark:text-rose-400 truncate max-w-xs"
-                    :title="mobileAiTestResult.error"
+                  <button
+                    v-if="currentProviderPreset?.models.length"
+                    type="button"
+                    class="btn-default text-xs h-[34px] px-2.5 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer"
+                    @click="modelInputMode = modelInputMode === 'select' ? 'manual' : 'select'"
                   >
-                    {{ mobileAiTestResult.error }}
-                  </span>
+                    <span>{{ modelInputMode === 'select' ? '手动输入' : '选择预设' }}</span>
+                  </button>
                 </div>
               </div>
-            </template>
+            </div>
+          </div>
+
+          <!-- 移动灵犀独有的附加增强开关行 (网络搜索核实与凭证主动续期) -->
+          <div v-if="selectedProviderId === 'mobile'" class="pt-3 border-t border-gray-100 dark:border-gray-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
+              <div>
+                <span class="text-xs font-semibold text-gray-800 dark:text-gray-200">联网搜索核实</span>
+                <p class="text-[10px] text-gray-400">实时检索官方发布年份与正式剧名</p>
+              </div>
+              <el-switch v-model="mobileFallbackForm.networkSearch" size="small" />
+            </div>
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
+              <div>
+                <span class="text-xs font-semibold text-gray-800 dark:text-gray-200">凭证主动续期</span>
+                <p class="text-[10px] text-gray-400">后台自动续签通行凭据，永久免维护</p>
+              </div>
+              <el-switch v-model="mobileFallbackForm.proactiveRenew" size="small" />
+            </div>
+          </div>
+
+          <!-- 底部: 测试连接按钮与状态反馈 -->
+          <div class="pt-3 border-t border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center gap-3">
+            <button
+              type="button"
+              class="btn-default text-xs h-9 px-4 flex items-center justify-center gap-1.5 cursor-pointer font-semibold shadow-sm w-full sm:w-auto shrink-0"
+              :disabled="isTestingConnection"
+              @click="handleTestConnection"
+            >
+              <RotateCw v-if="isTestingConnection" class="w-3.5 h-3.5 animate-spin text-blue-600" />
+              <Send v-else class="w-3.5 h-3.5 text-blue-600" />
+              <span>{{ isTestingConnection ? '测试中...' : '测试连接' }}</span>
+            </button>
+
+            <div v-if="currentTestResult" class="flex items-center gap-2 min-w-0 flex-wrap">
+              <span v-if="currentTestResult.success" class="status-pill status-pill--success font-medium">
+                连接成功 · 延迟 {{ currentTestResult.latencyMs ?? '—' }}ms
+              </span>
+              <span v-else class="status-pill status-pill--danger font-medium">
+                连接失败
+              </span>
+              <span
+                v-if="currentTestResult.success && (currentTestResult.reply || currentTestResult.model)"
+                class="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-sm"
+                :title="currentTestResult.reply || currentTestResult.model"
+              >
+                {{ currentTestResult.model ? '[' + currentTestResult.model + '] ' : '' }}{{ currentTestResult.reply || '' }}
+              </span>
+              <span
+                v-else-if="!currentTestResult.success && currentTestResult.error"
+                class="text-[11px] text-rose-600 dark:text-rose-400 truncate max-w-sm"
+                :title="currentTestResult.error"
+              >
+                {{ currentTestResult.error }}
+              </span>
+            </div>
           </div>
         </div>
 
