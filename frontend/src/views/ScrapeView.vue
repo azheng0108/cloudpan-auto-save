@@ -2410,14 +2410,14 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 核心开关 1: 影视自动整理入库总开关 (默认开启，对齐 ChannelView 规范) -->
+        <!-- 核心开关 1: 后台定时自动整理 (各司其职，对齐 ChannelView 规范) -->
         <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between mb-4">
           <div class="space-y-0.5 pr-3">
             <h4 class="text-xs font-bold text-gray-900 dark:text-white">
-              影视自动整理入库总开关
+              后台定时自动整理
             </h4>
             <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
-              开启后转存落地即刻自动识别归档，并定时巡检中转目录兜底；关闭则停止所有自动整理，仅保留手动触发
+              开启后按设定频率定时扫描源中转目录并规范入库；关闭则停止自动整理，仅保留手动触发
             </p>
           </div>
           <el-switch v-model="strategyConfig.autoOrganize" />
@@ -2451,7 +2451,7 @@ onUnmounted(() => {
             </div>
           </div>
           <span class="form-text">
-            后台自动巡检待整理中转目录的周期，发现遗留或手动上传的影视资源即刻自动识别并规范归档（建议 15~60 分钟）
+            后台自动巡检待整理中转目录的周期，发现视频即刻识别并归档入库（如需更快入库可设为 5 分钟）
           </span>
         </div>
 

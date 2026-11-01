@@ -1365,37 +1365,8 @@ class TgChannelMonitorService {
         // 4.5 自动检测并增量自愈 139 移动云盘因同名冲突追加时间戳生成的克隆目录
         await this.mergeTimestampConflictFolders(cloud139, effectiveStagingFolderId);
 
-        // 5. 生产者与消费者解耦：转存成功即完成该推文摄入；媒体库整理作为独立管道异步执行
+        // 5. 生产者与消费者彻底解耦：转存成功即完成该推文摄入；后续由定时整理调度器按设定频率统一归档
         const totalTransferred = coPathLst.length + caPathLst.length;
-        const targetResolved = this.resolveTargetFolder(post.text, monitor);
-
-        // 若开启了 autoOrganize 且已明确配置有效的归档目标目录，在 process.nextTick 异步触发独立整理
-        const cmConfig = ConfigService.getConfigValue('channelMonitor') || {};
-        const isTargetValid = Boolean(targetResolved?.folderId && String(targetResolved.folderId).trim() && String(targetResolved.folderId).trim() !== '/' && String(targetResolved.folderId).trim() !== '0');
-        if (cmConfig.autoOrganize !== false && isTargetValid) {
-            process.nextTick(async () => {
-                try {
-                    await this.organizeStagingFolder({
-                        accountId: monitor.accountId,
-                        stagingFolderId: effectiveStagingFolderId,
-                        stagingFolderName: effectiveStagingFolderName,
-                        rootStagingFolderId: stagingFolderId,
-                        isBatchIsolated,
-                        targetFolderId: targetResolved.folderId,
-                        targetFolderName: targetResolved.folderName,
-                        post,
-                        tmdbId: preFlight.tmdbId || undefined,
-                        tmdbType: preFlight.mediaType || undefined,
-                        skipChannelCheck: true,
-                        silentIfEmpty: true
-                    });
-                } catch (orgErr) {
-                    logger.warn(`[频道监控-异步整理] 后台整理异常: ${orgErr.message}`);
-                }
-            });
-        } else if (cmConfig.autoOrganize !== false && !isTargetValid) {
-            logger.warn(`[频道监控-整理跳过] 未选定独立的归档目标目录，转存文件保留在批次暂存区，跳过自动归档`);
-        }
 
         return {
             status: 'success',
