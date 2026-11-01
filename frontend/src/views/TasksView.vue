@@ -65,7 +65,7 @@ const form = reactive({
   resourceName: '',
   realFolderId: '',
   realFolderName: '',
-  totalEpisodes: 0,
+  totalEpisodes: '' as number | string,
   currentEpisodes: 0,
   status: 'pending' as 'pending' | 'processing' | 'completed' | 'failed',
   enableCron: true,
@@ -269,9 +269,6 @@ function handleShareLinkInput(val: string) {
     const { title: cleanTitle, year, episode } = cleanResourceTitle(textWithoutUrl);
     if (cleanTitle) {
       form.resourceName = cleanTitle;
-      if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
-        form.totalEpisodes = episode;
-      }
       searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
     }
   }
@@ -306,9 +303,6 @@ async function searchTmdbCandidates(opts?: { queryOverride?: string; yearOverrid
     form.resourceName = cleanTitle;
   }
   // 若提取到了有效集数且当前总集数目标为 0 或未填，自动联动赋值
-  if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
-    form.totalEpisodes = episode;
-  }
 
   const searchYear = options?.yearOverride || cleanYear || '';
 
@@ -433,9 +427,6 @@ function applyPansouCandidate(item: PansouResourceItem) {
     const { title: cleanTitle, year, episode } = cleanResourceTitle(item.title);
     if (cleanTitle) {
       form.resourceName = cleanTitle;
-      if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
-        form.totalEpisodes = episode;
-      }
       searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
     } else {
       // 未能可靠提纯出规范片名：杜绝填入脏文本，等待用户手动填写
@@ -449,9 +440,6 @@ function applyPansouCandidate(item: PansouResourceItem) {
     const { title: cleanTitle, year, episode } = cleanResourceTitle(form.resourceName);
     if (cleanTitle && cleanTitle !== form.resourceName) {
       form.resourceName = cleanTitle;
-      if (episode > 0 && (!form.totalEpisodes || form.totalEpisodes === 0)) {
-        form.totalEpisodes = episode;
-      }
       if (!form.tmdbId) {
         searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
       }
@@ -512,7 +500,7 @@ function openInlineAddForm() {
     resourceName: '',
     realFolderId: stagingFolderId.value || '/',
     realFolderName: stagingFolderName.value || '临时存放',
-    totalEpisodes: 0,
+    totalEpisodes: '' as any,
     currentEpisodes: 0,
     status: 'pending',
     enableCron: true,
@@ -562,7 +550,7 @@ function openInlineEditForm(task: TaskItem) {
     resourceName: task.resourceName || '',
     realFolderId: task.realFolderId || '/',
     realFolderName: task.realFolderName || '根目录 (/)',
-    totalEpisodes: task.totalEpisodes || 0,
+    totalEpisodes: task.totalEpisodes && task.totalEpisodes > 0 ? task.totalEpisodes : '',
     currentEpisodes: task.currentEpisodes || 0,
     status: task.status || 'pending',
     enableCron: !!task.enableCron,
@@ -989,25 +977,10 @@ function getErrorTier(errText?: string) {
 
       <!-- 表单主体网格 -->
       <form @submit.prevent="handleSubmit" class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- 139 账号选择 -->
-          <div>
-            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-              139 移动云盘账号 <span class="text-red-500">*</span>
-            </label>
-            <select
-              v-model="form.accountId"
-              class="input-base text-xs w-full bg-white dark:bg-slate-900"
-              required
-            >
-              <option v-for="acc in accounts" :key="acc.id" :value="acc.id">
-                {{ acc.alias || acc.username }} (ID: {{ acc.id }})
-              </option>
-            </select>
-          </div>
-
-          <!-- 分享链接输入 -->
-          <div>
+        <!-- 阶段 1: 资源链接与提取码（同一行自然联动，动线顺畅） -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <!-- 139 云盘分享链接 (占 3 列) -->
+          <div class="md:col-span-3">
             <div class="flex items-center justify-between mb-1.5">
               <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300">
                 139 云盘分享链接 <span class="text-red-500">*</span>
@@ -1044,14 +1017,27 @@ function getErrorTier(errText?: string) {
               @input="handleShareLinkInput(form.shareLink)"
             />
           </div>
+
+          <!-- 访问提取码 (占 1 列，紧挨链接) -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              访问提取码 (可选)
+            </label>
+            <input
+              v-model="form.accessCode"
+              type="text"
+              placeholder="无密码则留空"
+              class="input-base text-xs font-mono w-full"
+            />
+          </div>
         </div>
 
-        <!-- PanSou 盘搜展开面板 (极简灰蓝雅致风格，杜绝杂色与拥挤) -->
+        <!-- PanSou 盘搜展开面板 (极简灰蓝雅致风格，在链接下方紧随展开) -->
         <div
           v-if="showPansouSearch"
           class="p-3.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200/90 dark:border-slate-700/80 space-y-3 transition-all"
         >
-          <!-- 搜索框与按钮组 (flex 结构彻底杜绝图标与文本重叠) -->
+          <!-- 搜索框与按钮组 -->
           <div class="flex items-center gap-2">
             <div class="flex-1 flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 h-[38px] focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 transition-all">
               <Search class="w-4 h-4 text-slate-400 shrink-0 mr-2.5" />
@@ -1085,7 +1071,7 @@ function getErrorTier(errText?: string) {
             </button>
           </div>
 
-          <!-- 异常错误提示条 (温和告警，去冗余杂色) -->
+          <!-- 异常错误提示条 -->
           <div
             v-if="pansouError"
             class="p-2.5 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/70 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs flex items-center justify-between gap-2"
@@ -1102,7 +1088,7 @@ function getErrorTier(errText?: string) {
             </router-link>
           </div>
 
-          <!-- 候选资源卡片列表 (极简双栏，自然灰阶蓝调) -->
+          <!-- 候选资源卡片列表 -->
           <div v-if="pansouCandidates.length > 0" class="space-y-2">
             <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
               <span>找到 {{ pansouCandidates.length }} 条 139 移动云盘资源（点击直接填入表单）：</span>
@@ -1143,7 +1129,7 @@ function getErrorTier(errText?: string) {
             </div>
           </div>
 
-          <!-- 空状态提示 (清爽克制) -->
+          <!-- 空状态提示 -->
           <div
             v-else-if="hasSearched && !pansouSearching && !pansouError"
             class="py-4 text-center text-xs text-slate-400 space-y-1"
@@ -1155,22 +1141,8 @@ function getErrorTier(errText?: string) {
           </div>
         </div>
 
-
-
+        <!-- 阶段 2: 影视识别与转存账号（核心业务对称排布） -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- 提取码 -->
-          <div>
-            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-              访问提取码 (可选)
-            </label>
-            <input
-              v-model="form.accessCode"
-              type="text"
-              placeholder="无密码则留空"
-              class="input-base text-xs font-mono w-full"
-            />
-          </div>
-
           <!-- 影视剧集名称与智能匹配 -->
           <div>
             <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
@@ -1187,7 +1159,7 @@ function getErrorTier(errText?: string) {
               />
               <button
                 type="button"
-                class="btn-default text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer"
+                class="btn-default text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer font-medium"
                 :disabled="tmdbSearching"
                 @click="searchTmdbCandidates"
               >
@@ -1196,6 +1168,22 @@ function getErrorTier(errText?: string) {
                 <span>{{ tmdbSearching ? '检索中...' : '智能匹配' }}</span>
               </button>
             </div>
+          </div>
+
+          <!-- 139 账号选择 -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+              139 移动云盘账号 <span class="text-red-500">*</span>
+            </label>
+            <select
+              v-model="form.accountId"
+              class="input-base text-xs w-full bg-white dark:bg-slate-900"
+              required
+            >
+              <option v-for="acc in accounts" :key="acc.id" :value="acc.id">
+                {{ acc.alias || acc.username }} (ID: {{ acc.id }})
+              </option>
+            </select>
           </div>
         </div>
 
@@ -1283,8 +1271,9 @@ function getErrorTier(errText?: string) {
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <!-- 追更轮询频率 -->
+        <!-- 阶段 3: 调度策略与选填项（左右平衡对称） -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- 追更轮询周期 -->
           <div>
             <div class="flex items-center justify-between mb-1.5">
               <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300">
@@ -1298,13 +1287,13 @@ function getErrorTier(errText?: string) {
                 {{ showCustomCron ? '收起自定义' : '自定义 Cron' }}
               </button>
             </div>
-            <div class="grid grid-cols-2 gap-1.5 mb-1.5">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mb-1.5">
               <button
                 v-for="p in [
                   { id: '30m', label: '30分钟 (急速)' },
                   { id: '2h', label: '2小时 (推荐)' },
                   { id: '6h', label: '6小时 (平缓)' },
-                  { id: '1d', label: '每天一次 (凌晨3点)' },
+                  { id: '1d', label: '每天一次' },
                 ]"
                 :key="p.id"
                 type="button"
@@ -1324,31 +1313,34 @@ function getErrorTier(errText?: string) {
             />
           </div>
 
-          <!-- 追更总集数 -->
-          <div>
-            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-              总集数目标 (0 为不限)
-            </label>
-            <input
-              v-model.number="form.totalEpisodes"
-              type="number"
-              min="0"
-              placeholder="0 表示连载不限集数"
-              class="input-base text-xs font-mono w-full"
-            />
-          </div>
+          <!-- 右列: 总集数与任务备注紧凑并排 (绝不预填任何字符，保持纯净) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- 追更总集数 -->
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                总集数目标 (选填)
+              </label>
+              <input
+                v-model="form.totalEpisodes"
+                type="number"
+                min="1"
+                placeholder="连载中留空 (如: 12)"
+                class="input-base text-xs font-mono w-full"
+              />
+            </div>
 
-          <!-- 任务备注 -->
-          <div>
-            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-              任务备注 (选填)
-            </label>
-            <input
-              v-model="form.remark"
-              type="text"
-              placeholder="例如: 某论坛更新、朋友分享"
-              class="input-base text-xs w-full"
-            />
+            <!-- 任务备注 -->
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                任务备注 (选填)
+              </label>
+              <input
+                v-model="form.remark"
+                type="text"
+                placeholder="例如: 某论坛更新"
+                class="input-base text-xs w-full"
+              />
+            </div>
           </div>
         </div>
 
