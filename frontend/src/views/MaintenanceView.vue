@@ -41,6 +41,8 @@ import {
   Film,
   X,
   Plus,
+  Sliders,
+  ArrowRight,
 } from 'lucide-vue-next';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { accountApi } from '../api/account';
@@ -288,6 +290,54 @@ const isBannedCleaning = ref(false);
 const bannedScanResult = ref<BannedScanResult | null>(null);
 const bannedCleanResult = ref<BannedCleanResult | null>(null);
 const selectedBannedIds = ref<Set<string>>(new Set());
+
+// 高级治理选项折叠状态（默认收起以最大化聚焦核心行动区，消除70%垂直高度占用）
+const showGovernanceSettings = ref(false);
+
+const BANNED_LAST_SCAN_KEY = 'cloudpan_banned_last_scan_v1';
+
+function saveBannedScanResult(result: BannedScanResult | null) {
+  try {
+    if (!result) {
+      localStorage.removeItem(BANNED_LAST_SCAN_KEY);
+    } else {
+      localStorage.setItem(BANNED_LAST_SCAN_KEY, JSON.stringify(result));
+    }
+  } catch (_) {}
+}
+
+function loadCachedBannedScanResult() {
+  try {
+    const raw = localStorage.getItem(BANNED_LAST_SCAN_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        bannedScanResult.value = parsed;
+      }
+    }
+  } catch (_) {}
+}
+
+// 违规巡检与治理流水（近5条，就地即时展示）
+const recentBannedJobs = computed(() => {
+  return maintenanceJobs.value
+    .filter((j) => ['banned_scan', 'banned_clean', 'empty_prune'].includes(j.type))
+    .slice(0, 5);
+});
+
+function getBannedJobTypeBadgeClass(type: string): string {
+  if (type === 'banned_scan') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300';
+  if (type === 'banned_clean') return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300';
+  if (type === 'empty_prune') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+  return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+}
+
+function getBannedJobTypeName(type: string): string {
+  if (type === 'banned_scan') return '违规死链巡检';
+  if (type === 'banned_clean') return '违规死链处置';
+  if (type === 'empty_prune') return '空目录清理';
+  return type;
+}
 
 // 处置配置（内联面板开关见内联确认状态契约区）
 const cleanAction = ref<'trash' | 'quarantine'>('quarantine');
@@ -1812,6 +1862,7 @@ async function initData() {
   loadIgnoreList();
   loadTargetFolders();
   loadMissingPref();
+  loadCachedBannedScanResult();
   try {
     const accList = await accountApi.getAccounts();
     accounts.value = (accList || []).filter((a: any) => a.accountType === 'cloud139');
@@ -1841,7 +1892,7 @@ async function initData() {
 // ─────────────────────────────────────────────────────────────
 async function handleScanBanned() {
   isBannedScanning.value = true;
-  bannedScanResult.value = null;
+  // 保留上一次的巡检结果在屏幕上平滑展示，由进度条提示巡检中，杜绝界面瞬间闪白丢失记录
   bannedCleanResult.value = null;
   selectedBannedIds.value.clear();
 
@@ -1862,6 +1913,7 @@ async function handleScanBanned() {
       ignoredIds: Array.from(ignoredBannedIds.value),
     });
     bannedScanResult.value = res;
+    saveBannedScanResult(res);
     // 默认全选所有检测到的违规死链
     (res.bannedFiles || []).forEach((f) => {
       if (f.id) selectedBannedIds.value.add(f.id);
@@ -1877,7 +1929,7 @@ async function handleScanBanned() {
     ElMessage.error(`巡检违规文件失败: ${err.message || '执行异常'}`);
   } finally {
     isBannedScanning.value = false;
-    loadMaintenanceJobs();
+    await loadMaintenanceJobs();
   }
 }
 
@@ -3248,7 +3300,7 @@ onUnmounted(() => {
          ───────────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'banned'" class="space-y-6">
       <div class="settings-card">
-        <!-- 卡片头部 (参照缺集检测规范: 左侧标题说明 + 右侧操作按钮) -->
+        <!-- 卡片头部 (参照缺集检测规范: 左侧标题说明 + 右侧处置行动) -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
           <div>
             <h3 class="text-sm font-bold text-gray-900 dark:text-white">网盘和谐与违规检测</h3>
@@ -3258,16 +3310,6 @@ onUnmounted(() => {
           </div>
 
           <div class="flex items-center gap-2.5">
-            <button
-              type="button"
-              class="btn-primary flex items-center gap-2 text-xs py-2 px-4 cursor-pointer"
-              :disabled="isBannedScanning"
-              @click="handleScanBanned"
-            >
-              <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isBannedScanning }" />
-              <span>{{ isBannedScanning ? '深度巡检中...' : '开始巡检' }}</span>
-            </button>
-
             <button
               v-if="bannedScanResult && bannedScanResult.bannedCount > 0"
               type="button"
@@ -3425,173 +3467,224 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 专属巡检目录与跳过设置（单栏纯净，参照缺集检测） -->
-        <div class="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 my-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
+        <!-- 专属巡检控制台（目录选择 + 账号切换 + 排除过滤 + 开始巡检主行动按钮，连贯一体化） -->
+        <div class="p-3.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 my-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 min-w-0">
             <span class="text-slate-600 dark:text-slate-400 whitespace-nowrap font-medium shrink-0">巡检目录:</span>
-            <div class="flex items-center gap-2 flex-1">
+            <div class="flex items-center gap-2 flex-1 min-w-0">
               <input
                 v-model="bannedFolderName"
                 type="text"
-                class="flex-1 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono outline-none focus:border-blue-500 transition-colors"
+                class="flex-1 min-w-[140px] px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono outline-none focus:border-blue-500 transition-colors"
                 placeholder="留空巡检全盘，或如 /媒体库"
                 @change="onManualPathChange('banned')"
                 @keyup.enter="onManualPathChange('banned')"
               />
               <button
                 type="button"
-                class="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                class="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 font-medium"
                 @click="openFolderPickerFor('banned')"
               >
                 <FolderTree class="w-3.5 h-3.5 text-blue-500" />
                 <span>选择目录</span>
               </button>
 
-              <!-- 账号切换选择器（并置目录选择框旁边：先选账号 → 再选目录 → 再巡检，spec 5.5.1.1） -->
+              <!-- 账号切换选择器（并置目录选择框旁边：先选账号 → 再选目录 → 再巡检） -->
               <AccountSwitcher v-model="activeAccountId" :accounts="accounts" @select="handleAccountSwitch" />
             </div>
           </div>
-          <div class="flex items-center gap-2 flex-1 md:max-w-xs">
-            <span class="text-slate-600 dark:text-slate-400 whitespace-nowrap font-medium">排除跳过:</span>
+
+          <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <span class="text-slate-600 dark:text-slate-400 whitespace-nowrap font-medium shrink-0">排除跳过:</span>
             <input
               v-model="bannedExcludePathsStr"
               type="text"
-              class="flex-1 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono outline-none focus:border-blue-500 transition-colors"
-              placeholder="已默认排除隔离区，可逗号分隔"
+              class="w-40 md:w-48 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono outline-none focus:border-blue-500 transition-colors"
+              placeholder="默认已排除隔离区"
               @change="saveCleanPref"
             />
             <span v-if="ignoredBannedItems.length > 0" class="text-[11px] text-amber-600 dark:text-amber-400 whitespace-nowrap flex items-center gap-1 font-normal">
               <EyeOff class="w-3 h-3" />
               <span>白名单 {{ ignoredBannedItems.length }}</span>
             </span>
+
+            <!-- 主行动按钮：开始巡检（紧贴控制台，动线自然顺畅） -->
+            <button
+              type="button"
+              class="btn-primary flex items-center gap-1.5 text-xs py-1.5 px-4 cursor-pointer shrink-0 font-medium shadow-xs"
+              :disabled="isBannedScanning"
+              @click="handleScanBanned"
+            >
+              <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isBannedScanning }" />
+              <span>{{ isBannedScanning ? '深度巡检中...' : '开始巡检' }}</span>
+            </button>
           </div>
         </div>
 
-        <!-- 业务开关选项列表 (一行一个，清爽纯净规范) -->
-        <div class="space-y-3 my-4">
-          <!-- 开关 1: 全类型文件深度排查 -->
-          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 space-y-2.5">
-            <div class="flex items-center justify-between">
-              <div class="space-y-0.5 pr-3">
-                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">全类型文件深度排查</span>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                  开启后遍历排查所有格式（含文档、压缩包等）；关闭则仅快速巡检视频媒体文件 (默认推荐)
-                </p>
+        <!-- 高级治理与排查选项（可折叠抽屉，降噪 70% 视口） -->
+        <div class="rounded-xl border border-slate-200/90 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/30 overflow-hidden my-4 transition-all">
+          <div
+            class="p-3 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-colors select-none"
+            @click="showGovernanceSettings = !showGovernanceSettings"
+          >
+            <div class="flex items-center gap-2 flex-wrap min-w-0">
+              <Sliders class="w-4 h-4 text-blue-500 shrink-0" />
+              <span class="text-xs font-semibold text-slate-800 dark:text-slate-200">高级治理与排查配置</span>
+              <!-- 收起时展示当前设置摘要胶囊 -->
+              <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+                <span class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 font-mono">
+                  {{ bannedScanScope === 'all' ? '全类型文件排查' : '视频媒体(14种格式)' }}
+                </span>
+                <span class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
+                  {{ cleanAction === 'quarantine' ? '柔性隔离暂存' : '直接移入回收站' }}
+                </span>
+                <span v-if="cascadeCompanion" class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
+                  级联伴生
+                </span>
+                <span v-if="notifyEmby" class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
+                  Emby通知
+                </span>
+                <span v-if="pruneEmptyParent" class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
+                  修剪空目录
+                </span>
               </div>
-              <el-switch
-                :model-value="bannedScanScope === 'all'"
-                @update:model-value="bannedScanScope = $event ? 'all' : 'video'; saveCleanPref()"
-              />
             </div>
 
-            <!-- 当未开启全类型排查时，清晰展示内置视频清单并提供自由扩展 -->
-            <div v-if="bannedScanScope !== 'all'" class="pt-2.5 border-t border-slate-200/80 dark:border-slate-700/60 space-y-2 text-xs">
-              <!-- 清晰罗列 14 种默认内置视频格式，消除不确定性 -->
-              <div class="flex flex-wrap items-baseline gap-1.5 text-[11px] leading-relaxed">
-                <span class="text-slate-600 dark:text-slate-300 font-medium shrink-0">默认内置视频格式 (14种):</span>
-                <span class="font-mono text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60 px-2 py-0.5 rounded border border-slate-200/80 dark:border-slate-700/80">
-                  .mp4, .mkv, .avi, .mov, .wmv, .flv, .ts, .m2ts, .iso, .rmvb, .webm, .mpg, .mpeg, .vob
-                </span>
+            <button
+              type="button"
+              class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1 shrink-0 font-medium"
+            >
+              <span>{{ showGovernanceSettings ? '收起配置' : '展开配置' }}</span>
+              <ChevronDown class="w-3.5 h-3.5 transition-transform duration-200" :class="{ 'rotate-180': showGovernanceSettings }" />
+            </button>
+          </div>
+
+          <!-- 展开内容：原有的 5 个治理业务开关与自定义排查格式 -->
+          <div v-show="showGovernanceSettings" class="p-3.5 pt-0 space-y-3 border-t border-slate-200/60 dark:border-slate-700/60 mt-2">
+            <!-- 开关 1: 全类型文件深度排查 -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <div class="space-y-0.5 pr-3">
+                  <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">全类型文件深度排查</span>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                    开启后遍历排查所有格式（含文档、压缩包等）；关闭则仅快速巡检视频媒体文件 (默认推荐)
+                  </p>
+                </div>
+                <el-switch
+                  :model-value="bannedScanScope === 'all'"
+                  @update:model-value="bannedScanScope = $event ? 'all' : 'video'; saveCleanPref()"
+                />
               </div>
 
-              <!-- 补充其他格式操作区 -->
-              <div class="flex flex-wrap items-center gap-2 pt-0.5">
-                <span class="text-slate-600 dark:text-slate-300 font-medium text-[11px] shrink-0">手动补充其他格式:</span>
-                <span
-                  v-for="ext in customExtensions"
-                  :key="ext"
-                  class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-mono text-[11px] flex items-center gap-1"
-                >
-                  <span>{{ ext }}</span>
-                  <X
-                    class="w-3 h-3 cursor-pointer hover:text-red-500 transition-colors"
-                    title="移除此格式"
-                    @click="removeCustomExtension(ext)"
-                  />
-                </span>
-
-                <div class="flex items-center gap-1.5">
-                  <input
-                    v-model="newExtInput"
-                    type="text"
-                    placeholder="如 strm 或 .zip"
-                    class="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-mono outline-none focus:border-blue-500"
-                    @keyup.enter="addCustomExtension"
-                  />
-                  <button
-                    type="button"
-                    class="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded text-xs font-medium cursor-pointer transition-colors"
-                    @click="addCustomExtension"
-                  >
-                    添加
-                  </button>
+              <!-- 当未开启全类型排查时，清晰展示内置视频清单并提供自由扩展 -->
+              <div v-if="bannedScanScope !== 'all'" class="pt-2.5 border-t border-slate-200/80 dark:border-slate-700/60 space-y-2 text-xs">
+                <!-- 清晰罗列 14 种默认内置视频格式 -->
+                <div class="flex flex-wrap items-baseline gap-1.5 text-[11px] leading-relaxed">
+                  <span class="text-slate-600 dark:text-slate-300 font-medium shrink-0">默认内置视频格式 (14种):</span>
+                  <span class="font-mono text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200/80 dark:border-slate-700/80">
+                    .mp4, .mkv, .avi, .mov, .wmv, .flv, .ts, .m2ts, .iso, .rmvb, .webm, .mpg, .mpeg, .vob
+                  </span>
                 </div>
 
-                <span class="text-[11px] text-slate-400">
-                  (若有未内置的特殊视频如 .strm/.m3u8 或压缩包/文档等，输入后回车添加，支持逗号批量输入)
-                </span>
+                <!-- 补充其他格式操作区 -->
+                <div class="flex flex-wrap items-center gap-2 pt-0.5">
+                  <span class="text-slate-600 dark:text-slate-300 font-medium text-[11px] shrink-0">手动补充其他格式:</span>
+                  <span
+                    v-for="ext in customExtensions"
+                    :key="ext"
+                    class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-mono text-[11px] flex items-center gap-1"
+                  >
+                    <span>{{ ext }}</span>
+                    <X
+                      class="w-3 h-3 cursor-pointer hover:text-red-500 transition-colors"
+                      title="移除此格式"
+                      @click="removeCustomExtension(ext)"
+                    />
+                  </span>
+
+                  <div class="flex items-center gap-1.5">
+                    <input
+                      v-model="newExtInput"
+                      type="text"
+                      placeholder="如 strm 或 .zip"
+                      class="w-28 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-mono outline-none focus:border-blue-500"
+                      @keyup.enter="addCustomExtension"
+                    />
+                    <button
+                      type="button"
+                      class="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded text-xs font-medium cursor-pointer transition-colors"
+                      @click="addCustomExtension"
+                    >
+                      添加
+                    </button>
+                  </div>
+
+                  <span class="text-[11px] text-slate-400">
+                    (若有未内置的特殊视频如 .strm/.m3u8 或压缩包/文档等，输入后回车添加，支持逗号批量输入)
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- 开关 2: 隔离区柔性暂存模式 -->
-          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 space-y-2.5">
-            <div class="flex items-center justify-between">
+            <!-- 开关 2: 隔离区柔性暂存模式 -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <div class="space-y-0.5 pr-3">
+                  <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">隔离区柔性暂存模式</span>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                    开启后将违规死链移动到隔离目录（保留实体供救回，防 Emby 404）；关闭则直接移入云盘回收站释放空间
+                  </p>
+                </div>
+                <el-switch
+                  :model-value="cleanAction === 'quarantine'"
+                  @update:model-value="cleanAction = $event ? 'quarantine' : 'trash'; saveCleanPref()"
+                />
+              </div>
+              <!-- 当开启隔离模式时，展示自定义隔离路径配置 -->
+              <div v-if="cleanAction === 'quarantine'" class="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 flex items-center gap-2">
+                <span class="text-[11px] text-slate-600 dark:text-slate-400 shrink-0 font-medium">隔离路径:</span>
+                <input
+                  v-model="quarantinePath"
+                  type="text"
+                  placeholder="留空使用默认隔离区"
+                  class="flex-1 max-w-md px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-mono outline-none focus:border-blue-500"
+                  @change="onQuarantinePathChange"
+                />
+              </div>
+            </div>
+
+            <!-- 开关 3: 级联清理伴生文件 -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 flex items-center justify-between">
               <div class="space-y-0.5 pr-3">
-                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">隔离区柔性暂存模式</span>
+                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">级联清理伴生文件</span>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                  开启后将违规死链移动到隔离目录（保留实体供救回，防 Emby 404）；关闭则直接移入云盘回收站释放空间
+                  处置违规视频时连带清理同名伴生文件（如 .nfo 刮削元数据、.strm 与外挂字幕）
                 </p>
               </div>
-              <el-switch
-                :model-value="cleanAction === 'quarantine'"
-                @update:model-value="cleanAction = $event ? 'quarantine' : 'trash'; saveCleanPref()"
-              />
+              <el-switch v-model="cascadeCompanion" @change="saveCleanPref" />
             </div>
-            <!-- 当开启隔离模式时，展示自定义隔离路径配置 -->
-            <div v-if="cleanAction === 'quarantine'" class="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 flex items-center gap-2">
-              <span class="text-[11px] text-slate-600 dark:text-slate-400 shrink-0 font-medium">隔离路径:</span>
-              <input
-                v-model="quarantinePath"
-                type="text"
-                placeholder="留空使用默认隔离区"
-                class="flex-1 max-w-md px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-mono outline-none focus:border-blue-500"
-                @change="onQuarantinePathChange"
-              />
-            </div>
-          </div>
 
-          <!-- 开关 3: 级联清理伴生文件 -->
-          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
-            <div class="space-y-0.5 pr-3">
-              <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">级联清理伴生文件</span>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                处置违规视频时连带清理同名伴生文件（如 .nfo 刮削元数据、.strm 与外挂字幕）
-              </p>
+            <!-- 开关 4: Emby 增量刷新下架通知 -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 flex items-center justify-between">
+              <div class="space-y-0.5 pr-3">
+                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">Emby 增量刷新下架通知</span>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                  处置完成后自动精准通知 Emby 刷新受影响剧集目录，消除幽灵剧集杜绝 404 报错
+                </p>
+              </div>
+              <el-switch v-model="notifyEmby" @change="saveCleanPref" />
             </div>
-            <el-switch v-model="cascadeCompanion" @change="saveCleanPref" />
-          </div>
 
-          <!-- 开关 4: Emby 增量刷新下架通知 -->
-          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
-            <div class="space-y-0.5 pr-3">
-              <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">Emby 增量刷新下架通知</span>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                处置完成后自动精准通知 Emby 刷新受影响剧集目录，消除幽灵剧集杜绝 404 报错
-              </p>
+            <!-- 开关 5: 自动修剪父级空目录 -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 flex items-center justify-between">
+              <div class="space-y-0.5 pr-3">
+                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">自动修剪父级空目录</span>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                  违规文件移出或清理后，若父级文件夹变空，自动向上递归安全修剪清理
+                </p>
+              </div>
+              <el-switch v-model="pruneEmptyParent" @change="saveCleanPref" />
             </div>
-            <el-switch v-model="notifyEmby" @change="saveCleanPref" />
-          </div>
-
-          <!-- 开关 5: 自动修剪父级空目录 -->
-          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
-            <div class="space-y-0.5 pr-3">
-              <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">自动修剪父级空目录</span>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                违规文件移出或清理后，若父级文件夹变空，自动向上递归安全修剪清理
-              </p>
-            </div>
-            <el-switch v-model="pruneEmptyParent" @change="saveCleanPref" />
           </div>
         </div>
 
@@ -3807,13 +3900,79 @@ onUnmounted(() => {
           <p class="text-xs text-gray-400 mt-1">在指定范围内未检索到任何违规占位或失效死链文件</p>
         </div>
 
+        <!-- 最近巡检与治理流水 (原地即时可见，消除记录不存在困惑) -->
+        <div class="mt-8 pt-6 border-t border-slate-200/70 dark:border-slate-800 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <History class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <h4 class="text-xs font-bold text-gray-900 dark:text-white">最近巡检与治理流水</h4>
+              <span class="text-[11px] text-gray-400">展示最近 {{ recentBannedJobs.length }} 条巡检与处置流水</span>
+            </div>
+            <button
+              type="button"
+              class="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+              @click="activeTab = 'records'"
+            >
+              <span>查看全部历史记录 ({{ bannedJobsCount }})</span>
+              <ArrowRight class="w-3 h-3" />
+            </button>
+          </div>
+
+          <div v-if="recentBannedJobs.length > 0" class="space-y-2">
+            <div
+              v-for="job in recentBannedJobs"
+              :key="job.id"
+              class="p-3 rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+            >
+              <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                <span
+                  class="px-2 py-0.5 rounded text-[10px] font-semibold shrink-0"
+                  :class="getBannedJobTypeBadgeClass(job.type)"
+                >
+                  {{ getBannedJobTypeName(job.type) }}
+                </span>
+                <span
+                  class="px-1.5 py-0.2 rounded text-[10px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 shrink-0"
+                >
+                  {{ job.triggerType === 'cron' ? '定时计划' : '手动触发' }}
+                </span>
+                <span class="font-mono text-slate-700 dark:text-slate-300 truncate" :title="job.folderPath">
+                  {{ job.folderPath || '全部云盘' }}
+                </span>
+                <span class="text-slate-400 text-[11px] truncate hidden md:inline">
+                  {{ job.summary || (job.status !== 'failed' ? '执行完成' : '执行失败') }}
+                </span>
+              </div>
+
+              <div class="flex items-center gap-3 shrink-0 text-[11px] text-slate-400">
+                <span v-if="job.durationMs" class="font-mono">
+                  {{ (job.durationMs / 1000).toFixed(1) }}s
+                </span>
+                <span class="font-mono text-slate-500 dark:text-slate-400">
+                  {{ job.timeFormatted }}
+                </span>
+                <span
+                  class="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                  :class="job.status === 'completed' || job.status === 'cleaned' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400'"
+                >
+                  {{ job.status === 'completed' || job.status === 'cleaned' ? '已完成' : (job.status === 'running' ? '运行中' : '失败') }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+            暂无巡检与治理记录，点击上方「开始巡检」即可启动云盘全方位健康排查
+          </div>
+        </div>
+
         <!-- 和谐封禁留痕档案库 (和谐墓碑) 专区 -->
         <div class="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800 space-y-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <ShieldAlert class="w-4 h-4 text-purple-600 dark:text-purple-400" />
               <h4 class="text-xs font-bold text-gray-900 dark:text-white">已留痕网盘封禁剧集档案库 (共 {{ tombstones.length }} 集)</h4>
-              <span class="text-[11px] text-gray-400">记录因网盘审查拦截、特征封禁处置而隔离或清理的剧集，全流程闭环可溯</span>
+              <span class="text-[11px] text-gray-400">记录已处置隔离或清理的违规剧集（若仅巡检未处置或未发现违规，此处显示为 0）</span>
             </div>
             <button
               v-if="tombstones.length > 0"
