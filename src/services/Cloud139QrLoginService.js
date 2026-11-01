@@ -78,20 +78,36 @@ class Cloud139QrLoginService {
     }
 
     /**
-     * AES-128-ECB 解密官方返回的加密认证报文
-     * @param {string} encryptedBase64 
+     * AES-128-ECB 解密官方返回的加密认证报文 (支持 Hex 与 Base64 双通道自适应)
+     * @param {string} encryptedData 
      * @param {string} key 
      * @returns {any}
      */
-    _decryptCaiyunData(encryptedBase64, key = CAIYUN_DECRYPT_KEY) {
+    _decryptCaiyunData(encryptedData, key = CAIYUN_DECRYPT_KEY) {
+        if (!encryptedData || typeof encryptedData !== 'string') return null;
+        const trimmed = encryptedData.trim();
+        const keyBuf = Buffer.from(key, 'utf8');
+
+        // 1. 优先尝试 Hex 解密（官方 Web 端 cryptAesDecrypt 标准规范）
+        if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+            try {
+                const decipher = crypto.createDecipheriv('aes-128-ecb', keyBuf, Buffer.alloc(0));
+                decipher.setAutoPadding(true);
+                const decrypted = Buffer.concat([decipher.update(Buffer.from(trimmed, 'hex')), decipher.final()]);
+                return JSON.parse(decrypted.toString('utf8'));
+            } catch (hexErr) {
+                logger.debug(`彩云登录报文 Hex 解密尝试未命中: ${hexErr.message}`);
+            }
+        }
+
+        // 2. 备选 Base64 解密
         try {
-            const decipher = crypto.createDecipheriv('aes-128-ecb', Buffer.from(key, 'utf8'), null);
+            const decipher = crypto.createDecipheriv('aes-128-ecb', keyBuf, Buffer.alloc(0));
             decipher.setAutoPadding(true);
-            let decrypted = decipher.update(encryptedBase64, 'base64', 'utf8');
-            decrypted += decipher.final('utf8');
-            return JSON.parse(decrypted);
-        } catch (err) {
-            logger.error(`解密彩云登录报文异常: ${err.message}`);
+            const decrypted = Buffer.concat([decipher.update(Buffer.from(trimmed, 'base64')), decipher.final()]);
+            return JSON.parse(decrypted.toString('utf8'));
+        } catch (base64Err) {
+            logger.warn(`解密彩云登录报文异常 (Hex 与 Base64 均失败): ${base64Err.message}`);
             return null;
         }
     }
@@ -163,23 +179,27 @@ class Cloud139QrLoginService {
             });
 
             const body = resp.body || {};
-            // 扫码成功
+            const code = String(body.code || '');
+            logger.debug(`[扫码登录轮询] sID=${sID.slice(0, 6)}***, success=${body.success}, code=${code}`);
+
+            // 1. 扫码成功且已确认授权
             if (body.success && body.data) {
                 let authData = body.data;
                 if (typeof authData === 'string') {
                     authData = this._decryptCaiyunData(authData);
                 }
 
-                if (!authData || !authData.token) {
-                    logger.warn('扫码响应成功但未提取到有效 token', { data: body.data });
-                    return { status: 'waiting', message: '手机端已扫码，等待确认授权中...' };
+                const accountPhone = String(authData?.account || authData?.accountPhone || authData?.msisdn || '').trim();
+                const authToken = String(authData?.token || authData?.authToken || '').trim();
+
+                if (!authToken || !accountPhone) {
+                    logger.warn('扫码响应成功但未提取到有效账号或 token', { authData, rawData: body.data });
+                    return { status: 'waiting', message: '📱 手机端已扫描，等待确认授权中...' };
                 }
 
-                const accountPhone = String(authData.account || '').trim();
-                const authToken = String(authData.token || '').trim();
                 const authorization = `Basic ${Buffer.from(`pc:${accountPhone}:${authToken}`).toString('base64')}`;
 
-                // 自动保存绑定至数据库
+                // 自动保存绑定至数据库 (支持已有账号无缝热刷新与自愈唤醒)
                 const { accountRepo, folderCache } = deps;
                 if (accountRepo) {
                     let acc = await accountRepo.findOne({ where: { username: accountPhone } });
@@ -187,11 +207,15 @@ class Cloud139QrLoginService {
                         acc.authorization = authorization;
                         acc.cookies = authorization;
                         acc.isActive = true;
+                        acc.memberStatus = 'ok';
+                        acc.memberStatusText = '普通';
+                        acc.updatedAt = new Date();
                         await accountRepo.save(acc);
                         Cloud139Service.clearInstance(acc);
-                        logger.info(`扫码登录：已成功刷新已有账号凭证 [${accountPhone}]`);
+                        logger.info(`扫码登录：已成功刷新已有账号凭证与唤醒活跃状态 [${accountPhone}]`);
                     } else {
                         const totalAccounts = await accountRepo.count();
+                        const hasDefault = (await accountRepo.count({ where: { isDefault: true } })) > 0;
                         acc = accountRepo.create({
                             username: accountPhone,
                             alias: `139-${accountPhone.slice(-4)}`,
@@ -199,7 +223,7 @@ class Cloud139QrLoginService {
                             authorization: authorization,
                             cookies: authorization,
                             isActive: true,
-                            isDefault: totalAccounts === 0
+                            isDefault: !hasDefault || totalAccounts === 0
                         });
                         await accountRepo.save(acc);
                         logger.info(`扫码登录：已成功自动录入全新账号 [${accountPhone}]`);
@@ -216,21 +240,37 @@ class Cloud139QrLoginService {
                 return {
                     status: 'confirmed',
                     account: accountPhone,
-                    message: `扫码登录成功！账号 [${accountPhone}] 已就绪。`
+                    message: `扫码登录成功！账号 [${accountPhone}] 凭证已就绪。`
                 };
             }
 
-            // 官方特定失效错误码判断
-            const code = String(body.code || '');
-            if (['200059543', '200059545', '200059546', '200059547', '102103'].includes(code)) {
+            // 2. 手机端已扫描，等待用户在手机端点击【确认登录】(官方特定状态码 200059548)
+            if (code === '200059548') {
+                return {
+                    status: 'waiting',
+                    message: '📱 手机端已扫描，请在手机上点击【确认登录】授权...'
+                };
+            }
+
+            // 3. 用户在手机端点击了取消登录 (官方状态码 200059549)
+            if (code === '200059549') {
+                session.status = 'expired';
+                return {
+                    status: 'expired',
+                    message: '手机端已取消登录授权，请刷新二维码重新获取'
+                };
+            }
+
+            // 4. 官方特定失效或过期错误码
+            if (['200059542', '200059543', '200059545', '200059546', '200059547', '102103'].includes(code)) {
                 session.status = 'expired';
                 return { status: 'expired', message: '二维码已在官方端失效，请点击刷新' };
             }
 
-            // 等待扫码中
+            // 5. 初始等待扫码中
             return {
                 status: 'waiting',
-                message: '请打开中国移动云盘 App 或微信扫一扫'
+                message: '请使用中国移动云盘 App 或微信扫一扫'
             };
 
         } catch (netErr) {

@@ -96,7 +96,11 @@ class TelegramService extends MessageService {
                 await got.post(`${apiUrl}/bot${this.config.botToken}/sendPhoto`, photoOptions).json();
                 return true;
             } catch (photoError) {
-                logger.warn(`[Telegram推送] 发送海报卡片失败，安全降级为普通消息: ${photoError.message}`);
+                logger.warn(`[Telegram推送] 发送海报卡片失败，安全降级为普通图文消息: ${photoError.message}`);
+                // 降级为文本消息时，在正文前置零宽链接，确保客户端自动拉取大图预览
+                if (!html.includes(image)) {
+                    html = `<a href="${image}">&#8205;</a>${html}`;
+                }
             }
         }
 

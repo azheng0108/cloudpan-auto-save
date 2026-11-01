@@ -145,8 +145,20 @@ class MediaCardFormatter {
             category = isTv ? '电视剧' : '电影';
         }
 
-        // 影号 (TMDB ID)
+        // 影号 (TMDB ID) 与首播日期
         const tmdbId = tmdb.id || tmdb.tmdbId || task?.tmdbId || '';
+        const firstAirDate = tmdb.first_air_date || tmdb.release_date || (year ? `${year}-01-01` : '');
+
+        // 标签提取 (如 #玉簟秋 #电视剧 #剧情)
+        const tags = [];
+        const cleanTitle = title.replace(/\s*\(\d{4}\)$/, '').trim().replace(/[\s\-_·.:：]/g, '');
+        if (cleanTitle) tags.push(`#${cleanTitle}`);
+        if (category) {
+            category.split(/[\/\s,，、]+/).filter(Boolean).slice(0, 3).forEach(c => {
+                const tag = c.trim().replace(/^#/, '');
+                if (tag && !tags.includes(`#${tag}`)) tags.push(`#${tag}`);
+            });
+        }
 
         // 海报图片 (优先选用横版 backdropPath，次选竖版 posterPath)
         let image = tmdb.backdropPath || tmdb.backdrop_path || tmdb.posterPath || tmdb.poster_path || task?.posterPath || '';
@@ -154,11 +166,11 @@ class MediaCardFormatter {
             image = `https://image.tmdb.org/t/p/w500${image.startsWith('/') ? '' : '/'}${image}`;
         }
 
-        // 简介 (精炼不超过 110 字，保持图文卡片黄金比例)
+        // 简介 (精炼不超过 120 字，保持图文卡片黄金视觉比例)
         let overview = String(tmdb.overview || tmdb.description || '').trim();
         if (overview) {
-            if (overview.length > 110) {
-                overview = `${overview.slice(0, 110)}...`;
+            if (overview.length > 120) {
+                overview = `${overview.slice(0, 120)}...`;
             }
         }
 
@@ -168,13 +180,15 @@ class MediaCardFormatter {
             ratingText,
             category,
             tmdbId: String(tmdbId || '-'),
+            firstAirDate,
+            tagsText: tags.join(' '),
             image: image || '',
             overview
         };
     }
 
     /**
-     * 构建影视入库/追更完整通知载荷 (同时兼容 Telegram sendPhoto Caption 与纯文本通道)
+     * 构建影视入库/追更完整通知载荷 (严格对齐经典高质感影视卡片与主流转存通知规范)
      */
     static buildMediaNotifyPayload({
         task,
@@ -183,7 +197,9 @@ class MediaCardFormatter {
         source = '139 移动云盘',
         targetFolder = '',
         deviationNote = '',
-        actionTitle = '追更入库'
+        actionTitle = '追更入库',
+        sourceMessageUrl = '',
+        shareLinkUrl = ''
     }) {
         const count = fileCount || (fileList ? fileList.length : 0);
         const meta = MediaCardFormatter.resolveMediaMeta(task, task?.resourceName);
@@ -228,32 +244,52 @@ class MediaCardFormatter {
         const safeGroup = MessageService.escapeHtmlEntities(tech.releaseGroup);
 
         // 构造对齐经典主流标准的精美结构化卡片 (HTML 版用于 Telegram)
-        const lines = [
-            `📺 <b>${actionTitle}：${safeTitle} (${meta.year}) ${seasonEpText}</b>`,
-            `☁️ <b>来源</b>：${source}`,
-            `🍱 <b>分类</b>：${safeCategory}`,
-            `🎞️ <b>版本</b>：${tech.specText}`,
-            `📁 <b>文件</b>：${count} 个`,
-            `🧮 <b>进度</b>：${progressText}`
-        ];
+        const lines = [];
+
+        // 1. 若有外链来源或原推文地址，渲染顶部来源（参考图 1 & 图 3）
+        const originMsg = sourceMessageUrl || task?.sourcePostUrl || task?.postUrl || '';
+        const originShare = shareLinkUrl || task?.shareUrl || task?.shareLink || '';
+        if (originMsg) {
+            lines.push(`消息内容: ${originMsg}`);
+        }
+        if (originShare) {
+            lines.push(`链接: ${originShare}`);
+        }
+        if (lines.length > 0) {
+            lines.push('');
+        }
+
+        // 2. 主标题与影视维度详情（对齐参考图 1、图 2、图 3）
+        lines.push(`📺 <b>${actionTitle}：${safeTitle} (${meta.year}) ${seasonEpText}</b>`);
+        lines.push(`☁️ <b>来源</b>：${source}`);
+        if (meta.tagsText) {
+            lines.push(`🏷️ <b>标签</b>：${meta.tagsText}`);
+        }
+        lines.push(`📦 <b>分类</b>：${safeCategory}`);
+        lines.push(`🎞️ <b>版本</b>：${tech.specText}`);
+        lines.push(`📁 <b>文件</b>：${count} 个`);
+        lines.push(`🧮 <b>本季</b>：${progressText}`);
 
         if (tech.totalSizeFormatted) {
             lines.push(`💾 <b>体积</b>：${tech.totalSizeFormatted}`);
         }
 
         lines.push(`⭐ <b>评分</b>：${meta.ratingText}`);
+        if (meta.firstAirDate) {
+            lines.push(`📅 <b>首播</b>：${meta.firstAirDate}`);
+        }
         if (meta.tmdbId && meta.tmdbId !== '-') {
             lines.push(`🎬 <b>影号</b>：${meta.tmdbId}`);
-        }
-        if (safeTargetFolder) {
-            lines.push(`📁 <b>目录</b>：<code>${safeTargetFolder}</code>`);
         }
         if (safeGroup && safeGroup !== '-') {
             lines.push(`👥 <b>组名</b>：${safeGroup}`);
         }
+        if (safeTargetFolder) {
+            lines.push(`📁 <b>归档</b>：<code>${safeTargetFolder}</code>`);
+        }
 
         if (meta.overview) {
-            lines.push(`📝 <b>简介</b>：\n${MessageService.escapeHtmlEntities(meta.overview)}`);
+            lines.push(`📝 <b>影视简介</b>：\n${MessageService.escapeHtmlEntities(meta.overview)}`);
         }
 
         lines.push('');
