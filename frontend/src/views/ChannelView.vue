@@ -72,7 +72,7 @@ const AI_DEFAULTS: ChannelAiConfig = {
   apiKey: '',
   model: 'gemini-3.8-flash-tiered',
   mode: 'fallback',
-  mobileFallback: { enable: true, networkSearch: true, proactiveRenew: false, timeoutMs: 60000 },
+  mobileFallback: { enable: true, networkSearch: true, proactiveRenew: true, timeoutMs: 60000 },
 };
 
 // 模板绑定代理：运行时 config.ai 由初始值与归一化合并保证存在，此处兜底仅满足 TS 严格模式
@@ -814,7 +814,7 @@ async function loadInitialData() {
           mobileFallback: {
             enable: (res.ai as any)?.mobileFallback?.enable !== undefined ? Boolean((res.ai as any).mobileFallback.enable) : true,
             networkSearch: (res.ai as any)?.mobileFallback?.networkSearch !== undefined ? Boolean((res.ai as any).mobileFallback.networkSearch) : true,
-            proactiveRenew: Boolean((res.ai as any)?.mobileFallback?.proactiveRenew),
+            proactiveRenew: (res.ai as any)?.mobileFallback?.proactiveRenew !== undefined ? Boolean((res.ai as any).mobileFallback.proactiveRenew) : true,
             timeoutMs: Number((res.ai as any)?.mobileFallback?.timeoutMs) > 0 ? Number((res.ai as any).mobileFallback.timeoutMs) : 60000,
           },
         },
@@ -2199,34 +2199,61 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 表单主体：自适应双列网格 -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- 1. API 服务选择器 -->
-            <div class="space-y-1.5">
-              <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-                <SlidersHorizontal class="w-3.5 h-3.5 text-gray-400" />
-                <span>API 服务提供商</span>
-              </label>
-              <el-select
-                v-model="selectedProviderId"
-                placeholder="请选择 API 服务"
-                class="w-full !text-xs"
-                @change="onProviderChange"
+          <!-- 1. API 服务提供商选择器 -->
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+              <SlidersHorizontal class="w-3.5 h-3.5 text-gray-400" />
+              <span>选择 API 服务提供商</span>
+            </label>
+            <el-select
+              v-model="selectedProviderId"
+              placeholder="请选择 API 服务"
+              class="w-full !text-xs"
+              @change="onProviderChange"
+            >
+              <el-option
+                v-for="p in AI_PROVIDERS"
+                :key="p.id"
+                :label="p.label"
+                :value="p.id"
               >
-                <el-option
-                  v-for="p in AI_PROVIDERS"
-                  :key="p.id"
-                  :label="p.label"
-                  :value="p.id"
-                >
-                  <div class="flex items-center justify-between w-full">
-                    <span class="font-medium">{{ p.label }}</span>
-                    <span v-if="p.isFree" class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40">免配置 · 内置</span>
-                  </div>
-                </el-option>
-              </el-select>
+                <div class="flex items-center justify-between w-full">
+                  <span class="font-medium">{{ p.label }}</span>
+                  <span v-if="p.isFree" class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40">免配置 · 内置</span>
+                </div>
+              </el-option>
+            </el-select>
+          </div>
+
+          <!-- 场景 A: 移动灵犀（官方内置免配置：彻底不展示任何多余不可填写的假输入框，清爽纯净） -->
+          <div v-if="selectedProviderId === 'mobile'" class="p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <ShieldCheck class="w-5 h-5" />
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>移动云盘官方灵犀多模态大模型</span>
+                  <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-900/40">内置免配置 · 极速直连</span>
+                </h4>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  已自动绑定当前已登录的 139 移动云盘安全通行凭据，零费用、无需填写 API Key 与接口地址，开箱即用。
+                </p>
+              </div>
             </div>
 
+            <!-- 联网搜索核实开关 -->
+            <div class="flex items-center gap-2 sm:pl-4 sm:border-l sm:border-emerald-200/60 dark:sm:border-emerald-800/40 shrink-0">
+              <div class="text-right">
+                <div class="text-xs font-semibold text-gray-800 dark:text-gray-200">联网搜索核实</div>
+                <div class="text-[10px] text-gray-400">实时检索正式剧名</div>
+              </div>
+              <el-switch v-model="mobileFallbackForm.networkSearch" size="small" />
+            </div>
+          </div>
+
+          <!-- 场景 B: 外部第三方/自定义提供商表单（需要配置时才展示网格输入框） -->
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- 2. 服务别名 -->
             <div class="space-y-1.5">
               <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
@@ -2236,29 +2263,18 @@ onUnmounted(() => {
               <input
                 v-model="currentProviderName"
                 type="text"
-                placeholder="例如: 自定义 / DeepSeek 官方"
+                placeholder="例如: DeepSeek 官方 / OpenAI"
                 class="input-base text-xs w-full font-medium"
               />
             </div>
 
-            <!-- 3. 服务地址 (Base URL) -->
+            <!-- 3. 接口服务地址 (Base URL) -->
             <div class="space-y-1.5">
               <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
                 <Globe class="w-3.5 h-3.5 text-gray-400" />
                 <span>接口服务地址 (Base URL)</span>
               </label>
-              <div
-                v-if="selectedProviderId === 'mobile'"
-                class="input-base text-xs w-full font-mono !bg-emerald-50/60 dark:!bg-emerald-950/20 !border-emerald-300/60 dark:!border-emerald-800/40 text-emerald-800 dark:text-emerald-300 flex items-center justify-between"
-              >
-                <span>https://ai.yun.139.com</span>
-                <span class="text-[11px] font-sans font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  <ShieldCheck class="w-3.5 h-3.5" />
-                  <span>内置免密直连</span>
-                </span>
-              </div>
               <input
-                v-else
                 v-model="aiForm.baseUrl"
                 type="text"
                 placeholder="例如: https://api.openai.com/v1"
@@ -2272,14 +2288,7 @@ onUnmounted(() => {
                 <KeyRound class="w-3.5 h-3.5 text-gray-400" />
                 <span>API 凭证 (API Key)</span>
               </label>
-              <div
-                v-if="selectedProviderId === 'mobile'"
-                class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-400 dark:text-gray-500 cursor-not-allowed flex items-center justify-between"
-              >
-                <span>已内置全天候免密通行凭证（无需填写任何 Key）</span>
-                <Lock class="w-3.5 h-3.5 text-gray-400" />
-              </div>
-              <div v-else class="relative w-full">
+              <div class="relative w-full">
                 <input
                   v-model="aiForm.apiKey"
                   :type="showApiKey ? 'text' : 'password'"
@@ -2298,121 +2307,90 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 5. 模型选择 (整行展开) -->
-            <div class="space-y-1.5 md:col-span-2">
+            <!-- 5. 识别模型 (Model) -->
+            <div class="space-y-1.5">
               <div class="flex items-center justify-between">
                 <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
                   <Film class="w-3.5 h-3.5 text-gray-400" />
                   <span>识别模型 (Model)</span>
                 </label>
-                <span v-if="selectedProviderId !== 'mobile' && modelInputMode === 'select'" class="text-[11px] text-gray-400">
+                <span v-if="modelInputMode === 'select'" class="text-[11px] text-gray-400">
                   支持从服务商接口拉取，或手动自由输入
                 </span>
               </div>
 
-              <div
-                v-if="selectedProviderId === 'mobile'"
-                class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-700 dark:text-gray-300 flex items-center justify-between"
-              >
-                <div class="flex items-center gap-2">
-                  <span class="font-medium">灵犀多模态大模型 (移动云盘内置)</span>
-                  <span class="text-[10px] text-gray-400 font-mono">sys-mcloud-lingxi</span>
+              <!-- 下拉选择模式 (包含刷新模型列表与手动输入选项) -->
+              <div v-if="modelInputMode === 'select'" class="flex items-center gap-2">
+                <div class="flex-1">
+                  <el-select
+                    :model-value="aiForm.model || '未选择'"
+                    placeholder="请选择或刷新模型"
+                    class="w-full !text-xs"
+                    @change="handleModelSelectChange"
+                  >
+                    <el-option-group label="快捷操作">
+                      <el-option value="__ACTION_REFRESH__">
+                        <div class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
+                          <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isFetchingModels }" />
+                          <span>{{ isFetchingModels ? '正在从服务商拉取模型...' : '刷新模型列表' }}</span>
+                        </div>
+                      </el-option>
+                      <el-option value="__ACTION_MANUAL__">
+                        <div class="flex items-center gap-1.5 text-gray-700 dark:text-gray-200 font-medium">
+                          <Edit3 class="w-3.5 h-3.5 text-gray-500" />
+                          <span>手动输入</span>
+                        </div>
+                      </el-option>
+                    </el-option-group>
+                    <el-option-group v-if="availableModelList.length > 0" label="可用模型列表">
+                      <el-option
+                        v-for="m in availableModelList"
+                        :key="m"
+                        :label="m"
+                        :value="m"
+                      />
+                    </el-option-group>
+                  </el-select>
                 </div>
-                <span class="text-[10px] text-blue-600 dark:text-blue-400 font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40">免配置 · 极速响应</span>
+                <button
+                  type="button"
+                  class="btn-default text-xs h-[34px] px-3 text-blue-600 dark:text-blue-400 shrink-0 cursor-pointer flex items-center gap-1.5 font-medium shadow-2xs hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                  :disabled="isFetchingModels"
+                  title="从当前服务地址拉取最新模型列表"
+                  @click="handleFetchModelList"
+                >
+                  <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isFetchingModels }" />
+                  <span>刷新</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn-default text-xs h-[34px] px-2.5 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1 font-medium shadow-2xs"
+                  title="切换为手动自由输入"
+                  @click="modelInputMode = 'manual'"
+                >
+                  <Edit3 class="w-3.5 h-3.5 text-gray-400" />
+                  <span>手填</span>
+                </button>
               </div>
 
-              <div v-else class="space-y-2">
-                <!-- 下拉选择模式 (包含刷新模型列表与手动输入选项) -->
-                <div v-if="modelInputMode === 'select'" class="flex items-center gap-2">
-                  <div class="flex-1">
-                    <el-select
-                      :model-value="aiForm.model || '未选择'"
-                      placeholder="请选择或刷新模型"
-                      class="w-full !text-xs"
-                      @change="handleModelSelectChange"
-                    >
-                      <el-option-group label="快捷操作">
-                        <el-option value="__ACTION_REFRESH__">
-                          <div class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
-                            <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isFetchingModels }" />
-                            <span>{{ isFetchingModels ? '正在从服务商拉取模型...' : '刷新模型列表' }}</span>
-                          </div>
-                        </el-option>
-                        <el-option value="__ACTION_MANUAL__">
-                          <div class="flex items-center gap-1.5 text-gray-700 dark:text-gray-200 font-medium">
-                            <Edit3 class="w-3.5 h-3.5 text-gray-500" />
-                            <span>手动输入</span>
-                          </div>
-                        </el-option>
-                      </el-option-group>
-                      <el-option-group v-if="availableModelList.length > 0" label="可用模型列表">
-                        <el-option
-                          v-for="m in availableModelList"
-                          :key="m"
-                          :label="m"
-                          :value="m"
-                        />
-                      </el-option-group>
-                    </el-select>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn-default text-xs h-[34px] px-3 text-blue-600 dark:text-blue-400 shrink-0 cursor-pointer flex items-center gap-1.5 font-medium shadow-2xs hover:bg-blue-50 dark:hover:bg-blue-950/40"
-                    :disabled="isFetchingModels"
-                    title="从当前服务地址拉取最新模型列表"
-                    @click="handleFetchModelList"
-                  >
-                    <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isFetchingModels }" />
-                    <span>刷新</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="btn-default text-xs h-[34px] px-2.5 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1 font-medium shadow-2xs"
-                    title="切换为手动自由输入"
-                    @click="modelInputMode = 'manual'"
-                  >
-                    <Edit3 class="w-3.5 h-3.5 text-gray-400" />
-                    <span>手填</span>
-                  </button>
-                </div>
-
-                <!-- 手动自由输入模式 -->
-                <div v-else class="flex items-center gap-2">
-                  <input
-                    v-model="aiForm.model"
-                    type="text"
-                    placeholder="输入模型名称，例如: gpt-4o 或 gemini-1.5-pro"
-                    class="input-base text-xs w-full font-mono"
-                  />
-                  <button
-                    type="button"
-                    class="btn-default text-xs h-[34px] px-3 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1.5 font-medium shadow-2xs"
-                    title="切换为下拉点选模式"
-                    @click="modelInputMode = 'select'"
-                  >
-                    <SlidersHorizontal class="w-3.5 h-3.5 text-gray-400" />
-                    <span>从列表选择</span>
-                  </button>
-                </div>
+              <!-- 手动自由输入模式 -->
+              <div v-else class="flex items-center gap-2">
+                <input
+                  v-model="aiForm.model"
+                  type="text"
+                  placeholder="输入模型名称，例如: gpt-4o 或 deepseek-chat"
+                  class="input-base text-xs w-full font-mono"
+                />
+                <button
+                  type="button"
+                  class="btn-default text-xs h-[34px] px-3 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1.5 font-medium shadow-2xs"
+                  title="切换为下拉点选模式"
+                  @click="modelInputMode = 'select'"
+                >
+                  <SlidersHorizontal class="w-3.5 h-3.5 text-gray-400" />
+                  <span>从列表选择</span>
+                </button>
               </div>
-            </div>
-          </div>
-
-          <!-- 移动灵犀独有的附加增强开关行 (网络搜索核实与凭证主动续期) -->
-          <div v-if="selectedProviderId === 'mobile'" class="pt-3 border-t border-gray-100 dark:border-gray-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
-              <div>
-                <span class="text-xs font-semibold text-gray-800 dark:text-gray-200">联网搜索核实</span>
-                <p class="text-[11px] text-gray-400 mt-0.5">实时检索官方发布年份与正式剧名</p>
-              </div>
-              <el-switch v-model="mobileFallbackForm.networkSearch" size="small" />
-            </div>
-            <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
-              <div>
-                <span class="text-xs font-semibold text-gray-800 dark:text-gray-200">凭证主动续期</span>
-                <p class="text-[11px] text-gray-400 mt-0.5">后台自动续签通行凭据，永久免维护</p>
-              </div>
-              <el-switch v-model="mobileFallbackForm.proactiveRenew" size="small" />
             </div>
           </div>
 
