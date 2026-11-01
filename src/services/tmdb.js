@@ -147,11 +147,12 @@ class TMDBService {
     }
 
     /**
-     * 获取用于海报墙的 TMDB 热门影视海报列表
-     * @returns {Promise<Array<string>>}
+     * 获取 TMDB 每日/每周推荐高清横版壁纸（用于登录背景等）
+     * 优先获取当日流行热榜(/trending/all/day)，缺失时回退至每周榜(/trending/all/week)
+     * @returns {Promise<Array<{id: number, url: string, backdropUrl: string, posterUrl: string, title: string, overview: string, voteAverage: number, releaseDate: string, mediaType: string}>>}
      */
-    async getTrendingWallPosters() {
-        const cacheKey = 'tmdb_wall_posters_cache';
+    async getTrendingWallpapers() {
+        const cacheKey = 'tmdb_wallpapers_cache_v2';
         const cached = this.cache.get(cacheKey);
         if (cached && Array.isArray(cached) && cached.length > 0) {
             return cached;
@@ -161,19 +162,68 @@ class TMDBService {
             return [];
         }
 
+        const imageDomain = (ConfigService.getConfigValue('tmdb.imageDomain') || 'https://image.tmdb.org').replace(/\/+$/, '');
+
         try {
-            const response = await this._request('/trending/all/week', { language: 'zh-CN' });
-            if (response && Array.isArray(response.results)) {
-                const posters = response.results
-                    .filter(item => item && item.poster_path)
-                    .map(item => `https://image.tmdb.org/t/p/w300${item.poster_path}`);
-                if (posters.length > 0) {
-                    this.cache.set(cacheKey, posters, 3600 * 12);
-                    return posters;
+            let results = [];
+            try {
+                const dayResp = await this._request('/trending/all/day', { language: 'zh-CN' });
+                if (dayResp && Array.isArray(dayResp.results)) {
+                    results = dayResp.results;
                 }
+            } catch (_) {}
+
+            if (results.length < 5) {
+                try {
+                    const weekResp = await this._request('/trending/all/week', { language: 'zh-CN' });
+                    if (weekResp && Array.isArray(weekResp.results)) {
+                        const existingIds = new Set(results.map(r => r.id));
+                        for (const r of weekResp.results) {
+                            if (!existingIds.has(r.id)) {
+                                results.push(r);
+                            }
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            const wallpapers = results
+                .filter(item => item && (item.backdrop_path || item.poster_path))
+                .map(item => {
+                    const backdropUrl = item.backdrop_path ? `${imageDomain}/t/p/original${item.backdrop_path}` : '';
+                    const posterUrl = item.poster_path ? `${imageDomain}/t/p/original${item.poster_path}` : '';
+                    return {
+                        id: item.id,
+                        url: backdropUrl || posterUrl,
+                        backdropUrl,
+                        posterUrl,
+                        title: item.title || item.name || '',
+                        overview: item.overview || '',
+                        voteAverage: typeof item.vote_average === 'number' ? Number(item.vote_average.toFixed(1)) : 0,
+                        releaseDate: item.release_date || item.first_air_date || '',
+                        mediaType: item.media_type || (item.title ? 'movie' : 'tv')
+                    };
+                })
+                .filter(w => w.url);
+
+            if (wallpapers.length > 0) {
+                this.cache.set(cacheKey, wallpapers, 3600 * 6);
+                return wallpapers;
             }
         } catch (err) {
-            logger.warn(`[TMDB] 获取海报墙数据失败: ${err.message}`);
+            logger.warn(`[TMDB] 获取热门壁纸失败: ${err.message}`);
+        }
+        return [];
+    }
+
+    /**
+     * 获取用于海报墙的 TMDB 热门影视海报列表
+     * @returns {Promise<Array<string>>}
+     */
+    async getTrendingWallPosters() {
+        const wallpapers = await this.getTrendingWallpapers();
+        if (wallpapers && wallpapers.length > 0) {
+            return wallpapers.map(w => w.url);
         }
         return [];
     }
