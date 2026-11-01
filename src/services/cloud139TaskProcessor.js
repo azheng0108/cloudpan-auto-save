@@ -2,6 +2,7 @@ const { Cloud139Service } = require('./cloud139');
 const { logTaskEvent } = require('../utils/logUtils');
 const ConfigService = require('./ConfigService');
 const { TaskCompleteEventDto } = require('../dto/TaskCompleteEventDto');
+const MediaCardFormatter = require('../utils/mediaCardFormatter');
 const CheckpointManager = require('./checkpointManager');
 const { ErrorClassifier } = require('./errorClassifier');
 
@@ -479,17 +480,16 @@ async function processCloud139Task(taskService, task, account) {
                 }));
             });
 
-            const fileNameList = dedupedNewFiles.map((f) => f.coName || '(文件名未知)').filter(Boolean);
-            const title = `[追更通知] ${task.resourceName}(根目录文件)追更${fileCount}集`;
-            const detailLines = fileNameList.map((name) => `- ${name}`);
-            const compactLines = [`${task.resourceName}(根目录文件) 新增 ${fileCount} 个文件`];
-            return buildPushMessageWithThreshold({
-                title,
+            const payload = MediaCardFormatter.buildMediaNotifyPayload({
+                task,
+                fileList: dedupedNewFiles,
                 fileCount,
-                detailLines,
-                compactLines,
-                threshold: 20,
+                source: '139 移动云盘',
+                targetFolder: task.realFolderName || task.resourceName,
+                actionTitle: '追更入库'
             });
+            logTaskEvent(`[追更完成] ${payload.title}`);
+            return payload;
         }
 
         let rootPCaID = (!task.shareFolderId || task.shareFolderId === 'root' || task.shareFolderId === -1 || task.shareFolderId === '-1')
@@ -783,17 +783,17 @@ async function processCloud139Task(taskService, task, account) {
         }
 
         const resourceName = task.shareFolderName ? `${task.resourceName}/${task.shareFolderName}` : task.resourceName;
-        const summary = `${resourceName} 追更 ${fileCount} 集:\n${lines.join('\n')}`;
-        logTaskEvent(summary);
-        const compactLines = groups.map(([label, files]) => `- ${resourceName}${label ? `/${label}` : ''}/: ${files.length} 个`);
-        const title = `[追更通知] ${resourceName}追更${fileCount}集`;
-        const pushMessage = buildPushMessageWithThreshold({
-            title,
+        const payload = MediaCardFormatter.buildMediaNotifyPayload({
+            task,
+            fileList: newFiles,
             fileCount,
-            detailLines: lines,
-            compactLines,
-            threshold: 20,
-        }) + recordDeviationNote;
+            source: '139 移动云盘',
+            targetFolder: task.realFolderName || resourceName,
+            deviationNote: recordDeviationNote,
+            actionTitle: '追更入库'
+        });
+        logTaskEvent(`[追更完成] ${payload.title}`);
+        const pushMessage = payload;
 
         const firstExecution = !task.lastFileUpdateTime;
         task.status = 'pending';

@@ -3473,7 +3473,23 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // AI 深度识别与元数据抽取在线测试
+
+    // 动态拉取指定服务商的可用模型列表（兼容 OpenAI, DeepSeek, GLM, Gemini 等）
+    app.post('/api/ai/models', async (req, res) => {
+        try {
+            const aiService = require('../services/ai');
+            const result = await aiService.fetchModels(req.body);
+            if (result.success) {
+                res.json({ success: true, data: result.models });
+            } else {
+                res.status(400).json({ success: false, error: result.error });
+            }
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+        // AI 深度识别与元数据抽取在线测试
     app.post('/api/ai/parse', async (req, res) => {
         try {
             const { text, context, config } = req.body || {};

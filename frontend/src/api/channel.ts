@@ -201,7 +201,10 @@ export const channelApi = {
   searchCandidates(data: { title: string; year?: string; mediaType?: string }): Promise<TmdbCandidateItem[]> {
     return http.post('/api/scrape/search-candidates', data);
   },
-  testAi(config: Partial<ChannelAiConfig>): Promise<AiTestResult> {
+  fetchAiModels(config: Partial<ChannelAiConfig>): Promise<string[]> {
+    return http.post('/api/ai/models', config);
+  },
+    testAi(config: Partial<ChannelAiConfig>): Promise<AiTestResult> {
     return http.post('/api/ai/test', config);
   },
   testMobileAi(accountId?: number | null): Promise<AiTestResult> {

@@ -73,13 +73,19 @@ const savingStrategy = ref(false);
 const organizingNow = ref(false);
 const accounts = ref<AccountItem[]>([]);
 const selectedAccountId = ref<number | string>('');
-const hasActiveAccount = computed(() => accounts.value.some((a: AccountItem) => a.isActive));
+const hasActiveAccount = computed(() => accounts.value.some((a: AccountItem) => a.isActive !== false && a.memberStatus !== 'auth_failed' && a.memberStatusText !== '认证失效'));
 
 function checkAccountGuard(actionName = '此操作'): boolean {
+  // 检查是否存在已正常在线授权的有效账号
   if (!hasActiveAccount.value) {
+    const hasAnyAccount = accounts.value.length > 0;
+    const alertMsg = hasAnyAccount
+      ? `当前 139 移动云盘账号凭证已失效，执行「${actionName}」已被安全拦截。是否立即前往重新扫码登录？`
+      : `执行「${actionName}」需要已正常登录的 139 移动云盘账号。当前尚未绑定任何账号，是否立即前往扫码绑定？`;
+
     ElMessageBox.confirm(
-      `执行「${actionName}」需要已正常登录的 139 移动云盘账号。当前未检测到有效在线账号，是否立即前往扫码登录？`,
-      '需要云盘登录凭证',
+      alertMsg,
+      hasAnyAccount ? '云盘登录授权已失效' : '需要云盘登录凭证',
       {
         confirmButtonText: '前往扫码登录',
         cancelButtonText: '暂不前往',
