@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { accountApi } from '../api/account';
 import { ElMessage } from 'element-plus';
-import { Folder } from '@element-plus/icons-vue';
+import { Folder, Key, WarningFilled } from '@element-plus/icons-vue';
 
 interface FolderNode {
   id: string;
@@ -21,13 +22,44 @@ const emit = defineEmits<{
   (e: 'select', folder: { id: string; name: string }): void;
 }>();
 
+const router = useRouter();
 const visible = ref(props.modelValue);
 const selectedNode = ref<FolderNode | null>(null);
+const selectedFullPath = ref<string>('/');
+const authFailed = ref(false);
+const authErrorMessage = ref('');
+const treeKey = ref(0);
 
 watch(
   () => props.modelValue,
   (val) => {
     visible.value = val;
+    if (val) {
+      selectedNode.value = null;
+      selectedFullPath.value = '/';
+      if (!props.accountId) {
+        authFailed.value = true;
+        authErrorMessage.value = '未检测到已登录的 139 移动云盘账号，请先完成扫码绑定。';
+      } else {
+        authFailed.value = false;
+        authErrorMessage.value = '';
+        treeKey.value++;
+      }
+    }
+  }
+);
+
+watch(
+  () => props.accountId,
+  (val) => {
+    if (!val) {
+      authFailed.value = true;
+      authErrorMessage.value = '未检测到已登录的 139 移动云盘账号，请先完成扫码绑定。';
+    } else {
+      authFailed.value = false;
+      authErrorMessage.value = '';
+      treeKey.value++;
+    }
   }
 );
 
@@ -35,13 +67,22 @@ watch(visible, (val) => {
   emit('update:modelValue', val);
 });
 
+function isAuthFailure(err: any): boolean {
+  if (!err) return false;
+  if (err.code === 'AUTH_FAILED') return true;
+  const msg = String(err.message || err.error || '').toLowerCase();
+  return /04000005|05050006|认证失败|登录凭证已失效|未登录|未找到有效/.test(msg);
+}
+
 async function loadNode(node: any, resolve: (data: FolderNode[]) => void) {
   if (!props.accountId) {
+    authFailed.value = true;
+    authErrorMessage.value = '未检测到已登录的 139 移动云盘账号，请先完成扫码绑定。';
     resolve([]);
     return;
   }
 
-  // 顶层直接呈现虚拟根节点，展开根节点时再懒加载实际子目录
+  // 顶层直接呈现虚拟根节点
   if (node.level === 0) {
     resolve([
       {
@@ -64,14 +105,19 @@ async function loadNode(node: any, resolve: (data: FolderNode[]) => void) {
         isLeaf: false,
       }));
 
+    authFailed.value = false;
+    authErrorMessage.value = '';
     resolve(folders);
   } catch (err: any) {
-    ElMessage.error(`加载目录失败: ${err.message || '未知错误'}`);
+    if (isAuthFailure(err)) {
+      authFailed.value = true;
+      authErrorMessage.value = err.message || '云盘登录凭证已失效，请重新扫码登录。';
+    } else {
+      ElMessage.error(`加载目录失败: ${err.message || '未知错误'}`);
+    }
     resolve([]);
   }
 }
-
-const selectedFullPath = ref<string>('/');
 
 function getFullPath(node: any): string {
   if (!node || node.data?.id === '-11') return '/';
@@ -92,12 +138,21 @@ function handleNodeClick(data: FolderNode, node: any) {
 }
 
 function handleConfirm() {
+  if (authFailed.value) {
+    ElMessage.warning('当前云盘登录凭证失效，无法选择目录');
+    return;
+  }
   if (!selectedNode.value) {
     ElMessage.warning('请选择一个目录');
     return;
   }
   emit('select', { id: selectedNode.value.id, name: selectedFullPath.value });
   visible.value = false;
+}
+
+function handleGoToAccounts() {
+  visible.value = false;
+  router.push('/accounts');
 }
 </script>
 
@@ -110,7 +165,26 @@ function handleConfirm() {
     append-to-body
   >
     <div class="tree-container">
+      <!-- 凭证失效 / 未登录全流程友好引导卡片 -->
+      <div v-if="authFailed" class="auth-guard-panel">
+        <div class="auth-icon-box">
+          <el-icon class="auth-icon"><Key /></el-icon>
+        </div>
+        <div class="auth-guard-title">云盘登录凭据未就绪或已失效</div>
+        <p class="auth-guard-desc">
+          {{ authErrorMessage || '当前 139 移动云盘账号尚未完成登录或凭据已过期，系统已开启防空拦截保护。' }}
+        </p>
+        <div class="auth-action-wrap">
+          <el-button type="primary" size="default" class="auth-login-btn" @click="handleGoToAccounts">
+            前往【云盘账号】重新扫码登录
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 正常目录树展示 -->
       <el-tree
+        v-else
+        :key="treeKey"
         lazy
         :load="loadNode"
         :props="{ label: 'name', isLeaf: 'isLeaf' }"
@@ -129,12 +203,21 @@ function handleConfirm() {
 
     <template #footer>
       <div class="dialog-footer">
-        <span v-if="selectedNode" class="selected-text">
+        <span v-if="!authFailed && selectedNode" class="selected-text">
           已选: <strong>{{ selectedFullPath }}</strong>
         </span>
-        <div>
+        <span v-else-if="authFailed" class="auth-alert-text">
+          <el-icon class="mr-1 text-amber-500"><WarningFilled /></el-icon>
+          未登录状态不可选
+        </span>
+        <span v-else class="text-xs text-gray-400">点击目录项进行选取</span>
+        <div class="footer-btns">
           <el-button @click="visible = false">取消</el-button>
-          <el-button type="primary" :disabled="!selectedNode" @click="handleConfirm">
+          <el-button
+            type="primary"
+            :disabled="authFailed || !selectedNode"
+            @click="handleConfirm"
+          >
             确定
           </el-button>
         </div>
@@ -145,30 +228,98 @@ function handleConfirm() {
 
 <style scoped>
 .tree-container {
+  min-height: 240px;
   max-height: 380px;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 8px;
   border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background-color: var(--el-fill-color-blank);
+}
+
+.auth-guard-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 20px;
+  text-align: center;
+}
+
+.auth-icon-box {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(234, 88, 12, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.auth-icon {
+  font-size: 26px;
+  color: #ea580c;
+}
+
+.auth-guard-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 8px;
+}
+
+.auth-guard-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+  max-width: 380px;
+  margin: 0 auto 20px auto;
+}
+
+.auth-action-wrap {
+  display: flex;
+  gap: 12px;
+}
+
+.auth-login-btn {
+  font-weight: 500;
   border-radius: 6px;
 }
+
 .custom-tree-node {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
 }
+
 .node-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .dialog-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+
 .selected-text {
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+
+.auth-alert-text {
+  font-size: 12px;
+  color: #d97706;
+  display: inline-flex;
+  align-items: center;
+}
+
+.footer-btns {
+  display: flex;
+  gap: 8px;
 }
 </style>

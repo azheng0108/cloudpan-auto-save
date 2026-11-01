@@ -175,8 +175,15 @@ const registerApiRoutes = (app, deps) => {
     });
 
     const handleFetchFolders = async (accountIdRaw, folderIdRaw, forceRefreshRaw, res) => {
+        const accountId = parseInt(accountIdRaw);
         try {
-            const accountId = parseInt(accountIdRaw);
+            if (!accountId || isNaN(accountId)) {
+                return res.json({
+                    success: false,
+                    code: 'AUTH_FAILED',
+                    error: '请先在「云盘账号」页面绑定并登录 139 移动云盘账号'
+                });
+            }
             const folderId = folderIdRaw || '-11';
             const forceRefresh = forceRefreshRaw === 'true';
             const cacheKey = `folders_${accountId}_${folderId}`;
@@ -187,7 +194,7 @@ const registerApiRoutes = (app, deps) => {
                 return res.json({ success: true, data: folderCache.get(cacheKey) });
             }
             const account = await accountRepo.findOneBy({ id: accountId });
-            ensureCloud139Account(account, '目录读取');
+            ensureCloud139Account(account, '目录读取', true);
 
             const cloud139 = Cloud139Service.getInstance(account);
             const catalogID = (folderId === '-11' || !folderId) ? '/' : folderId;
@@ -206,7 +213,19 @@ const registerApiRoutes = (app, deps) => {
             folderCache.set(cacheKey, folders);
             res.json({ success: true, data: folders });
         } catch (error) {
-            res.json({ success: false, error: error.message });
+            const isAuthFail = error.code === 'AUTH_FAILED' || Cloud139Service.isAuthFailure(error) || /04000005|05050006|认证失败|登录凭证已失效/.test(error.message);
+            if (isAuthFail && accountId && !isNaN(accountId)) {
+                try {
+                    await accountRepo.update({ id: accountId }, { isActive: false });
+                    Cloud139Service.clearInstance(accountId);
+                } catch (_) {}
+                return res.json({
+                    success: false,
+                    code: 'AUTH_FAILED',
+                    error: '云盘账号登录凭证已失效，系统已自动标记离线，请前往【云盘账号】重新扫码登录'
+                });
+            }
+            res.json({ success: false, code: error.code, error: error.message });
         }
     };
 
@@ -219,19 +238,31 @@ const registerApiRoutes = (app, deps) => {
     });
 
     app.post('/api/folders/mkdir', async (req, res) => {
+        const accountId = parseInt(req.body?.accountId);
         try {
-            const { accountId, parentFileId, folderName } = req.body;
+            const { parentFileId, folderName } = req.body || {};
             if (!folderName || !folderName.trim()) throw new Error('文件夹名称不能为空');
-            const account = await accountRepo.findOneBy({ id: parseInt(accountId) });
-            if (!account) throw new Error('账号不存在');
-            if (account.accountType !== 'cloud139') throw new Error('仅支持移动云盘账号创建文件夹');
+            const account = await accountRepo.findOneBy({ id: accountId });
+            ensureCloud139Account(account, '创建文件夹', true);
             const cloud139 = Cloud139Service.getInstance(account);
             const result = await cloud139.createFolderHcy(parentFileId || '/', folderName.trim());
             if (!result) throw new Error('创建文件夹失败');
             folderCache.clearPrefix(`folders_${accountId}_`);
             res.json({ success: true, data: result });
         } catch (error) {
-            res.json({ success: false, error: error.message });
+            const isAuthFail = error.code === 'AUTH_FAILED' || Cloud139Service.isAuthFailure(error) || /04000005|05050006|认证失败|登录凭证已失效/.test(error.message);
+            if (isAuthFail && accountId && !isNaN(accountId)) {
+                try {
+                    await accountRepo.update({ id: accountId }, { isActive: false });
+                    Cloud139Service.clearInstance(accountId);
+                } catch (_) {}
+                return res.json({
+                    success: false,
+                    code: 'AUTH_FAILED',
+                    error: '云盘账号登录凭证已失效，请前往【云盘账号】重新扫码登录'
+                });
+            }
+            res.json({ success: false, code: error.code, error: error.message });
         }
     });
 

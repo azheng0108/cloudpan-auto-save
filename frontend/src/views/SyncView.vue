@@ -91,6 +91,25 @@ watch(
 const isLoading = ref(true);
 const isSaving = ref(false);
 const accounts = ref<AccountItem[]>([]);
+const hasActiveAccount = computed(() => accounts.value.some((a) => a.isActive));
+
+function checkAccountGuard(actionName = '此操作'): boolean {
+  if (!hasActiveAccount.value) {
+    ElMessageBox.confirm(
+      `执行「${actionName}」需要已正常登录的 139 移动云盘账号。当前未检测到有效在线账号，是否立即前往扫码登录？`,
+      '需要云盘登录凭证',
+      {
+        confirmButtonText: '前往扫码登录',
+        cancelButtonText: '暂不前往',
+        type: 'warning',
+      }
+    ).then(() => {
+      router.push('/accounts');
+    }).catch(() => {});
+    return false;
+  }
+  return true;
+}
 
 // 全局配置响应式数据
 const form = reactive<SyncConfigData>({
@@ -114,13 +133,15 @@ async function loadAccounts() {
     const list = await accountApi.getAccounts();
     accounts.value = (list || []).filter((a) => a.accountType === 'cloud139');
     if (accounts.value.length > 0) {
-      if (!crossSourceAccountId.value) crossSourceAccountId.value = accounts.value[0].id;
+      const active = accounts.value.find((a) => a.isActive);
+      const defaultId = active ? active.id : '';
+      if (!crossSourceAccountId.value) crossSourceAccountId.value = defaultId;
       if (!crossTargetAccountId.value) {
-        crossTargetAccountId.value = accounts.value.length > 1 ? accounts.value[1].id : accounts.value[0].id;
+        crossTargetAccountId.value = accounts.value.length > 1 && accounts.value[1].isActive ? accounts.value[1].id : defaultId;
       }
-      if (!rapidExportAccountId.value) rapidExportAccountId.value = accounts.value[0].id;
-      if (!rapidImportAccountId.value) rapidImportAccountId.value = accounts.value[0].id;
-      if (!offlineSourceAccountId.value) offlineSourceAccountId.value = accounts.value[0].id;
+      if (!rapidExportAccountId.value) rapidExportAccountId.value = defaultId;
+      if (!rapidImportAccountId.value) rapidImportAccountId.value = defaultId;
+      if (!offlineSourceAccountId.value) offlineSourceAccountId.value = defaultId;
     }
   } catch (err: any) {
     ElMessage.error(err.message || '加载云盘账号失败');
@@ -705,6 +726,7 @@ const folderPickerTitle = computed(() => {
 });
 
 function openFolderPicker(target: 'crossSource' | 'crossTarget' | 'rapidExport' | 'rapidImport' | 'offlineSource') {
+  if (!checkAccountGuard('选择云盘目录')) return;
   folderPickerTarget.value = target;
   isFolderPickerOpen.value = true;
 }
@@ -824,6 +846,20 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="space-y-6">
+      <!-- 全局未登录 / 凭证失效防空防护提示条 -->
+      <div v-if="!hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+        <div class="flex items-center gap-2.5 text-xs">
+          <AlertTriangle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，跨号秒传与同步已进入受保护防空状态。</span>
+        </div>
+        <button
+          type="button"
+          @click="router.push('/accounts')"
+          class="shrink-0 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer self-start sm:self-auto"
+        >
+          前往扫码登录
+        </button>
+      </div>
 
       <!-- ═════════════════════════════════════════════════════════════ -->
       <!-- TAB 1: 139 账号间跨号秒传 (纯协议秒级建树)                   -->

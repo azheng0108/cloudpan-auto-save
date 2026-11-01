@@ -27,7 +27,7 @@ import {
   SlidersHorizontal,
   ChevronDown,
 } from 'lucide-vue-next';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { settingsApi } from '../api/settings';
 import { accountApi } from '../api/account';
 import FolderTreeSelector from '../components/FolderTreeSelector.vue';
@@ -42,6 +42,7 @@ const DEFAULT_VIDEO_EXTS = [
 const isLoading = ref(true);
 const isSaving = ref(false);
 const isGeneratingStrm = ref(false);
+const router = useRouter();
 const activeAccountId = ref<number | string>('');
 
 // 多目录选择控制
@@ -212,7 +213,17 @@ function removeSourceCatalogRow(idx: number) {
 // 打开特定行的目录挑选弹窗
 function openCatalogFolderPicker(idx: number) {
   if (!activeAccountId.value) {
-    ElMessage.warning('请先在账号管理中添加或激活 139 网盘账号');
+    ElMessageBox.confirm(
+      '选择网盘目录需要已登录的 139 移动云盘账号。当前未检测到有效在线账号，是否立即前往扫码登录？',
+      '需要云盘登录凭证',
+      {
+        confirmButtonText: '前往扫码登录',
+        cancelButtonText: '暂不前往',
+        type: 'warning',
+      }
+    ).then(() => {
+      router.push('/accounts');
+    }).catch(() => {});
     return;
   }
   currentCatalogSelectIndex.value = idx;
@@ -315,10 +326,8 @@ async function loadConfig() {
     // 获取可用 139 账号
     try {
       const accs = await accountApi.getAccounts();
-      const cloud139 = (accs || []).find((a: any) => a.accountType === 'cloud139' && a.isActive) || (accs || []).find((a: any) => a.accountType === 'cloud139');
-      if (cloud139) {
-        activeAccountId.value = cloud139.id;
-      }
+      const cloud139 = (accs || []).find((a: any) => a.accountType === 'cloud139' && a.isActive);
+      activeAccountId.value = cloud139 ? cloud139.id : '';
     } catch (_) {}
 
     // 2. Emby 回填

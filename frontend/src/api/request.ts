@@ -33,7 +33,9 @@ service.interceptors.response.use(
     if (res && typeof res.success === 'boolean') {
       if (!res.success) {
         const errorMsg = res.error || '操作失败';
-        return Promise.reject(new Error(errorMsg));
+        const err: any = new Error(errorMsg);
+        if (res.code) err.code = res.code;
+        return Promise.reject(err);
       }
       return res.data !== undefined ? res.data : res;
     }
@@ -52,6 +54,9 @@ service.interceptors.response.use(
         return Promise.reject(new Error('会话已过期，请重新登录'));
       } else if (error.response.data?.error) {
         friendlyMessage = error.response.data.error;
+        const err: any = new Error(friendlyMessage);
+        if (error.response.data?.code) err.code = error.response.data.code;
+        return Promise.reject(err);
       } else if (status === 502 || status === 504) {
         friendlyMessage = `后端服务未启动或连接断开 (${status})`;
       } else if (status === 404) {

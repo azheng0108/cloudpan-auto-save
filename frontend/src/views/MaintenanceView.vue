@@ -42,7 +42,7 @@ import {
   X,
   Plus,
 } from 'lucide-vue-next';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { accountApi } from '../api/account';
 import { settingsApi } from '../api/settings';
 import { useLogStore } from '../stores/log';
@@ -142,6 +142,25 @@ watch(
 // 账号选择（单一状态源保留在父组件：v-model 驱动 AccountSwitcher，11 处下游引用零改动）
 const accounts = ref<AccountSwitcherItem[]>([]);
 const activeAccountId = ref<number | string>('');
+const hasActiveAccount = computed(() => accounts.value.some((a: any) => a.isActive));
+
+function checkAccountGuard(actionName = '此操作'): boolean {
+  if (!hasActiveAccount.value) {
+    ElMessageBox.confirm(
+      `执行「${actionName}」需要已正常登录的 139 移动云盘账号。当前未检测到有效在线账号，是否立即前往扫码登录？`,
+      '需要云盘登录凭证',
+      {
+        confirmButtonText: '前往扫码登录',
+        cancelButtonText: '暂不前往',
+        type: 'warning',
+      }
+    ).then(() => {
+      router.push('/accounts');
+    }).catch(() => {});
+    return false;
+  }
+  return true;
+}
 
 // 当前选中的云盘账号与容量信息（运行时携带 capacity 等后端字段，超出子组件展示契约）
 const currentAccount = computed<(AccountSwitcherItem & { capacity?: any }) | null>(() => {
@@ -1741,10 +1760,7 @@ function onQuarantinePathChange() {
 
 // 独立的目录选择弹窗触发
 function openFolderPickerFor(module: TargetModule) {
-  if (!activeAccountId.value) {
-    ElMessage.warning('请先选择有效的 139 网盘账号');
-    return;
-  }
+  if (!checkAccountGuard('选择云盘目录')) return;
   pickerTargetModule.value = module;
   isFolderPickerVisible.value = true;
 }
@@ -1798,10 +1814,8 @@ async function initData() {
   try {
     const accList = await accountApi.getAccounts();
     accounts.value = (accList || []).filter((a: any) => a.accountType === 'cloud139');
-    const activeOne = accounts.value.find((a: any) => a.isActive) || accounts.value[0];
-    if (activeOne) {
-      activeAccountId.value = activeOne.id;
-    }
+    const activeOne = accounts.value.find((a: any) => a.isActive);
+    activeAccountId.value = activeOne ? activeOne.id : '';
 
     const cfg = await settingsApi.getSettings();
     rawFullConfig = JSON.parse(JSON.stringify(cfg || {}));
@@ -3126,6 +3140,20 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-6 w-full pb-16">
+    <!-- 全局未登录 / 凭证失效防空防护提示条 -->
+    <div v-if="!hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+      <div class="flex items-center gap-2.5 text-xs">
+        <AlertTriangle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，违规死链扫描与去重等运维功能已进入受保护防空状态。</span>
+      </div>
+      <button
+        type="button"
+        @click="router.push('/accounts')"
+        class="shrink-0 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer self-start sm:self-auto"
+      >
+        前往扫码登录
+      </button>
+    </div>
     <!-- 顶层主视口切换：统一对齐频道监控标准胶囊选项卡规范（对齐频道监控规范 ChannelView:899-940）
          页面标题唯一来源收敛为 MainLayout 公共头部 route.meta 渲染，视图内容区直接从选项卡开始 -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
