@@ -3521,6 +3521,60 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- 实时穿透扫描中：流式进度状态栏 (贴合主操作台，动线零位移即时反馈) -->
+        <div
+          v-if="isBannedScanning"
+          class="p-4 rounded-xl bg-gradient-to-r from-rose-50/90 via-pink-50/60 to-purple-50/90 dark:from-rose-950/40 dark:via-pink-950/30 dark:to-purple-950/40 border border-rose-200/80 dark:border-rose-800/60 space-y-2.5 my-3 shadow-xs backdrop-blur-xs"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <RefreshCw class="w-4 h-4 animate-spin" />
+              </div>
+              <div class="space-y-0.5 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <span>云盘违规与死链深度巡检中</span>
+                    <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300 font-bold animate-pulse">
+                      ⚡ 正在穿透遍历
+                    </span>
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  正在多维排查审核拦截码、特征黑名单与损坏死链，请耐心等待...
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 统计面板 (紧贴巡检进度，4宫格即时概览) -->
+        <div v-if="bannedScanResult" class="grid grid-cols-2 md:grid-cols-4 gap-3 my-3">
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
+            <span class="text-[11px] text-gray-500 dark:text-gray-400">已遍历目录</span>
+            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ bannedScanResult.scannedFolders }}</div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
+            <span class="text-[11px] text-gray-500 dark:text-gray-400">已排查文件</span>
+            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">
+              {{ bannedScanResult.scannedTargetFiles !== undefined ? bannedScanResult.scannedTargetFiles : bannedScanResult.totalFiles }}
+              <span v-if="bannedScanResult.ignoredCount" class="text-xs font-normal text-amber-600 dark:text-amber-400 ml-1">
+                (已忽略 {{ bannedScanResult.ignoredCount }})
+              </span>
+            </div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
+            <span class="text-[11px] text-gray-500 dark:text-gray-400">发现违规死链</span>
+            <div class="text-lg font-bold" :class="bannedScanResult.bannedCount > 0 ? 'text-red-500' : 'text-emerald-500'">
+              {{ bannedScanResult.bannedCount }}
+            </div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
+            <span class="text-[11px] text-gray-500 dark:text-gray-400">可释放存储空间</span>
+            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ bannedScanResult.totalBannedSizeFormatted }}</div>
+          </div>
+        </div>
+
         <!-- 高级治理与排查选项（可折叠抽屉，降噪 70% 视口） -->
         <div class="rounded-xl border border-slate-200/90 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/30 overflow-hidden my-4 transition-all">
           <div
@@ -3685,60 +3739,6 @@ onUnmounted(() => {
               </div>
               <el-switch v-model="pruneEmptyParent" @change="saveCleanPref" />
             </div>
-          </div>
-        </div>
-
-        <!-- 实时穿透扫描中：流式进度状态栏 (参照缺集检测风格) -->
-        <div
-          v-if="isBannedScanning"
-          class="p-4 rounded-xl bg-gradient-to-r from-rose-50/90 via-pink-50/60 to-purple-50/90 dark:from-rose-950/40 dark:via-pink-950/30 dark:to-purple-950/40 border border-rose-200/80 dark:border-rose-800/60 space-y-2.5 my-4 shadow-xs backdrop-blur-xs"
-        >
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <RefreshCw class="w-4 h-4 animate-spin" />
-              </div>
-              <div class="space-y-0.5 min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                    <span>云盘违规与死链深度巡检中</span>
-                    <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300 font-bold animate-pulse">
-                      ⚡ 正在穿透遍历
-                    </span>
-                  </span>
-                </div>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                  正在多维排查审核拦截码、特征黑名单与损坏死链，请耐心等待...
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 统计面板 -->
-        <div v-if="bannedScanResult" class="grid grid-cols-2 md:grid-cols-4 gap-3 my-4">
-          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
-            <span class="text-[11px] text-gray-500 dark:text-gray-400">已遍历目录</span>
-            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ bannedScanResult.scannedFolders }}</div>
-          </div>
-          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
-            <span class="text-[11px] text-gray-500 dark:text-gray-400">已排查文件</span>
-            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">
-              {{ bannedScanResult.scannedTargetFiles !== undefined ? bannedScanResult.scannedTargetFiles : bannedScanResult.totalFiles }}
-              <span v-if="bannedScanResult.ignoredCount" class="text-xs font-normal text-amber-600 dark:text-amber-400 ml-1">
-                (已忽略 {{ bannedScanResult.ignoredCount }})
-              </span>
-            </div>
-          </div>
-          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
-            <span class="text-[11px] text-gray-500 dark:text-gray-400">发现违规死链</span>
-            <div class="text-lg font-bold" :class="bannedScanResult.bannedCount > 0 ? 'text-red-500' : 'text-emerald-500'">
-              {{ bannedScanResult.bannedCount }}
-            </div>
-          </div>
-          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
-            <span class="text-[11px] text-gray-500 dark:text-gray-400">可释放存储空间</span>
-            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ bannedScanResult.totalBannedSizeFormatted }}</div>
           </div>
         </div>
 
