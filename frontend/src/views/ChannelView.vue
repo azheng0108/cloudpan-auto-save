@@ -49,6 +49,12 @@ import {
   Layers,
   ShieldCheck,
   Copy,
+  Zap,
+  Cpu,
+  Globe,
+  KeyRound,
+  Activity,
+  FlaskConical,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -2068,50 +2074,139 @@ onUnmounted(() => {
           <el-switch v-model="aiForm.enable" />
         </div>
 
-        <!-- 识别介入模式（二选一） + 模式差异说明 -->
-        <div class="mb-4">
-          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">识别介入模式（二选一）</label>
-          <div class="tab-pill-group mb-2">
-            <button
-              type="button"
-              class="tab-pill"
-              :class="{ 'tab-pill--active': aiForm.mode === 'fallback' }"
+        <!-- 识别介入模式（二选一）卡片化升级 -->
+        <div class="mb-5 space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+              <span>识别介入模式</span>
+              <span class="text-[11px] font-normal text-gray-400">（选择 AI 介入媒体识别的时机策略）</span>
+            </label>
+            <span class="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
+              当前: {{ aiForm.mode === 'always' ? 'AI 优先 (Always)' : '兜底增强 (Fallback)' }}
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <!-- 模式 1: 兜底增强 (Fallback) -->
+            <div
+              class="relative rounded-xl border p-4 cursor-pointer transition-all duration-200 select-none flex flex-col justify-between"
+              :class="aiForm.mode === 'fallback'
+                ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-500/80 dark:border-blue-500/60 ring-2 ring-blue-500/20 shadow-xs'
+                : 'bg-white dark:bg-slate-900/60 border-gray-200/80 dark:border-slate-800 hover:border-gray-300 dark:hover:border-slate-700'"
               @click="aiForm.mode = 'fallback'"
             >
-              兜底增强（fallback）
-            </button>
-            <button
-              type="button"
-              class="tab-pill"
-              :class="{ 'tab-pill--active': aiForm.mode === 'always' }"
+              <div>
+                <div class="flex items-start justify-between gap-2 mb-2">
+                  <div class="flex items-center gap-2.5">
+                    <div
+                      class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+                      :class="aiForm.mode === 'fallback'
+                        ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400'
+                        : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400'"
+                    >
+                      <Zap class="w-4 h-4 fill-current" />
+                    </div>
+                    <div>
+                      <div class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        <span>兜底增强</span>
+                        <span class="text-[10px] font-mono text-gray-400 font-normal">fallback</span>
+                      </div>
+                      <div class="flex items-center gap-1.5 mt-0.5">
+                        <span class="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded">极速节能</span>
+                        <span class="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.2 rounded">推荐日常</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- 选中单选指示圈 -->
+                  <div
+                    class="w-4 h-4 rounded-full border flex items-center justify-center mt-0.5"
+                    :class="aiForm.mode === 'fallback'
+                      ? 'border-blue-500 bg-blue-500 text-white'
+                      : 'border-gray-300 dark:border-slate-600'"
+                  >
+                    <div v-if="aiForm.mode === 'fallback'" class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+                </div>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed mt-2.5">
+                  常规规则与 TMDB 先直接匹配；未命中或受复杂混淆字符干扰时，自动唤醒 AI 兜底判定，兼顾零延迟与 Token 节省。
+                </p>
+              </div>
+            </div>
+
+            <!-- 模式 2: AI 优先 (Always) -->
+            <div
+              class="relative rounded-xl border p-4 cursor-pointer transition-all duration-200 select-none flex flex-col justify-between"
+              :class="aiForm.mode === 'always'
+                ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-500/80 dark:border-indigo-500/60 ring-2 ring-indigo-500/20 shadow-xs'
+                : 'bg-white dark:bg-slate-900/60 border-gray-200/80 dark:border-slate-800 hover:border-gray-300 dark:hover:border-slate-700'"
               @click="aiForm.mode = 'always'"
             >
-              AI 优先（always）
-            </button>
-          </div>
-          <div class="p-2.5 rounded-lg bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40 text-[11px] text-blue-800 dark:text-blue-300 leading-relaxed">
-            <span class="font-medium">{{ aiForm.mode === 'always' ? '★ AI 优先模式：' : '★ 兜底增强模式：' }}</span>
-            {{ aiForm.mode === 'always'
-              ? '所有推文均先由 AI 深度提纯出纯净中文片名与年份，再请求 TMDB 官方接口锁定权威 tmdbId。攻克表情符号与防封暗号，TMDB 联动绝对保留。'
-              : '常规规则与 TMDB 先直接匹配，未命中或存在干扰时才由 AI 兜底判定；兼顾极速处理与 Token 节省。'
-            }}
+              <div>
+                <div class="flex items-start justify-between gap-2 mb-2">
+                  <div class="flex items-center gap-2.5">
+                    <div
+                      class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+                      :class="aiForm.mode === 'always'
+                        ? 'bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400'
+                        : 'bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400'"
+                    >
+                      <Cpu class="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        <span>AI 优先</span>
+                        <span class="text-[10px] font-mono text-gray-400 font-normal">always</span>
+                      </div>
+                      <div class="flex items-center gap-1.5 mt-0.5">
+                        <span class="text-[10px] font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.2 rounded">深度提纯</span>
+                        <span class="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.2 rounded">暗号攻坚</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- 选中单选指示圈 -->
+                  <div
+                    class="w-4 h-4 rounded-full border flex items-center justify-center mt-0.5"
+                    :class="aiForm.mode === 'always'
+                      ? 'border-indigo-500 bg-indigo-500 text-white'
+                      : 'border-gray-300 dark:border-slate-600'"
+                  >
+                    <div v-if="aiForm.mode === 'always'" class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+                </div>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed mt-2.5">
+                  所有推文均先由 AI 深度提纯出纯净中文片名与年份，再请求 TMDB 官方锁定权威 tmdbId。攻克表情符号与防封暗号。
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- API 服务配置卡片 (对齐专业影视系统规范：移动灵犀免配置排首位，兼容 DeepSeek / OpenAI 等) -->
+        <!-- API 服务配置卡片 (专业网格自适应排版) -->
         <div class="rounded-2xl bg-white dark:bg-[#111827] border border-gray-200/80 dark:border-gray-800 p-5 shadow-sm space-y-4 mb-5">
+          <!-- 头部信息 -->
           <div class="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
             <span class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Sparkles class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <div class="w-6 h-6 rounded-md bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                <Sparkles class="w-3.5 h-3.5" />
+              </div>
               <span>API 服务（AI 模型与提供商）</span>
             </span>
-            <span class="text-[11px] text-gray-400">支持 移动灵犀免配置 / DeepSeek / GLM / OpenAI / Gemini</span>
+            <div class="flex items-center gap-1.5 text-[11px] text-gray-400">
+              <span class="hidden sm:inline">兼容移动灵犀 / DeepSeek / GLM / OpenAI / Gemini</span>
+              <span class="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-medium text-[10px]">
+                {{ currentProviderName || '未指定' }}
+              </span>
+            </div>
           </div>
 
-          <!-- 1. API 服务选择器 -->
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">API 服务</label>
-            <div class="flex-1 max-w-xl">
+          <!-- 表单主体：自适应双列网格 -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- 1. API 服务选择器 -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <SlidersHorizontal class="w-3.5 h-3.5 text-gray-400" />
+                <span>API 服务提供商</span>
+              </label>
               <el-select
                 v-model="selectedProviderId"
                 placeholder="请选择 API 服务"
@@ -2131,25 +2226,27 @@ onUnmounted(() => {
                 </el-option>
               </el-select>
             </div>
-          </div>
 
-          <!-- 2. 名称 -->
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">名称</label>
-            <div class="flex-1 max-w-xl">
+            <!-- 2. 服务别名 -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <Edit3 class="w-3.5 h-3.5 text-gray-400" />
+                <span>服务别名</span>
+              </label>
               <input
                 v-model="currentProviderName"
                 type="text"
-                placeholder="服务名称"
+                placeholder="例如: 自定义 / DeepSeek 官方"
                 class="input-base text-xs w-full font-medium"
               />
             </div>
-          </div>
 
-          <!-- 3. 服务地址 (Base URL) -->
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">服务地址</label>
-            <div class="flex-1 max-w-xl">
+            <!-- 3. 服务地址 (Base URL) -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <Globe class="w-3.5 h-3.5 text-gray-400" />
+                <span>接口服务地址 (Base URL)</span>
+              </label>
               <div
                 v-if="selectedProviderId === 'mobile'"
                 class="input-base text-xs w-full font-mono !bg-emerald-50/60 dark:!bg-emerald-950/20 !border-emerald-300/60 dark:!border-emerald-800/40 text-emerald-800 dark:text-emerald-300 flex items-center justify-between"
@@ -2168,12 +2265,13 @@ onUnmounted(() => {
                 class="input-base text-xs w-full font-mono"
               />
             </div>
-          </div>
 
-          <!-- 4. API Key -->
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">API Key</label>
-            <div class="flex-1 max-w-xl">
+            <!-- 4. API Key -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <KeyRound class="w-3.5 h-3.5 text-gray-400" />
+                <span>API 凭证 (API Key)</span>
+              </label>
               <div
                 v-if="selectedProviderId === 'mobile'"
                 class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-400 dark:text-gray-500 cursor-not-allowed flex items-center justify-between"
@@ -2199,19 +2297,30 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
-          </div>
 
-          <!-- 5. 模型 (完全对齐图4交互规范：支持刷新模型列表、手动输入与可选列表) -->
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 sm:w-28 shrink-0">模型</label>
-            <div class="flex-1 max-w-xl">
+            <!-- 5. 模型选择 (整行展开) -->
+            <div class="space-y-1.5 md:col-span-2">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <Film class="w-3.5 h-3.5 text-gray-400" />
+                  <span>识别模型 (Model)</span>
+                </label>
+                <span v-if="selectedProviderId !== 'mobile' && modelInputMode === 'select'" class="text-[11px] text-gray-400">
+                  支持从服务商接口拉取，或手动自由输入
+                </span>
+              </div>
+
               <div
                 v-if="selectedProviderId === 'mobile'"
-                class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-600 dark:text-gray-300 flex items-center justify-between"
+                class="input-base text-xs w-full !bg-gray-50 dark:!bg-gray-800/50 text-gray-700 dark:text-gray-300 flex items-center justify-between"
               >
-                <span>灵犀多模态大模型 (移动云盘内置)</span>
-                <span class="text-[10px] text-blue-600 dark:text-blue-400 font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40">免配置</span>
+                <div class="flex items-center gap-2">
+                  <span class="font-medium">灵犀多模态大模型 (移动云盘内置)</span>
+                  <span class="text-[10px] text-gray-400 font-mono">sys-mcloud-lingxi</span>
+                </div>
+                <span class="text-[10px] text-blue-600 dark:text-blue-400 font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40">免配置 · 极速响应</span>
               </div>
+
               <div v-else class="space-y-2">
                 <!-- 下拉选择模式 (包含刷新模型列表与手动输入选项) -->
                 <div v-if="modelInputMode === 'select'" class="flex items-center gap-2">
@@ -2248,13 +2357,22 @@ onUnmounted(() => {
                   </div>
                   <button
                     type="button"
-                    class="btn-default text-xs h-[34px] px-2.5 text-blue-600 dark:text-blue-400 shrink-0 cursor-pointer flex items-center gap-1"
+                    class="btn-default text-xs h-[34px] px-3 text-blue-600 dark:text-blue-400 shrink-0 cursor-pointer flex items-center gap-1.5 font-medium shadow-2xs hover:bg-blue-50 dark:hover:bg-blue-950/40"
                     :disabled="isFetchingModels"
                     title="从当前服务地址拉取最新模型列表"
                     @click="handleFetchModelList"
                   >
-                    <RotateCw class="w-3 h-3" :class="{ 'animate-spin': isFetchingModels }" />
+                    <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isFetchingModels }" />
                     <span>刷新</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-default text-xs h-[34px] px-2.5 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1 font-medium shadow-2xs"
+                    title="切换为手动自由输入"
+                    @click="modelInputMode = 'manual'"
+                  >
+                    <Edit3 class="w-3.5 h-3.5 text-gray-400" />
+                    <span>手填</span>
                   </button>
                 </div>
 
@@ -2268,10 +2386,11 @@ onUnmounted(() => {
                   />
                   <button
                     type="button"
-                    class="btn-default text-xs h-[34px] px-2.5 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1"
+                    class="btn-default text-xs h-[34px] px-3 text-gray-600 dark:text-gray-300 shrink-0 cursor-pointer flex items-center gap-1.5 font-medium shadow-2xs"
                     title="切换为下拉点选模式"
                     @click="modelInputMode = 'select'"
                   >
+                    <SlidersHorizontal class="w-3.5 h-3.5 text-gray-400" />
                     <span>从列表选择</span>
                   </button>
                 </div>
@@ -2281,162 +2400,197 @@ onUnmounted(() => {
 
           <!-- 移动灵犀独有的附加增强开关行 (网络搜索核实与凭证主动续期) -->
           <div v-if="selectedProviderId === 'mobile'" class="pt-3 border-t border-gray-100 dark:border-gray-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="flex items-center justify-between p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
               <div>
                 <span class="text-xs font-semibold text-gray-800 dark:text-gray-200">联网搜索核实</span>
-                <p class="text-[10px] text-gray-400">实时检索官方发布年份与正式剧名</p>
+                <p class="text-[11px] text-gray-400 mt-0.5">实时检索官方发布年份与正式剧名</p>
               </div>
               <el-switch v-model="mobileFallbackForm.networkSearch" size="small" />
             </div>
-            <div class="flex items-center justify-between p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800">
               <div>
                 <span class="text-xs font-semibold text-gray-800 dark:text-gray-200">凭证主动续期</span>
-                <p class="text-[10px] text-gray-400">后台自动续签通行凭据，永久免维护</p>
+                <p class="text-[11px] text-gray-400 mt-0.5">后台自动续签通行凭据，永久免维护</p>
               </div>
               <el-switch v-model="mobileFallbackForm.proactiveRenew" size="small" />
             </div>
           </div>
 
-          <!-- 底部: 测试连接按钮（完全对齐图4大圆角胶囊规范）与状态反馈 -->
-          <div class="pt-4 border-t border-gray-100 dark:border-gray-800 flex flex-col items-center justify-center gap-3">
+          <!-- 底部操作与测试状态条 (右侧胶囊按钮，左侧状态反馈) -->
+          <div class="pt-3.5 border-t border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <!-- 左侧状态反馈 -->
+            <div class="flex items-center gap-2 min-w-0">
+              <template v-if="currentTestResult">
+                <span v-if="currentTestResult.success" class="status-pill status-pill--success font-semibold flex items-center gap-1 shrink-0">
+                  <CheckCircle2 class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>连接成功 · {{ currentTestResult.latencyMs ?? '—' }}ms</span>
+                </span>
+                <span v-else class="status-pill status-pill--danger font-semibold flex items-center gap-1 shrink-0">
+                  <AlertCircle class="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                  <span>连接失败</span>
+                </span>
+
+                <span
+                  v-if="currentTestResult.success && (currentTestResult.reply || currentTestResult.model)"
+                  class="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-xs md:max-w-md font-mono"
+                  :title="currentTestResult.reply || currentTestResult.model"
+                >
+                  {{ currentTestResult.model ? '[' + currentTestResult.model + '] ' : '' }}{{ currentTestResult.reply || '' }}
+                </span>
+                <span
+                  v-else-if="!currentTestResult.success && currentTestResult.error"
+                  class="text-[11px] text-rose-600 dark:text-rose-400 truncate max-w-xs md:max-w-md font-medium"
+                  :title="currentTestResult.error"
+                >
+                  {{ currentTestResult.error }}
+                </span>
+              </template>
+              <template v-else>
+                <div class="flex items-center gap-1.5 text-[11px] text-gray-400">
+                  <Activity class="w-3.5 h-3.5 text-gray-400" />
+                  <span>点击右侧按钮测试 AI 接口连通性与响应延迟</span>
+                </div>
+              </template>
+            </div>
+
+            <!-- 右侧操作按钮 -->
+            <div class="flex items-center justify-end shrink-0">
+              <button
+                type="button"
+                class="btn-default text-xs h-9 px-4 rounded-xl text-blue-600 dark:text-blue-400 hover:bg-blue-50/80 dark:hover:bg-blue-950/40 border-blue-200/80 dark:border-blue-900/60 font-semibold cursor-pointer shadow-xs active:scale-[0.98] transition-all flex items-center gap-1.5"
+                :disabled="isTestingConnection"
+                @click="handleTestConnection"
+              >
+                <RotateCw v-if="isTestingConnection" class="w-3.5 h-3.5 animate-spin text-blue-600" />
+                <Send v-else class="w-3.5 h-3.5 text-blue-600" />
+                <span>{{ isTestingConnection ? '正在测试...' : '测试连接' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI 试算推文识别实验工作台 (封装为高质感实验卡片) -->
+        <div class="rounded-2xl border border-indigo-100 dark:border-indigo-950/50 bg-gradient-to-r from-indigo-50/20 via-transparent to-blue-50/20 dark:from-indigo-950/10 dark:to-blue-950/10 p-4 mb-5 shadow-2xs">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                <FlaskConical class="w-4 h-4" />
+              </div>
+              <div>
+                <div class="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>AI 推文识别试算工作台</span>
+                  <span class="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-1.5 py-0.2 rounded border border-indigo-200/50 dark:border-indigo-800/40">本地沙盒</span>
+                </div>
+                <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                  输入 Telegram 推文原文，即刻体验并验证 AI 影视清洗提纯与分集提取能力
+                </p>
+              </div>
+            </div>
+
             <button
               type="button"
-              class="w-full py-2.5 px-6 rounded-2xl bg-blue-50 hover:bg-blue-100/80 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/60 font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-[0.99]"
-              :disabled="isTestingConnection"
-              @click="handleTestConnection"
+              class="btn-default text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer font-semibold shrink-0 rounded-xl text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border-indigo-200/60 dark:border-indigo-800/50"
+              @click="toggleAiTrialPanel"
             >
-              <RotateCw v-if="isTestingConnection" class="w-4 h-4 animate-spin text-blue-600" />
-              <Send v-else class="w-4 h-4 text-blue-600" />
-              <span>{{ isTestingConnection ? '正在测试连接...' : '测试连接' }}</span>
-            </button>
-
-            <div v-if="currentTestResult" class="flex items-center justify-center gap-2 min-w-0 flex-wrap">
-              <span v-if="currentTestResult.success" class="status-pill status-pill--success font-medium">
-                ✅ 连接成功 · 延迟 {{ currentTestResult.latencyMs ?? '—' }}ms
-              </span>
-              <span v-else class="status-pill status-pill--danger font-medium">
-                ❌ 连接失败
-              </span>
-              <span
-                v-if="currentTestResult.success && (currentTestResult.reply || currentTestResult.model)"
-                class="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-sm"
-                :title="currentTestResult.reply || currentTestResult.model"
-              >
-                {{ currentTestResult.model ? '[' + currentTestResult.model + '] ' : '' }}{{ currentTestResult.reply || '' }}
-              </span>
-              <span
-                v-else-if="!currentTestResult.success && currentTestResult.error"
-                class="text-[11px] text-rose-600 dark:text-rose-400 truncate max-w-sm font-medium"
-                :title="currentTestResult.error"
-              >
-                {{ currentTestResult.error }}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- AI 试算推文识别入口 -->
-        <div class="flex items-center justify-between gap-2 mb-3">
-          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300">
-            AI 推文识别试算（仅本地体验，不影响线上转存与任何规则配置）
-          </label>
-          <button
-            type="button"
-            class="btn-default text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer font-medium shrink-0"
-            @click="toggleAiTrialPanel"
-          >
-            <Sparkles class="w-3.5 h-3.5 text-indigo-500" />
-            <span>{{ aiTrialOpen ? '收起试算' : 'AI 试算推文识别' }}</span>
-          </button>
-        </div>
-
-        <!-- 试算内联面板（零弹窗，收起时保留输入与结果） -->
-        <div v-if="aiTrialOpen" class="inline-panel inline-panel--indigo space-y-3">
-          <div class="flex items-center gap-2">
-            <textarea
-              v-model="aiTrialText"
-              rows="4"
-              placeholder="粘贴含防封干扰字符的 Telegram 推文原文，AI 将提取片名、季集与规格信息..."
-              class="input-base !h-auto py-2 text-xs leading-relaxed flex-1 font-mono"
-              :disabled="aiTrialLoading"
-            />
-          </div>
-
-          <div class="flex items-center justify-between gap-2">
-            <p class="text-[11px] text-gray-500 dark:text-gray-400">
-              试算结果仅用于预览识别质量，与线上转存链路完全隔离
-            </p>
-            <button
-              type="button"
-              class="btn-primary text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer font-medium shrink-0"
-              :disabled="aiTrialLoading"
-              @click="handleParseTweet"
-            >
-              <RotateCw v-if="aiTrialLoading" class="w-3.5 h-3.5 animate-spin" />
-              <Search v-else class="w-3.5 h-3.5" />
-              <span>{{ aiTrialLoading ? '识别中...' : '开始识别' }}</span>
+              <Sparkles class="w-3.5 h-3.5 text-indigo-500" />
+              <span>{{ aiTrialOpen ? '收起试算台' : '展开试算台' }}</span>
             </button>
           </div>
 
-          <!-- 失败错误条（输入内容保留） -->
-          <div v-if="aiTrialError" class="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs text-rose-700 dark:text-rose-300 leading-relaxed">
-            识别失败: {{ aiTrialError }}
-          </div>
-
-          <!-- 结构化结果网格：缓存命中徽标 + 11 字段 -->
-          <div v-if="aiTrialResult" class="space-y-2">
-            <div v-if="aiTrialResult.fromCache" class="flex items-center gap-2">
-              <span class="status-pill status-pill--info">缓存命中（10 分钟内相同文本）</span>
+          <!-- 试算内联面板（零弹窗，收起时保留输入与结果） -->
+          <div v-if="aiTrialOpen" class="mt-4 pt-4 border-t border-indigo-100/80 dark:border-indigo-950/60 space-y-3.5">
+            <div class="relative">
+              <textarea
+                v-model="aiTrialText"
+                rows="4"
+                placeholder="粘贴含防封干扰字符、表情符号的 Telegram 推文原文（例如包含片名、季集、网盘链接、分辨率、规格等）..."
+                class="input-base !h-auto py-2.5 text-xs leading-relaxed w-full font-mono focus:border-indigo-500 dark:focus:border-indigo-400"
+                :disabled="aiTrialLoading"
+              />
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">片名</div>
-                <div class="font-bold text-gray-900 dark:text-white break-all">{{ aiTrialResult.title || '—' }}</div>
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-[11px] text-gray-400 flex items-center gap-1">
+                <Info class="w-3 h-3 text-gray-400" />
+                <span>试算结果仅用于预览模型识别与提纯质量，与线上自动化转存链路完全物理隔离</span>
+              </p>
+              <button
+                type="button"
+                class="btn-primary text-xs h-8 px-4 flex items-center gap-1.5 cursor-pointer font-semibold shrink-0 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98]"
+                :disabled="aiTrialLoading"
+                @click="handleParseTweet"
+              >
+                <RotateCw v-if="aiTrialLoading" class="w-3.5 h-3.5 animate-spin" />
+                <Search v-else class="w-3.5 h-3.5" />
+                <span>{{ aiTrialLoading ? 'AI 识别中...' : '开始识别' }}</span>
+              </button>
+            </div>
+
+            <!-- 失败错误条（输入内容保留） -->
+            <div v-if="aiTrialError" class="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl text-xs text-rose-700 dark:text-rose-300 leading-relaxed flex items-center gap-2">
+              <AlertCircle class="w-4 h-4 text-rose-500 shrink-0" />
+              <span>识别失败: {{ aiTrialError }}</span>
+            </div>
+
+            <!-- 结构化结果网格：缓存命中徽标 + 11 字段 -->
+            <div v-if="aiTrialResult" class="space-y-2.5 pt-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-gray-800 dark:text-gray-200">识别提取结果</span>
+                <span v-if="aiTrialResult.fromCache" class="status-pill status-pill--info text-[10px]">
+                  ⚡ 缓存命中（10 分钟内相同文本）
+                </span>
               </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">原名</div>
-                <div class="font-medium text-gray-800 dark:text-gray-200 break-all">{{ aiTrialResult.originalTitle || '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">年份</div>
-                <div class="font-mono text-gray-800 dark:text-gray-200">{{ aiTrialResult.year || '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">媒体类型</div>
-                <div class="font-medium text-gray-800 dark:text-gray-200">{{ formatAiMediaType(aiTrialResult.mediaType) }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">季号</div>
-                <div class="font-mono text-gray-800 dark:text-gray-200">{{ aiTrialResult.season ?? '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">集号</div>
-                <div class="font-mono text-gray-800 dark:text-gray-200">{{ aiTrialResult.episode ?? '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">二级分类</div>
-                <div class="font-medium text-gray-800 dark:text-gray-200">{{ aiTrialResult.category || '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">视频格式</div>
-                <div class="font-mono text-gray-800 dark:text-gray-200">{{ aiTrialResult.videoFormat || '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">视频编码</div>
-                <div class="font-mono text-gray-800 dark:text-gray-200">{{ aiTrialResult.videoCodec || '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">动态范围</div>
-                <div class="font-mono text-gray-800 dark:text-gray-200">{{ aiTrialResult.dynamicRange || '—' }}</div>
-              </div>
-              <div class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
-                <div class="text-[10px] text-gray-400 mb-0.5">置信度</div>
-                <div class="font-mono text-gray-800 dark:text-gray-200">{{ formatAiConfidence(aiTrialResult.confidence) }}</div>
+
+              <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 text-xs">
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">片名</div>
+                  <div class="font-bold text-gray-900 dark:text-white break-all text-xs">{{ aiTrialResult.title || '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">原名</div>
+                  <div class="font-medium text-gray-800 dark:text-gray-200 break-all text-xs">{{ aiTrialResult.originalTitle || '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">年份</div>
+                  <div class="font-mono font-medium text-gray-800 dark:text-gray-200 text-xs">{{ aiTrialResult.year || '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">媒体类型</div>
+                  <div class="font-medium text-gray-800 dark:text-gray-200 text-xs">{{ formatAiMediaType(aiTrialResult.mediaType) }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">季号</div>
+                  <div class="font-mono text-gray-800 dark:text-gray-200 text-xs">{{ aiTrialResult.season ?? '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">集号</div>
+                  <div class="font-mono text-gray-800 dark:text-gray-200 text-xs">{{ aiTrialResult.episode ?? '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">二级分类</div>
+                  <div class="font-medium text-gray-800 dark:text-gray-200 text-xs">{{ aiTrialResult.category || '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">视频格式</div>
+                  <div class="font-mono text-gray-800 dark:text-gray-200 text-xs">{{ aiTrialResult.videoFormat || '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">视频编码</div>
+                  <div class="font-mono text-gray-800 dark:text-gray-200 text-xs">{{ aiTrialResult.videoCodec || '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">动态范围</div>
+                  <div class="font-mono text-gray-800 dark:text-gray-200 text-xs">{{ aiTrialResult.dynamicRange || '—' }}</div>
+                </div>
+                <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-indigo-100/80 dark:border-slate-800 shadow-2xs">
+                  <div class="text-[10px] text-gray-400 mb-0.5">置信度</div>
+                  <div class="font-mono text-gray-800 dark:text-gray-200 text-xs">{{ formatAiConfidence(aiTrialResult.confidence) }}</div>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
       </div>
     </template>
 
