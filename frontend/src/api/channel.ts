@@ -80,6 +80,7 @@ export interface AiParsedMediaInfo {
 }
 
 export interface ChannelGlobalConfig {
+  accountId?: number | string;
   enabled: boolean;
   channels: string[];
   defaultTargetFolderId: string;

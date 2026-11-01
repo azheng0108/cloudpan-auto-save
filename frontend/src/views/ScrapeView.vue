@@ -14,6 +14,8 @@ import {
 } from '../api/channel';
 import { accountApi, type AccountItem } from '../api/account';
 import FolderTreeSelector from '../components/FolderTreeSelector.vue';
+import AccountSwitcher from '../components/AccountSwitcher.vue';
+import type { AccountSwitcherItem } from '../components/accountSwitcher';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Sparkles,
@@ -73,6 +75,29 @@ const savingStrategy = ref(false);
 const organizingNow = ref(false);
 const accounts = ref<AccountItem[]>([]);
 const selectedAccountId = ref<number | string>('');
+const accountSwitcherItems = computed<AccountSwitcherItem[]>(() => {
+  return accounts.value.map((a: AccountItem) => ({
+    id: a.id,
+    accountName: a.alias || a.username,
+    username: a.username,
+    phone: a.username,
+    isDefault: a.isDefault,
+    isActive: a.isActive !== false && a.memberStatus !== 'auth_failed'
+  }));
+});
+
+const currentSelectedAccount = computed(() => {
+  return accounts.value.find((a: AccountItem) => String(a.id) === String(selectedAccountId.value)) || null;
+});
+
+function handleAccountSwitch(acc: AccountSwitcherItem) {
+  selectedAccountId.value = acc.id;
+  strategyConfig.value.accountId = acc.id;
+  ElMessage.success({
+    message: `已切换当前操作账号为: [${acc.accountName || acc.username || acc.id}]`,
+    grouping: true
+  });
+}
 const accountsLoaded = ref(false);
 const hasActiveAccount = computed(() => accounts.value.some((a: AccountItem) => a.isActive !== false && a.memberStatus !== 'auth_failed' && a.memberStatusText !== '认证失效'));
 
@@ -1122,6 +1147,7 @@ async function handleSaveStrategy() {
   }
 
   savingStrategy.value = true;
+  strategyConfig.value.accountId = selectedAccountId.value;
   try {
     const res = await channelApi.saveGlobalConfig(strategyConfig.value);
     if (res) {
@@ -1325,8 +1351,15 @@ async function loadAccounts() {
   try {
     const list = await accountApi.getAccounts();
     accounts.value = (list || []).filter((a: AccountItem) => a.accountType === 'cloud139');
-    const active = accounts.value.find((a: AccountItem) => a.isActive);
-    selectedAccountId.value = active ? active.id : '';
+    const targetId = strategyConfig.value.accountId || selectedAccountId.value;
+    const exists = accounts.value.find((a: AccountItem) => String(a.id) === String(targetId));
+    if (exists) {
+      selectedAccountId.value = exists.id;
+    } else {
+      const active = accounts.value.find((a: AccountItem) => a.isActive && a.memberStatus !== 'auth_failed');
+      const defaultAcc = accounts.value.find((a: AccountItem) => a.isDefault);
+      selectedAccountId.value = (active || defaultAcc || accounts.value[0])?.id || '';
+    }
   } catch (err: any) {
     ElMessage.error(`加载网盘账号失败: ${err.message}`);
   } finally {
@@ -1344,6 +1377,7 @@ async function loadStrategyConfig() {
         stagingFolderId: res.stagingFolderId || '',
         stagingFolderName: res.stagingFolderName || '/暂存区/频道转存',
         defaultTargetFolderId: res.defaultTargetFolderId || '/',
+        accountId: res.accountId || strategyConfig.value.accountId || '',
         defaultTargetFolderName: res.defaultTargetFolderName || '默认媒体库 (/)',
         scanInterval: res.scanInterval ?? 5,
         minFileSize: res.minFileSize ?? 50,
@@ -2211,16 +2245,37 @@ onUnmounted(() => {
     <template v-if="activeMainTab === 'organize'">
       <!-- 模块 1: 两级落盘目录中枢 -->
       <div class="settings-card">
-        <div class="flex items-center gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
-          <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-            <Folder class="w-5 h-5" />
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 mb-4 border-b border-gray-100 dark:border-gray-800">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <Folder class="w-5 h-5" />
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">全站统一路径中枢（两级落盘目录）</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                全系统唯一的路径配置中枢：暂存区（所有追更/监控汇总中转）与媒体库（TMDB 规范归档）
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 class="text-sm font-bold text-gray-900 dark:text-white leading-snug">全站统一路径中枢（两级落盘目录）</h3>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              全系统唯一的路径配置中枢：暂存区（所有追更/监控汇总中转）与媒体库（TMDB 规范归档）
-            </p>
+
+          <!-- 账号切换选择器 (多账号时可切换指定账号选择目录) -->
+          <div class="flex items-center gap-2 shrink-0">
+            <AccountSwitcher
+              v-model="selectedAccountId"
+              :accounts="accountSwitcherItems"
+              @select="handleAccountSwitch"
+            />
           </div>
+        </div>
+
+        <!-- 当前账号指示条 -->
+        <div v-if="currentSelectedAccount" class="flex items-center justify-between px-3.5 py-2 mb-4 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100/80 dark:border-indigo-900/40 rounded-xl text-xs text-indigo-800 dark:text-indigo-300">
+          <div class="flex items-center gap-2">
+            <HardDrive class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span>当前配置云盘账号：<strong>{{ currentSelectedAccount.alias || currentSelectedAccount.username }}</strong></span>
+            <span v-if="currentSelectedAccount.isDefault" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300 font-medium">默认</span>
+          </div>
+          <span class="text-[11px] text-indigo-600/70 dark:text-indigo-400/70 hidden sm:inline-block">下方【选择暂存目录】与【选择归档目录】将基于此账号加载</span>
         </div>
 
         <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 space-y-2 mb-4">
@@ -4419,7 +4474,8 @@ onUnmounted(() => {
     <!-- 目录树选择弹窗 (FolderTreeSelector) -->
     <FolderTreeSelector
       v-model="folderPickerVisible"
-      :account-id="selectedAccountId"
+      v-model:account-id="selectedAccountId"
+      :accounts="accountSwitcherItems"
       :title="folderPickerType === 'staging' ? '选择源暂存目录 (必须独立中转目录)' : (folderPickerType === 'manual-source' ? '选择待整理源目录' : '选择媒体库归档目标目录')"
       @select="handleFolderSelected"
     />
