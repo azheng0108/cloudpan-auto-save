@@ -20,6 +20,22 @@ const registerAccountsRoutes = (app, deps) => {
     app.get('/api/accounts', async (req, res) => {
         const accounts = await accountRepo.find();
         await Promise.all(accounts.map(async (account) => {
+            // 自动从凭据自愈纠正真实手机号（杜绝误显示 123 等历史录入脏数据）
+            if (account.accountType === 'cloud139' && (account.cookies || account.authorization)) {
+                try {
+                    let raw = account.cookies || account.authorization;
+                    if (raw.startsWith('Basic ')) raw = raw.slice(6).trim();
+                    const decoded = Buffer.from(raw, 'base64').toString('utf8');
+                    const parts = decoded.split(':');
+                    if (parts.length >= 2 && /^1\d{10}$/.test(parts[1]) && account.username !== parts[1]) {
+                        account.username = parts[1];
+                        if (account.alias === '123' || account.alias === 'azheng02' || !account.alias) {
+                            account.alias = '139-' + parts[1].slice(-4);
+                        }
+                        await accountRepo.save(account);
+                    }
+                } catch (_) {}
+            }
             account.capacity = createEmptyCapacity();
             account.memberInfo = null;
             account.memberStatus = account.isActive === false ? 'auth_failed' : 'unknown';
