@@ -73,6 +73,7 @@ const savingStrategy = ref(false);
 const organizingNow = ref(false);
 const accounts = ref<AccountItem[]>([]);
 const selectedAccountId = ref<number | string>('');
+const accountsLoaded = ref(false);
 const hasActiveAccount = computed(() => accounts.value.some((a: AccountItem) => a.isActive !== false && a.memberStatus !== 'auth_failed' && a.memberStatusText !== '认证失效'));
 
 function checkAccountGuard(actionName = '此操作'): boolean {
@@ -1328,6 +1329,8 @@ async function loadAccounts() {
     selectedAccountId.value = active ? active.id : '';
   } catch (err: any) {
     ElMessage.error(`加载网盘账号失败: ${err.message}`);
+  } finally {
+    accountsLoaded.value = true;
   }
 }
 
@@ -2190,7 +2193,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 全局未登录 / 凭证失效防空防护提示条 -->
-    <div v-if="!hasActiveAccount" class="mb-5 p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+    <div v-if="accountsLoaded && !hasActiveAccount" class="mb-5 p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
       <div class="flex items-center gap-2.5 text-xs">
         <AlertTriangle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，目录选择与整理功能已进入受保护防空状态。</span>

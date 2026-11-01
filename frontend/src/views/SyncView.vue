@@ -91,6 +91,7 @@ watch(
 const isLoading = ref(true);
 const isSaving = ref(false);
 const accounts = ref<AccountItem[]>([]);
+const accountsLoaded = ref(false);
 const hasActiveAccount = computed(() => accounts.value.some((a) => a.isActive));
 
 function checkAccountGuard(actionName = '此操作'): boolean {
@@ -145,6 +146,8 @@ async function loadAccounts() {
     }
   } catch (err: any) {
     ElMessage.error(err.message || '加载云盘账号失败');
+  } finally {
+    accountsLoaded.value = true;
   }
 }
 
@@ -847,7 +850,7 @@ onUnmounted(() => {
 
     <div v-else class="space-y-6">
       <!-- 全局未登录 / 凭证失效防空防护提示条 -->
-      <div v-if="!hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+      <div v-if="accountsLoaded && !hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
         <div class="flex items-center gap-2.5 text-xs">
           <AlertTriangle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
           <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，跨号秒传与同步已进入受保护防空状态。</span>

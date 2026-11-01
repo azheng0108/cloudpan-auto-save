@@ -142,6 +142,7 @@ watch(
 // 账号选择（单一状态源保留在父组件：v-model 驱动 AccountSwitcher，11 处下游引用零改动）
 const accounts = ref<AccountSwitcherItem[]>([]);
 const activeAccountId = ref<number | string>('');
+const accountsLoaded = ref(false);
 const hasActiveAccount = computed(() => accounts.value.some((a: any) => a.isActive));
 
 function checkAccountGuard(actionName = '此操作'): boolean {
@@ -1816,6 +1817,7 @@ async function initData() {
     accounts.value = (accList || []).filter((a: any) => a.accountType === 'cloud139');
     const activeOne = accounts.value.find((a: any) => a.isActive);
     activeAccountId.value = activeOne ? activeOne.id : '';
+    accountsLoaded.value = true;
 
     const cfg = await settingsApi.getSettings();
     rawFullConfig = JSON.parse(JSON.stringify(cfg || {}));
@@ -1829,6 +1831,8 @@ async function initData() {
     }
   } catch (err: any) {
     ElMessage.error(`初始化数据失败: ${err.message || '网络异常'}`);
+  } finally {
+    accountsLoaded.value = true;
   }
 }
 
@@ -3141,7 +3145,7 @@ onUnmounted(() => {
 <template>
   <div class="space-y-6 w-full pb-16">
     <!-- 全局未登录 / 凭证失效防空防护提示条 -->
-    <div v-if="!hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+    <div v-if="accountsLoaded && !hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
       <div class="flex items-center gap-2.5 text-xs">
         <AlertTriangle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，违规死链扫描与去重等运维功能已进入受保护防空状态。</span>
