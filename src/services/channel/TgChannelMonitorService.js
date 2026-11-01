@@ -1258,6 +1258,9 @@ class TgChannelMonitorService {
         if (!account) {
             throw new Error(`关联的 139 账号不存在 (accountId=${monitor.accountId})`);
         }
+        if (account.isActive === false) {
+            throw new Error(`关联的 139 账号 (ID: ${monitor.accountId}) 登录凭证已失效，请重新扫码登录`);
+        }
 
         const cloud139 = Cloud139Service.getInstance(account);
         const { linkID, passwd } = linkInfo;
@@ -1719,6 +1722,13 @@ class TgChannelMonitorService {
         const activeMonitors = await monitorRepo.find({ where: { status: 'active' } });
         if (!activeMonitors.length) {
             logger.debug('[频道监控] 暂无处于激活状态的频道监控任务');
+            return;
+        }
+
+        const accountRepo = getAccountRepository();
+        const activeCloudAccount = await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: true } });
+        if (!activeCloudAccount) {
+            logger.warn('[频道监控] 暂无有效在线的 139 移动云盘账号（凭证未就绪或已失效），自动跳过本轮频道轮询');
             return;
         }
 

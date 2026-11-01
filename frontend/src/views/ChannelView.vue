@@ -16,7 +16,7 @@ import {
 
 } from '../api/channel';
 import { accountApi } from '../api/account';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Radio,
   Clock,
@@ -113,8 +113,27 @@ const config = ref<ChannelGlobalConfig>({
   ai: { ...AI_DEFAULTS, mobileFallback: { ...(AI_DEFAULTS.mobileFallback!) } },
 });
 
-// 云盘账号 ID (用于驱动 FolderTreeSelector 目录选择器)
+// 云盘账号 ID 与全局在线状态
 const defaultAccountId = ref<number | string>('');
+const hasActiveAccount = ref(false);
+
+function checkAccountGuard(actionName = '此操作'): boolean {
+  if (!hasActiveAccount.value) {
+    ElMessageBox.confirm(
+      `执行「${actionName}」需要已正常登录的 139 移动云盘账号。当前未检测到有效在线账号，是否立即前往扫码登录？`,
+      '需要云盘登录凭证',
+      {
+        confirmButtonText: '前往扫码登录',
+        cancelButtonText: '暂不前往',
+        type: 'warning',
+      }
+    ).then(() => {
+      router.push('/accounts');
+    }).catch(() => {});
+    return false;
+  }
+  return true;
+}
 
 
 // ================= 监控频道卡片管理（对齐 AccountsView 卡片网格与零弹窗规范） =================
@@ -125,6 +144,7 @@ const inlineEditChannelValue = ref('');
 const deletingChannelIndex = ref<number | null>(null);
 
 function openAddChannel() {
+  if (!checkAccountGuard('添加监控频道')) return;
   newChannelInput.value = '';
   showAddChannelCard.value = true;
 }
@@ -695,12 +715,15 @@ async function handleSyncNow() {
 async function loadInitialData() {
   loading.value = true;
   try {
-    // 1. 获取账号信息
+    // 1. 获取账号信息与在线门禁
     const accounts = await accountApi.getAccounts();
     const cloud139Accs = (accounts || []).filter((a: any) => a.accountType === 'cloud139');
+    hasActiveAccount.value = cloud139Accs.some((a: any) => a.isActive);
     if (cloud139Accs.length > 0) {
-      const active = cloud139Accs.find((a: any) => a.isActive) || cloud139Accs[0];
-      defaultAccountId.value = active.id;
+      const active = cloud139Accs.find((a: any) => a.isActive);
+      defaultAccountId.value = active ? active.id : '';
+    } else {
+      defaultAccountId.value = '';
     }
 
     // 2. 加载频道监控集中配置
@@ -1239,6 +1262,20 @@ onUnmounted(() => {
 
 <template>
   <div class="channel-container space-y-6 w-full pb-16 text-slate-800 dark:text-slate-100">
+    <!-- 全局未登录 / 凭证失效防空防护提示条 -->
+    <div v-if="!hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+      <div class="flex items-center gap-2.5 text-xs">
+        <AlertCircle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，频道监控转存已处于受保护防空状态。</span>
+      </div>
+      <button
+        type="button"
+        @click="router.push('/accounts')"
+        class="shrink-0 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer self-start sm:self-auto"
+      >
+        前往扫码登录
+      </button>
+    </div>
     <!-- 顶层主视口切换：统一对齐系统标准胶囊选项卡规范 -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <!-- 胶囊选项卡群组 (对齐系统 UI 规范: Telegram 频道监控 / 监控抓取历史 / 媒体整理与洗版) -->

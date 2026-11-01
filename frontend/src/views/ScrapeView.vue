@@ -14,7 +14,7 @@ import {
 } from '../api/channel';
 import { accountApi, type AccountItem } from '../api/account';
 import FolderTreeSelector from '../components/FolderTreeSelector.vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Sparkles,
   RotateCw,
@@ -73,6 +73,25 @@ const savingStrategy = ref(false);
 const organizingNow = ref(false);
 const accounts = ref<AccountItem[]>([]);
 const selectedAccountId = ref<number | string>('');
+const hasActiveAccount = computed(() => accounts.value.some((a: AccountItem) => a.isActive));
+
+function checkAccountGuard(actionName = '此操作'): boolean {
+  if (!hasActiveAccount.value) {
+    ElMessageBox.confirm(
+      `执行「${actionName}」需要已正常登录的 139 移动云盘账号。当前未检测到有效在线账号，是否立即前往扫码登录？`,
+      '需要云盘登录凭证',
+      {
+        confirmButtonText: '前往扫码登录',
+        cancelButtonText: '暂不前往',
+        type: 'warning',
+      }
+    ).then(() => {
+      router.push('/accounts');
+    }).catch(() => {});
+    return false;
+  }
+  return true;
+}
 
 // ================= 1. 媒体整理与洗版全局策略状态 =================
 const strategyConfig = ref<ChannelGlobalConfig>({
@@ -1014,8 +1033,7 @@ const folderPickerVisible = ref(false);
 const folderPickerType = ref<'staging' | 'target' | 'manual-source' | 'manual-target'>('target');
 
 function openFolderPicker(type: 'staging' | 'target' | 'manual-source' | 'manual-target') {
-  if (!selectedAccountId.value) {
-    ElMessage.warning('请先在「云盘账号」页面绑定至少一个 139 移动云盘账号');
+  if (!checkAccountGuard('选择云盘目录')) {
     return;
   }
   folderPickerType.value = type;
@@ -1119,6 +1137,9 @@ async function handleSaveStrategy() {
 
 // 立即触发整理 139 云盘暂存区
 async function handleOrganizeNow() {
+  if (!checkAccountGuard('立即整理 139 云盘')) {
+    return;
+  }
   organizingNow.value = true;
   try {
     const res = await channelApi.organizeNow({
@@ -1297,10 +1318,8 @@ async function loadAccounts() {
   try {
     const list = await accountApi.getAccounts();
     accounts.value = (list || []).filter((a: AccountItem) => a.accountType === 'cloud139');
-    if (accounts.value.length > 0) {
-      const active = accounts.value.find((a: AccountItem) => a.isActive);
-      selectedAccountId.value = active ? active.id : accounts.value[0].id;
-    }
+    const active = accounts.value.find((a: AccountItem) => a.isActive);
+    selectedAccountId.value = active ? active.id : '';
   } catch (err: any) {
     ElMessage.error(`加载网盘账号失败: ${err.message}`);
   }
@@ -2162,6 +2181,21 @@ onUnmounted(() => {
       </div>
 
 
+    </div>
+
+    <!-- 全局未登录 / 凭证失效防空防护提示条 -->
+    <div v-if="!hasActiveAccount" class="mb-5 p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+      <div class="flex items-center gap-2.5 text-xs">
+        <AlertTriangle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，目录选择与整理功能已进入受保护防空状态。</span>
+      </div>
+      <button
+        type="button"
+        @click="router.push('/accounts')"
+        class="shrink-0 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer self-start sm:self-auto"
+      >
+        前往扫码登录
+      </button>
     </div>
 
     <!-- ================= 视口 1: 媒体整理配置 (0 到 1 规范化归档入库) ================= -->

@@ -321,6 +321,32 @@ class StagingOrganizeService {
             reasons.push('未选择归档目标目录（严禁在未选定独立目标目录或使用网盘根目录的情况下执行整理，避免误损资产）');
         }
 
+        // 云盘账号有效性门禁（当指定校验账号或执行整理时生效）
+        let activeAccountConfigured = true;
+        if (options.checkAccount || options.accountId) {
+            try {
+                const accountRepo = getAccountRepository();
+                if (accountRepo) {
+                    if (options.accountId) {
+                        const targetAcc = await accountRepo.findOne({ where: { id: parseInt(options.accountId) } });
+                        if (!targetAcc || targetAcc.isActive === false) {
+                            activeAccountConfigured = false;
+                        }
+                    } else {
+                        const activeAcc = await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: true } });
+                        if (!activeAcc) {
+                            activeAccountConfigured = false;
+                        }
+                    }
+                }
+            } catch (_) {}
+            if (!activeAccountConfigured) {
+                missing.push('cloud139Account');
+                missing.push('accountActive');
+                reasons.push('未检测到正常在线的 139 移动云盘账号（账号未登录或凭据已失效，请前往「云盘账号」扫码登录）');
+            }
+        }
+
         // 核心安全防线：源目录与目标目录重叠熔断防御，严禁源与目标相同（杜绝将已有媒体库当成暂存区洗版删除）
         if (stagingId && targetId && String(stagingId).trim() === String(targetId).trim()) {
             missing.push('folderCollision');
@@ -386,7 +412,7 @@ class StagingOrganizeService {
             if (options.force) {
                 OrganizeProtectionService.clearAll();
             }
-            const prereq = await StagingOrganizeService.validateOrganizePrerequisites({ skipChannelCheck: true, ...options });
+            const prereq = await StagingOrganizeService.validateOrganizePrerequisites({ skipChannelCheck: true, checkAccount: true, ...options });
             if (!prereq.ready) {
                 const warningMsg = `[云盘整理] 整理功能触发拦截（前置配置未完成）: ${prereq.reason}`;
                 logger.warn(warningMsg);
@@ -406,12 +432,12 @@ class StagingOrganizeService {
                 account = await accountRepo.findOne({ where: { id: options.accountId } });
             }
             if (!account) {
-                account = (await accountRepo.findOne({ where: { accountType: 'cloud139', isDefault: true } })) ||
+                account = (await accountRepo.findOne({ where: { accountType: 'cloud139', isDefault: true, isActive: true } })) ||
                           (await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: true } })) ||
                           (await accountRepo.findOne({ where: { accountType: 'cloud139' } }));
             }
-            if (!account) {
-                const errMsg = '未找到可用的 139 移动云盘账号，请先在「云盘账号」页面绑定账号';
+            if (!account || account.isActive === false) {
+                const errMsg = '未找到有效在线的 139 移动云盘账号，请先在「云盘账号」页面完成扫码登录';
                 logTaskEvent(`[云盘整理失败] ${errMsg}`);
                 logger.error(`[云盘整理] ${errMsg}`);
                 throw new Error(errMsg);
