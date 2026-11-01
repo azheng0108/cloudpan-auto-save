@@ -250,7 +250,7 @@ const registerAccountsRoutes = (app, deps) => {
         // 移动云盘 139 二维码扫码登录：创建新会话
     app.get('/api/accounts/qrcode/create', async (req, res) => {
         try {
-            const data = qrLoginService.createQrSession();
+            const data = await qrLoginService.createQrSession(deps);
             res.json({ success: true, data });
         } catch (error) {
             res.json({ success: false, error: error.message });
