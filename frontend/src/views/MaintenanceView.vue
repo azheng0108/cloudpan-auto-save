@@ -43,6 +43,7 @@ import {
   Plus,
   Sliders,
   ArrowRight,
+  Download,
 } from 'lucide-vue-next';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { accountApi } from '../api/account';
@@ -89,6 +90,31 @@ export interface MissingScanBatch {
   activeSeasonMap: Record<string, number>;
   currentPage?: number;
   pageSize?: number;
+}
+
+export interface BannedScanBatch {
+  id: string | number;
+  jobId?: number;
+  title: string;
+  folderPath: string;
+  timeFormatted: string;
+  timestamp: number;
+  durationMs: number;
+  status: 'running' | 'completed' | 'cleaned' | 'failed';
+  summary?: string;
+  error?: string;
+  scannedFolders: number;
+  totalFiles: number;
+  scannedTargetFiles?: number;
+  bannedCount: number;
+  totalBannedSizeFormatted: string;
+  isExpanded: boolean;
+  isLoadingDetail?: boolean;
+  activeFilter: 'all' | 'harmonized' | 'deadlink';
+  selectedIds: Set<string>;
+  findings?: BannedFileItem[];
+  isCleaning?: boolean;
+  cleanResult?: BannedCleanResult | null;
 }
 
 export interface CleanRecordItem {
@@ -499,6 +525,373 @@ const selectedBannedSizeFormatted = computed(() => {
 // ─────────────────────────────────────────────────────────────
 // 网盘和谐与死链结果分类过滤 ('all' | 'harmonized' | 'deadlink')
 // ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+// 违规死链巡检批次流 (Batch Cards Stream - 扫描一次算一次，每个批次独立卡片)
+// ─────────────────────────────────────────────────────────────
+const bannedBatches = ref<BannedScanBatch[]>([]);
+
+const activeOrLatestBannedBatch = computed(() => {
+  return bannedBatches.value.find(b => b.isExpanded) || bannedBatches.value[0] || null;
+});
+
+function syncHistoricalBannedJobsToBatches(jobs: MaintenanceJobItem[]) {
+  const bannedJobs = jobs.filter(j => j.type === 'banned_scan');
+  bannedJobs.forEach(j => {
+    const exists = bannedBatches.value.some(b => b.jobId === j.id || b.id === `job-${j.id}` || (Math.abs(b.timestamp - (j.timestamp ?? (j.createdAt ? new Date(j.createdAt).getTime() : 0))) < 5000));
+    if (!exists) {
+      const bCount = j.bannedCount || 0;
+      bannedBatches.value.push({
+        id: `job-${j.id}`,
+        jobId: j.id,
+        title: j.title || `违规死链巡检 · ${j.folderPath || '全盘'}`,
+        folderPath: j.folderPath || '/',
+        timeFormatted: j.timeFormatted || new Date(j.createdAt || j.timestamp || 0).toLocaleString('zh-CN', { hour12: false }),
+        timestamp: j.createdAt ? new Date(j.createdAt).getTime() : (j.timestamp ?? 0),
+        durationMs: j.durationMs || 0,
+        status: (j.status as any) || 'completed',
+        summary: j.summary,
+        scannedFolders: j.scannedFolders || 0,
+        totalFiles: j.totalFiles || 0,
+        bannedCount: bCount,
+        totalBannedSizeFormatted: j.freedFormatted || '0 B',
+        isExpanded: false,
+        activeFilter: 'all',
+        selectedIds: new Set(),
+      });
+    }
+  });
+
+  // 按时间倒序排序
+  bannedBatches.value.sort((a, b) => b.timestamp - a.timestamp);
+
+  // 默认展开：优先展开有违规检出 (bannedCount > 0) 的批次，让用户第一眼看到需要处理的内容
+  if (bannedBatches.value.length > 0 && !bannedBatches.value.some(b => b.isExpanded)) {
+    const target = bannedBatches.value.find(b => b.bannedCount > 0) || bannedBatches.value[0];
+    if (target) {
+      toggleBannedBatchExpand(target);
+    }
+  }
+}
+
+async function toggleBannedBatchExpand(batch: BannedScanBatch) {
+  batch.isExpanded = !batch.isExpanded;
+  if (batch.isExpanded && !batch.findings && batch.jobId) {
+    batch.isLoadingDetail = true;
+    try {
+      const jobDetail = await maintenanceApi.getJobDetail(batch.jobId);
+      if (jobDetail && jobDetail.findings) {
+        let files: BannedFileItem[] = [];
+        if (Array.isArray(jobDetail.findings)) {
+          files = jobDetail.findings as any;
+        } else if ((jobDetail.findings as any).bannedFiles) {
+          files = (jobDetail.findings as any).bannedFiles;
+        }
+        batch.findings = files;
+        batch.bannedCount = files.length;
+        // 默认全选该批次
+        batch.selectedIds = new Set(files.map(f => f.id));
+      } else {
+        batch.findings = [];
+      }
+    } catch (err: any) {
+      console.error('加载批次明细失败:', err);
+    } finally {
+      batch.isLoadingDetail = false;
+    }
+  }
+}
+
+function expandAllBannedBatches() {
+  bannedBatches.value.forEach(b => {
+    b.isExpanded = true;
+    if (!b.findings && b.jobId) {
+      toggleBannedBatchExpand(b);
+    }
+  });
+}
+
+function collapseAllBannedBatches() {
+  bannedBatches.value.forEach(b => {
+    b.isExpanded = false;
+  });
+}
+
+async function clearAllBannedBatches() {
+  const currentBatches = [...bannedBatches.value];
+  bannedBatches.value = [];
+  bannedScanResult.value = null;
+  try {
+    for (const b of currentBatches) {
+      const rawId = String(b.id || '');
+      const jobId = b.jobId || (rawId.startsWith('job-') ? rawId.replace('job-', '') : null);
+      if (jobId) {
+        try {
+          await maintenanceApi.deleteJob(jobId);
+        } catch (_) {}
+      }
+    }
+    await maintenanceApi.clearJobs('banned_scan');
+    await loadMaintenanceJobs();
+  } catch (e: any) {
+    console.warn('清空批次异常:', e);
+  }
+  ElMessage.success('已清空违规巡检批次列表');
+}
+
+async function deleteBannedBatch(batch: BannedScanBatch, index: number) {
+  bannedBatches.value.splice(index, 1);
+  const rawId = String(batch.id || '');
+  const jobId = batch.jobId || (rawId.startsWith('job-') ? rawId.replace('job-', '') : null);
+  if (jobId) {
+    try {
+      await maintenanceApi.deleteJob(jobId);
+      await loadMaintenanceJobs();
+    } catch (_) {}
+  }
+  ElMessage.success('已删除该批次记录');
+}
+
+function reRunBannedBatch(batch: BannedScanBatch) {
+  if (batch.folderPath) {
+    bannedFolderName.value = batch.folderPath;
+  }
+  handleScanBanned();
+}
+
+function getBatchFilteredBannedFiles(batch: BannedScanBatch): BannedFileItem[] {
+  const files = batch.findings || [];
+  if (batch.activeFilter === 'harmonized') {
+    return files.filter(isHarmonizedItem);
+  }
+  if (batch.activeFilter === 'deadlink') {
+    return files.filter(isDeadLinkItem);
+  }
+  return files;
+}
+
+function getBatchHarmonizedCount(batch: BannedScanBatch): number {
+  return (batch.findings || []).filter(isHarmonizedItem).length;
+}
+
+function getBatchDeadLinkCount(batch: BannedScanBatch): number {
+  return (batch.findings || []).filter(isDeadLinkItem).length;
+}
+
+function isAllBatchBannedSelected(batch: BannedScanBatch): boolean {
+  const list = getBatchFilteredBannedFiles(batch);
+  if (!list.length) return false;
+  return list.every(f => batch.selectedIds.has(f.id));
+}
+
+function toggleSelectAllBatchBanned(batch: BannedScanBatch) {
+  const list = getBatchFilteredBannedFiles(batch);
+  if (isAllBatchBannedSelected(batch)) {
+    list.forEach(f => batch.selectedIds.delete(f.id));
+  } else {
+    list.forEach(f => batch.selectedIds.add(f.id));
+  }
+}
+
+function toggleSelectBatchBannedItem(batch: BannedScanBatch, id: string) {
+  if (batch.selectedIds.has(id)) {
+    batch.selectedIds.delete(id);
+  } else {
+    batch.selectedIds.add(id);
+  }
+}
+
+function exportBatchBannedFiles(batch: BannedScanBatch) {
+  const list = (batch.findings || []).filter(f => batch.selectedIds.has(f.id));
+  if (!list.length) {
+    ElMessage.warning('请先勾选需要导出的违规文件');
+    return;
+  }
+  const lines = [
+    `# 火山方舟/139云盘违规与死链排查清单`,
+    `# 批次: ${batch.title || batch.folderPath}`,
+    `# 导出时间: ${new Date().toLocaleString('zh-CN', { hour12: false })}`,
+    `# 选中总计: ${list.length} 项`,
+    `# ----------------------------------------------------`,
+    ...list.map((f, i) => `${i + 1}. [${f.sizeFormatted || '未知大小'}] ${f.path || f.name} (原因: ${f.reason || '违规'})`),
+  ];
+  const fullContent = lines.join('\n');
+  try {
+    const blob = new Blob([fullContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `违规文件清单_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('下载文件失败:', err);
+  }
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(fullContent).then(() => {
+      ElMessage.success(`已导出并复制 ${list.length} 项违规文件清单至剪贴板！`);
+    }).catch(() => {
+      ElMessage.success(`已成功导出 ${list.length} 项违规文件清单！`);
+    });
+  } else {
+    ElMessage.success(`已成功导出 ${list.length} 项违规文件清单！`);
+  }
+}
+
+async function cleanBatchBannedFiles(batch: BannedScanBatch) {
+  const targets = (batch.findings || []).filter(f => batch.selectedIds.has(f.id));
+  if (targets.length === 0) {
+    ElMessage.warning('请至少选择一个待处置的违规文件');
+    return;
+  }
+
+  const actionText = cleanAction.value === 'quarantine' ? '移至隔离区' : '移入回收站';
+  try {
+    await ElMessageBox.confirm(
+      `确定要将选中的 ${targets.length} 项违规文件执行「${actionText}」操作吗？`,
+      '确认处置违规文件',
+      {
+        confirmButtonText: '确定处置',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    );
+  } catch {
+    return;
+  }
+
+  saveCleanPref();
+  batch.isCleaning = true;
+  const cleanStartTime = Date.now();
+  try {
+    const res = await maintenanceApi.cleanBanned({
+      accountId: activeAccountId.value,
+      bannedFiles: targets,
+      action: cleanAction.value,
+      quarantinePath: quarantinePath.value.trim() || '/.quarantine',
+      cascadeCompanion: cascadeCompanion.value,
+      notifyEmby: notifyEmby.value,
+      pruneEmptyParent: pruneEmptyParent.value,
+    });
+    const cleanDurationMs = Date.now() - cleanStartTime;
+    batch.cleanResult = res;
+
+    ElMessage.success(`处置完成: 成功${actionText} ${res.successCount} 项，释放存储空间 ${res.freedSizeFormatted}`);
+
+    if (res.successCount > 0) {
+      addCleanRecord({
+        type: 'banned',
+        typeName: res.action === 'quarantine' ? `违规隔离 (移动至 ${res.quarantinePath || '默认隔离区'})` : '违规死链清理 (移入回收站)',
+        folderPath: batch.folderPath,
+        successCount: res.successCount,
+        failedCount: res.failedCount,
+        freedBytes: res.freedBytes,
+        freedFormatted: res.freedSizeFormatted,
+        durationMs: cleanDurationMs,
+        details: [
+          `处置模式: ${actionText}`,
+          res.action === 'quarantine' ? `隔离目标: ${res.quarantinePath || '/.quarantine'}` : null,
+          `伴生文件级联: ${cascadeCompanion.value ? `已处置 ${res.processedCompanions || 0} 个伴生文件` : '未开启'}`,
+          `Emby 刷新状态: ${res.embyResult?.notified ? `已刷新 ${res.embyResult.updatedDirsCount} 个目录` : (res.embyResult?.reason || '跳过')}`,
+          res.prunedEmptyDirsCount ? `衍生清理: 已修剪 ${res.prunedEmptyDirsCount} 个空目录` : null,
+          ...targets.slice(0, 10).map((f) => `${f.name} (${f.sizeFormatted}) [${f.path || ''}] - ${f.reason}`),
+        ].filter(Boolean) as string[],
+      });
+    }
+
+    if (res.tombstones && res.tombstones.length > 0) {
+      addTombstones(res.tombstones);
+    }
+
+    if (res.successCount > 0 && batch.findings) {
+      const stillPresentSet = new Set((res.stillThere || []).map((x: any) => x.id));
+      batch.findings = batch.findings.filter(f => stillPresentSet.has(f.id));
+      batch.bannedCount = batch.findings.length;
+      batch.selectedIds.clear();
+      if (batch.bannedCount === 0) {
+        batch.status = 'cleaned';
+      }
+    }
+  } catch (err: any) {
+    ElMessage.error(`处置失败: ${err.message || '执行异常'}`);
+  } finally {
+    batch.isCleaning = false;
+    loadMaintenanceJobs();
+  }
+}
+
+async function cleanSingleBatchBannedItem(batch: BannedScanBatch, item: BannedFileItem) {
+  const actionText = cleanAction.value === 'quarantine' ? '移至隔离区' : '移入回收站';
+  try {
+    await ElMessageBox.confirm(
+      `确定要将文件「${item.name}」(${item.sizeFormatted}) 执行「${actionText}」操作吗？`,
+      '确认处置单项文件',
+      {
+        confirmButtonText: '确定处置',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    );
+  } catch {
+    return;
+  }
+
+  saveCleanPref();
+  const cleanStartTime = Date.now();
+  try {
+    const res = await maintenanceApi.cleanBanned({
+      accountId: activeAccountId.value,
+      bannedFiles: [item],
+      action: cleanAction.value,
+      quarantinePath: quarantinePath.value.trim() || '/.quarantine',
+      cascadeCompanion: cascadeCompanion.value,
+      notifyEmby: notifyEmby.value,
+      pruneEmptyParent: pruneEmptyParent.value,
+    });
+    const cleanDurationMs = Date.now() - cleanStartTime;
+    ElMessage.success(`已成功将「${item.name}」${actionText}！`);
+
+    if (res.successCount > 0) {
+      addCleanRecord({
+        type: 'banned',
+        typeName: res.action === 'quarantine' ? `违规隔离 (移动至 ${res.quarantinePath || '默认隔离区'})` : '违规死链清理 (移入回收站)',
+        folderPath: batch.folderPath,
+        successCount: 1,
+        failedCount: 0,
+        freedBytes: item.size || 0,
+        freedFormatted: item.sizeFormatted || '0 B',
+        durationMs: cleanDurationMs,
+        details: [`单独${actionText}: ${item.name} (${item.sizeFormatted}) [${item.path || ''}]`],
+      });
+
+      if (batch.findings) {
+        batch.findings = batch.findings.filter(f => f.id !== item.id);
+        batch.bannedCount = batch.findings.length;
+        batch.selectedIds.delete(item.id);
+        if (batch.bannedCount === 0) {
+          batch.status = 'cleaned';
+        }
+      }
+    }
+  } catch (err: any) {
+    ElMessage.error(`处置单项失败: ${err.message || '执行异常'}`);
+  } finally {
+    loadMaintenanceJobs();
+  }
+}
+
+function ignoreBatchBannedItem(batch: BannedScanBatch, item: BannedFileItem) {
+  addToIgnoreList(item);
+  if (batch.findings) {
+    batch.findings = batch.findings.filter(f => f.id !== item.id);
+    batch.bannedCount = batch.findings.length;
+    batch.selectedIds.delete(item.id);
+  }
+}
+
 const activeBannedFilter = ref<'all' | 'harmonized' | 'deadlink'>('all');
 
 function isHarmonizedItem(item: BannedFileItem): boolean {
@@ -1617,6 +2010,7 @@ async function loadMaintenanceJobs() {
     const res = await maintenanceApi.getJobs({ limit: 50 });
     maintenanceJobs.value = res.items || [];
     syncHistoricalJobsToBatches(maintenanceJobs.value);
+    syncHistoricalBannedJobsToBatches(maintenanceJobs.value);
     if (scanBatches.value.length > 0 && !scanBatches.value.some(b => b.isExpanded)) {
       toggleBatchExpand(scanBatches.value[0]);
     }
@@ -1719,23 +2113,66 @@ function loadJobFindingsIntoInspection(jobDetail: MaintenanceJobDetail, silent =
     if (!silent) ElMessage.info('该次巡检快照未包含违规文件记录');
     return;
   }
+  let files: BannedFileItem[] = [];
+  if (Array.isArray(jobDetail.findings)) {
+    files = jobDetail.findings as any;
+  } else if ((jobDetail.findings as any).bannedFiles) {
+    files = (jobDetail.findings as any).bannedFiles;
+  }
+
+  // 找到对应的 batch 并展开
+  let batch = bannedBatches.value.find(b => b.jobId === jobDetail.id || b.id === `job-${jobDetail.id}`);
+  if (batch) {
+    batch.findings = files;
+    batch.bannedCount = files.length;
+    batch.selectedIds = new Set(files.map(f => f.id));
+    batch.isExpanded = true;
+  } else {
+    batch = {
+      id: `job-${jobDetail.id}`,
+      jobId: jobDetail.id,
+      title: jobDetail.title || `违规死链巡检 · ${jobDetail.folderPath || '全盘'}`,
+      folderPath: jobDetail.folderPath || '/',
+      timeFormatted: jobDetail.timeFormatted || new Date(jobDetail.createdAt || 0).toLocaleString('zh-CN', { hour12: false }),
+      timestamp: jobDetail.createdAt ? new Date(jobDetail.createdAt).getTime() : Date.now(),
+      durationMs: jobDetail.durationMs || 0,
+      status: (jobDetail.status as any) || 'completed',
+      summary: jobDetail.summary,
+      scannedFolders: jobDetail.scannedFolders || 0,
+      totalFiles: jobDetail.totalFiles || 0,
+      bannedCount: files.length,
+      totalBannedSizeFormatted: jobDetail.freedFormatted || '0 B',
+      isExpanded: true,
+      activeFilter: 'all',
+      selectedIds: new Set(files.map(f => f.id)),
+      findings: files,
+    };
+    bannedBatches.value.unshift(batch);
+  }
+
+  // 折叠其他批次，聚焦此批次
+  bannedBatches.value.forEach(b => {
+    if (b !== batch) b.isExpanded = false;
+  });
+
   bannedScanResult.value = {
     scannedFolders: jobDetail.scannedFolders || 0,
     totalFiles: jobDetail.totalFiles || 0,
-    bannedCount: jobDetail.findings.length,
-    bannedFiles: jobDetail.findings,
+    bannedCount: files.length,
+    bannedFiles: files,
     totalBannedSize: 0,
     totalBannedSizeFormatted: jobDetail.freedFormatted || '',
     durationMs: jobDetail.durationMs,
   };
   saveBannedScanResult(bannedScanResult.value);
-  selectedBannedIds.value = new Set(jobDetail.findings.map((f) => f.id));
+  selectedBannedIds.value = new Set(files.map((f) => f.id));
+
   if (isMissingRoute.value) {
     router.push('/maintenance');
   }
   activeTab.value = 'banned';
   if (!silent) {
-    ElMessage.success(`已成功载入 ${jobDetail.findings.length} 项违规快照至待处置区，已为您默认全选！`);
+    ElMessage.success(`已切换至违规巡检并展开该批次明细，已默认全选！`);
     window.scrollTo({ top: 300, behavior: 'smooth' });
   }
 }
@@ -1938,10 +2375,31 @@ async function initData() {
 // 模块 1: 违规死链巡检与清理方法
 // ─────────────────────────────────────────────────────────────
 async function handleScanBanned() {
+  saveCleanPref();
   isBannedScanning.value = true;
-  // 保留上一次的巡检结果在屏幕上平滑展示，由进度条提示巡检中，杜绝界面瞬间闪白丢失记录
   bannedCleanResult.value = null;
   selectedBannedIds.value.clear();
+
+  const runBatchId = `batch-${Date.now()}`;
+  const activeBatch: BannedScanBatch = {
+    id: runBatchId,
+    title: `违规死链巡检 · ${bannedFolderName.value || '全盘'}`,
+    folderPath: bannedFolderName.value || '/',
+    timeFormatted: new Date().toLocaleString('zh-CN', { hour12: false }),
+    timestamp: Date.now(),
+    durationMs: 0,
+    status: 'running',
+    summary: '正在深度排查网盘违规与失效死链...',
+    scannedFolders: 0,
+    totalFiles: 0,
+    bannedCount: 0,
+    totalBannedSizeFormatted: '0 B',
+    isExpanded: true,
+    activeFilter: 'all',
+    selectedIds: new Set<string>(),
+    findings: [],
+  };
+  bannedBatches.value.unshift(activeBatch);
 
   try {
     const parsedExcludes = Array.from(new Set(
@@ -1959,12 +2417,28 @@ async function handleScanBanned() {
       excludePaths: parsedExcludes,
       ignoredIds: Array.from(ignoredBannedIds.value),
     });
+
     bannedScanResult.value = res;
     saveBannedScanResult(res);
-    // 默认全选所有检测到的违规死链
+
+    activeBatch.jobId = (res as any).jobId;
+    activeBatch.status = 'completed';
+    activeBatch.durationMs = res.durationMs;
+    activeBatch.scannedFolders = res.scannedFolders;
+    activeBatch.totalFiles = res.totalFiles;
+    activeBatch.scannedTargetFiles = res.scannedTargetFiles;
+    activeBatch.bannedCount = res.bannedCount;
+    activeBatch.totalBannedSizeFormatted = res.totalBannedSizeFormatted;
+    activeBatch.findings = res.bannedFiles || [];
+    activeBatch.selectedIds = new Set((res.bannedFiles || []).map(f => f.id));
+    activeBatch.summary = res.bannedCount === 0
+      ? `排查 ${res.scannedFolders} 目录、${res.totalFiles} 文件，未发现违规死链`
+      : `发现违规死链 ${res.bannedCount} 项 (${res.totalBannedSizeFormatted})，排查 ${res.scannedFolders} 目录`;
+
     (res.bannedFiles || []).forEach((f) => {
       if (f.id) selectedBannedIds.value.add(f.id);
     });
+
     const ignoredTip = res.ignoredCount ? `，白名单已跳过 ${res.ignoredCount} 项` : '';
     const targetTip = res.scannedTargetFiles !== undefined ? ` (检测 ${res.scannedTargetFiles} 项)` : '';
     if (res.bannedCount === 0) {
@@ -1973,6 +2447,8 @@ async function handleScanBanned() {
       ElMessage.warning(`巡检完成: 发现 ${res.bannedCount} 项违规死链文件${ignoredTip}，共占用 ${res.totalBannedSizeFormatted}。`);
     }
   } catch (err: any) {
+    activeBatch.status = 'failed';
+    activeBatch.error = err.message || '巡检异常中断';
     ElMessage.error(`巡检违规文件失败: ${err.message || '执行异常'}`);
   } finally {
     isBannedScanning.value = false;
@@ -3374,7 +3850,7 @@ onUnmounted(() => {
           <ShieldAlert class="w-3.5 h-3.5" />
           <span>违规死链巡检</span>
           <span v-if="bannedScanResult?.bannedCount" class="tab-pill__badge">
-            {{ bannedScanResult.bannedCount }}
+            {{ (activeOrLatestBannedBatch?.bannedCount ?? bannedScanResult?.bannedCount) || 0 }}
           </span>
         </button>
 
@@ -3421,17 +3897,7 @@ onUnmounted(() => {
           </div>
 
           <div class="flex items-center gap-2.5">
-            <button
-              v-if="bannedScanResult && bannedScanResult.bannedCount > 0"
-              type="button"
-              class="font-medium text-xs py-2 px-4 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 cursor-pointer shadow-xs text-white"
-              :class="cleanAction === 'quarantine' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-rose-600 hover:bg-rose-700'"
-              :disabled="isBannedCleaning || selectedBannedIds.size === 0"
-              @click="handleCleanBanned"
-            >
-              <component :is="cleanAction === 'quarantine' ? ShieldCheck : Trash2" class="w-3.5 h-3.5" />
-              <span>{{ cleanSettingPanelOpen ? '收起设置' : (cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站') }} ({{ selectedBannedIds.size }})</span>
-            </button>
+            <!-- 处置按钮已移至各批次卡片工具栏内部，贴合文件列表，杜绝视口错位 -->
           </div>
         </div>
 
@@ -3661,29 +4127,29 @@ onUnmounted(() => {
         </div>
 
         <!-- 统计面板 (紧贴巡检进度，4宫格即时概览) -->
-        <div v-if="bannedScanResult" class="grid grid-cols-2 md:grid-cols-4 gap-3 my-3">
+        <div v-if="activeOrLatestBannedBatch || bannedScanResult" class="grid grid-cols-2 md:grid-cols-4 gap-3 my-3">
           <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
             <span class="text-[11px] text-gray-500 dark:text-gray-400">已遍历目录</span>
-            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ bannedScanResult.scannedFolders }}</div>
+            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ (activeOrLatestBannedBatch?.scannedFolders ?? bannedScanResult?.scannedFolders) || 0 }}</div>
           </div>
           <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
             <span class="text-[11px] text-gray-500 dark:text-gray-400">已排查文件</span>
             <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">
-              {{ bannedScanResult.scannedTargetFiles !== undefined ? bannedScanResult.scannedTargetFiles : bannedScanResult.totalFiles }}
-              <span v-if="bannedScanResult.ignoredCount" class="text-xs font-normal text-amber-600 dark:text-amber-400 ml-1">
-                (已忽略 {{ bannedScanResult.ignoredCount }})
+              {{ (activeOrLatestBannedBatch?.totalFiles ?? (bannedScanResult?.scannedTargetFiles !== undefined ? bannedScanResult?.scannedTargetFiles : bannedScanResult?.totalFiles)) || 0 }}
+              <span v-if="bannedScanResult?.ignoredCount" class="text-xs font-normal text-amber-600 dark:text-amber-400 ml-1">
+                (已忽略 {{ bannedScanResult?.ignoredCount }})
               </span>
             </div>
           </div>
           <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
             <span class="text-[11px] text-gray-500 dark:text-gray-400">发现违规死链</span>
-            <div class="text-lg font-bold" :class="bannedScanResult.bannedCount > 0 ? 'text-red-500' : 'text-emerald-500'">
-              {{ bannedScanResult.bannedCount }}
+            <div class="text-lg font-bold" :class="((activeOrLatestBannedBatch?.bannedCount ?? bannedScanResult?.bannedCount) || 0) > 0 ? 'text-red-500' : 'text-emerald-500'">
+              {{ (activeOrLatestBannedBatch?.bannedCount ?? bannedScanResult?.bannedCount) || 0 }}
             </div>
           </div>
           <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
             <span class="text-[11px] text-gray-500 dark:text-gray-400">可释放存储空间</span>
-            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ bannedScanResult.totalBannedSizeFormatted }}</div>
+            <div class="text-lg font-bold text-gray-800 dark:text-gray-100 mt-1">{{ (activeOrLatestBannedBatch?.totalBannedSizeFormatted ?? bannedScanResult?.totalBannedSizeFormatted) || '0 B' }}</div>
           </div>
         </div>
 
@@ -3908,231 +4374,342 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 违规列表表格与分类胶囊 -->
-        <div v-if="bannedScanResult && bannedScanResult.bannedCount > 0" class="space-y-3">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 text-xs">
-            <div class="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                class="hover:text-blue-600 flex items-center gap-1 cursor-pointer font-medium text-slate-700 dark:text-slate-300"
-                @click="toggleSelectAllBanned"
-              >
-                <CheckSquare v-if="isAllFilteredBannedSelected" class="w-3.5 h-3.5 text-blue-600" />
-                <Square v-else class="w-3.5 h-3.5" />
-                <span>全选</span>
-              </button>
-              <span class="text-slate-500 font-mono text-[11px]">(已选 {{ selectedBannedIds.size }} / {{ bannedScanResult.bannedFiles.length }} 项)</span>
-
-              <div class="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] ml-1">
-                <button
-                  type="button"
-                  class="px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer"
-                  :class="activeBannedFilter === 'all' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
-                  @click="activeBannedFilter = 'all'"
-                >
-                  全部 ({{ bannedScanResult.bannedCount }})
-                </button>
-                <button
-                  v-if="bannedHarmonizedCount > 0"
-                  type="button"
-                  class="px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer"
-                  :class="activeBannedFilter === 'harmonized' ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
-                  @click="activeBannedFilter = 'harmonized'"
-                >
-                  封禁违规 ({{ bannedHarmonizedCount }})
-                </button>
-                <button
-                  v-if="bannedDeadLinkCount > 0"
-                  type="button"
-                  class="px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer"
-                  :class="activeBannedFilter === 'deadlink' ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
-                  @click="activeBannedFilter = 'deadlink'"
-                >
-                  损坏死链 ({{ bannedDeadLinkCount }})
-                </button>
-              </div>
-            </div>
-
-            <!-- 右侧操作区：导出清单 + 快捷处理（直接在列表上方操作，不需滚动到页面最顶） -->
-            <div class="flex items-center gap-2 flex-wrap shrink-0">
-              <!-- 一键导出和谐文件 -->
-              <button
-                type="button"
-                class="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium flex items-center gap-1.5 transition-colors cursor-pointer text-xs shadow-2xs"
-                title="导出和谐文件清单为文本文件并复制到剪贴板"
-                @click="handleExportBannedFiles"
-              >
-                <FileText class="w-3.5 h-3.5 text-slate-500" />
-                <span>一键导出清单</span>
-              </button>
-
-              <!-- 快捷处理按钮：移入回收站 / 移至隔离区 -->
-              <button
-                type="button"
-                class="px-3.5 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors text-white"
-                :class="cleanAction === 'quarantine' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-rose-600 hover:bg-rose-700'"
-                :disabled="isBannedCleaning || selectedBannedIds.size === 0"
-                @click="handleCleanBanned"
-              >
-                <component :is="cleanAction === 'quarantine' ? ShieldCheck : Trash2" class="w-3.5 h-3.5" />
-                <span>{{ cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站' }} ({{ selectedBannedIds.size }})</span>
-              </button>
-            </div>
+        <!-- 批次流全局管理工具栏 (当存在批次时展示) -->
+        <div v-if="bannedBatches.length > 0" class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 pb-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+          <div class="flex items-center gap-2 text-slate-600 dark:text-slate-400 font-medium">
+            <History class="w-4 h-4 text-rose-500" />
+            <span>
+              已记录 <strong class="text-slate-900 dark:text-white font-bold">{{ bannedBatches.length }}</strong> 次独立巡检批次
+            </span>
+            <span class="text-[11px] text-slate-400">（每次扫描独立成卡片，点击直接处置与导出）</span>
           </div>
 
-          <!-- 违规文件行卡片列表（对齐频道监控规范 ChannelView:1659-1663 历史行卡片形态；整卡点击切换勾选等价原行点击） -->
-          <div class="space-y-2.5">
-            <div
-              v-for="item in filteredBannedFiles"
-              :key="item.id"
-              class="p-3.5 rounded-xl border bg-white dark:bg-slate-900 hover:shadow-xs transition-all cursor-pointer"
-              :class="selectedBannedIds.has(item.id)
-                ? 'border-blue-400 dark:border-blue-600 ring-1 ring-blue-400/40'
-                : 'border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'"
-              @click="toggleSelectBanned(item.id)"
-            >
-              <!-- 首行：勾选 + 文件名 + 命中原因状态胶囊 + 大小与操作 -->
-              <div class="flex items-center gap-2.5 flex-wrap">
-                <input
-                  type="checkbox"
-                  :checked="selectedBannedIds.has(item.id)"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
-                  @click.stop
-                  @change="toggleSelectBanned(item.id)"
-                />
-                <span class="text-xs font-bold text-gray-900 dark:text-white break-all flex-1 min-w-0">
-                  {{ item.name }}
-                </span>
-                <span
-                  class="status-pill"
-                  :class="isHarmonizedItem(item) ? 'status-pill--info' : isDeadLinkItem(item) ? 'status-pill--warning' : 'status-pill--danger'"
-                >
-                  {{ item.reason }}
-                </span>
-                <span class="text-xs text-gray-700 dark:text-gray-300 font-mono whitespace-nowrap shrink-0">
-                  {{ item.sizeFormatted }}
-                </span>
-                <button
-                  type="button"
-                  class="px-2 py-1 rounded text-[11px] font-medium text-slate-500 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-                  title="非违规或需特意保留？加入白名单后后续扫描将自动跳过"
-                  @click.stop="addToIgnoreList(item)"
-                >
-                  <EyeOff class="w-3 h-3 text-amber-500" />
-                  <span>忽略</span>
-                </button>
-              </div>
-              <!-- 次行：路径（mono 截断 + 悬停全文） -->
-              <div class="text-[11px] text-gray-500 dark:text-gray-400 font-mono truncate mt-1.5" :title="item.path">
-                {{ item.path }}
-              </div>
-            </div>
-          </div>
-
-          <!-- 悬浮底部操作栏（查阅长列表时常驻底部，随时一键处理或导出） -->
-          <div
-            v-if="selectedBannedIds.size > 0"
-            class="sticky bottom-4 z-30 mx-auto max-w-2xl p-2.5 px-4 rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-slate-200/90 dark:border-slate-700/90 shadow-xl backdrop-blur-md flex items-center justify-between gap-3 text-xs"
-          >
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="font-bold text-gray-900 dark:text-white">已选 {{ selectedBannedIds.size }} 项</span>
-              <span class="text-gray-400 font-mono text-[11px] hidden sm:inline">占用 {{ selectedBannedSizeFormatted }}</span>
-            </div>
-
-            <div class="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-                @click="handleExportBannedFiles"
-              >
-                <FileText class="w-3.5 h-3.5" />
-                <span>导出清单</span>
-              </button>
-              <button
-                type="button"
-                class="px-3.5 py-1.5 rounded-lg font-medium text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                :class="cleanAction === 'quarantine' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-rose-600 hover:bg-rose-700'"
-                :disabled="isBannedCleaning"
-                @click="handleCleanBanned"
-              >
-                <component :is="cleanAction === 'quarantine' ? ShieldCheck : Trash2" class="w-3.5 h-3.5" />
-                <span>{{ cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站' }} ({{ selectedBannedIds.size }})</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 空状态提示 -->
-        <div v-else-if="bannedScanResult && bannedScanResult.bannedCount === 0" class="p-12 text-center text-gray-500">
-          <CheckCircle2 class="w-12 h-12 mx-auto text-emerald-500 mb-3" />
-          <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">云盘资产状态健康</h4>
-          <p class="text-xs text-gray-400 mt-1">在指定范围内未检索到任何违规占位或失效死链文件</p>
-        </div>
-
-        <!-- 最近巡检与治理流水 (原地即时可见，消除记录不存在困惑) -->
-        <div class="mt-8 pt-6 border-t border-slate-200/70 dark:border-slate-800 space-y-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <History class="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">最近巡检与治理流水</h4>
-              <span class="text-[11px] text-gray-400">展示最近 {{ recentBannedJobs.length }} 条巡检与处置流水</span>
-            </div>
+          <div class="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              class="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
-              @click="activeTab = 'records'"
+              class="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 transition-colors cursor-pointer flex items-center gap-1"
+              @click="expandAllBannedBatches"
             >
-              <span>查看全部历史记录 ({{ bannedJobsCount }})</span>
-              <ArrowRight class="w-3 h-3" />
+              <ChevronDown class="w-3.5 h-3.5" />
+              <span>全部展开</span>
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 transition-colors cursor-pointer flex items-center gap-1"
+              @click="collapseAllBannedBatches"
+            >
+              <ChevronUp class="w-3.5 h-3.5" />
+              <span>全部折叠</span>
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/30 transition-colors cursor-pointer flex items-center gap-1"
+              @click="clearAllBannedBatches"
+            >
+              <Trash2 class="w-3.5 h-3.5 text-slate-400 hover:text-rose-500" />
+              <span>清空所有批次</span>
             </button>
           </div>
+        </div>
 
-          <div v-if="recentBannedJobs.length > 0" class="space-y-2">
+        <!-- 独立违规巡检批次卡片流 (Batch Cards Stream) -->
+        <div v-if="bannedBatches.length > 0" class="space-y-4 my-4">
+          <div
+            v-for="(batch, bIdx) in bannedBatches"
+            :key="batch.id"
+            class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs overflow-hidden transition-all duration-200"
+            :class="{ 'ring-1 ring-rose-500/30': batch.isExpanded }"
+          >
+            <!-- 批次头部 (Card Header) -->
             <div
-              v-for="job in recentBannedJobs"
-              :key="job.id"
-              class="p-3 rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+              class="p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer bg-slate-50/70 hover:bg-slate-100/60 dark:bg-slate-850 dark:hover:bg-slate-800/80 transition-colors select-none"
+              @click="toggleBannedBatchExpand(batch)"
             >
-              <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                <span
-                  class="px-2 py-0.5 rounded text-[10px] font-semibold shrink-0"
-                  :class="getBannedJobTypeBadgeClass(job.type)"
+              <!-- 左侧：展开折叠指示器 + 批次基本信息 -->
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div
+                  class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                  :class="batch.bannedCount > 0 ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400' : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400'"
                 >
-                  {{ getBannedJobTypeName(job.type) }}
-                </span>
-                <span
-                  class="px-1.5 py-0.2 rounded text-[10px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 shrink-0"
-                >
-                  {{ job.triggerType === 'cron' ? '定时计划' : '手动触发' }}
-                </span>
-                <span class="font-mono text-slate-700 dark:text-slate-300 truncate" :title="job.folderPath">
-                  {{ job.folderPath || '全部云盘' }}
-                </span>
-                <span class="text-slate-400 text-[11px] truncate hidden md:inline">
-                  {{ job.summary || (job.status !== 'failed' ? '执行完成' : '执行失败') }}
-                </span>
+                  <component :is="batch.isExpanded ? ChevronDown : ChevronRight" class="w-4 h-4 transition-transform" />
+                </div>
+                <div class="space-y-0.5 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-bold text-xs text-slate-900 dark:text-white truncate">
+                      {{ batch.title || `违规巡检 · ${batch.folderPath}` }}
+                    </span>
+                    <span class="text-[11px] font-mono text-slate-400">
+                      {{ batch.timeFormatted }}
+                    </span>
+                    <span v-if="batch.durationMs > 0" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                      {{ (batch.durationMs / 1000).toFixed(1) }}s
+                    </span>
+                  </div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 truncate">
+                    <span>目标路径: <code class="font-mono">{{ batch.folderPath || '/' }}</code></span>
+                    <span>· 排查 {{ batch.scannedFolders }} 目录</span>
+                    <span v-if="batch.totalFiles > 0">· 检阅 {{ batch.totalFiles }} 个文件</span>
+                  </div>
+                </div>
               </div>
 
-              <div class="flex items-center gap-3 shrink-0 text-[11px] text-slate-400">
-                <span v-if="job.durationMs" class="font-mono">
-                  {{ (job.durationMs / 1000).toFixed(1) }}s
-                </span>
-                <span class="font-mono text-slate-500 dark:text-slate-400">
-                  {{ job.timeFormatted }}
-                </span>
-                <span
-                  class="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                  :class="job.status === 'completed' || job.status === 'cleaned' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400'"
-                >
-                  {{ job.status === 'completed' || job.status === 'cleaned' ? '已完成' : (job.status === 'running' ? '运行中' : '失败') }}
-                </span>
+              <!-- 右侧：统计徽标组 + 批次操作快捷按钮 -->
+              <div class="flex items-center gap-2.5 flex-wrap self-end md:self-auto shrink-0" @click.stop>
+                <div class="flex items-center gap-1.5 text-xs">
+                  <!-- 运行中状态 -->
+                  <span
+                    v-if="batch.status === 'running'"
+                    class="px-2 py-0.5 rounded-md font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300 font-mono animate-pulse flex items-center gap-1"
+                  >
+                    <RefreshCw class="w-3 h-3 animate-spin" />
+                    <span>深度巡检中</span>
+                  </span>
+
+                  <!-- 失败状态 -->
+                  <span
+                    v-else-if="batch.status === 'failed'"
+                    class="px-2 py-0.5 rounded-md font-medium bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400 border border-rose-200"
+                  >
+                    巡检失败
+                  </span>
+
+                  <!-- 违规检出状态 -->
+                  <template v-else>
+                    <span
+                      v-if="batch.bannedCount > 0"
+                      class="px-2 py-0.5 rounded-md font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60"
+                    >
+                      发现违规 {{ batch.bannedCount }} 项
+                      <span class="font-normal font-mono">({{ batch.totalBannedSizeFormatted }})</span>
+                    </span>
+                    <span
+                      v-else
+                      class="px-2 py-0.5 rounded-md font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60"
+                    >
+                      状态完全健康 (0 违规)
+                    </span>
+                  </template>
+                </div>
+
+                <!-- 快捷操作按钮 -->
+                <div class="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2">
+                  <button
+                    type="button"
+                    class="p-1 rounded text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-300 hover:bg-slate-200/70 dark:hover:bg-slate-750 transition-colors cursor-pointer"
+                    title="以此批次的目录再次执行巡检"
+                    :disabled="isBannedScanning"
+                    @click="reRunBannedBatch(batch)"
+                  >
+                    <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': batch.status === 'running' }" />
+                  </button>
+                  <button
+                    v-if="batch.bannedCount > 0"
+                    type="button"
+                    class="p-1 rounded text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-750 transition-colors cursor-pointer"
+                    title="一键导出此批次违规清单"
+                    @click="exportBatchBannedFiles(batch)"
+                  >
+                    <Download class="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    class="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                    title="删除此批次记录"
+                    @click="deleteBannedBatch(batch, bIdx)"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 批次主体内容 (展开时呈现) -->
+            <div v-if="batch.isExpanded" class="p-4 border-t border-slate-200 dark:border-slate-800 space-y-4 bg-white dark:bg-slate-900">
+              <!-- 批次执行中 -->
+              <div v-if="batch.status === 'running'" class="p-6 text-center text-slate-500 space-y-2">
+                <RefreshCw class="w-6 h-6 animate-spin mx-auto text-rose-500" />
+                <p class="text-xs font-medium">正在深度遍历云盘目录并排查违规占位或失效死链，请耐心等待...</p>
+              </div>
+
+              <!-- 批次失败 -->
+              <div v-else-if="batch.status === 'failed'" class="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-700 dark:text-rose-300">
+                巡检异常中断: {{ batch.error || batch.summary || '未知异常' }}
+              </div>
+
+              <!-- 批次加载明细中 -->
+              <div v-else-if="batch.isLoadingDetail" class="p-8 text-center text-slate-400 space-y-2">
+                <RefreshCw class="w-5 h-5 animate-spin mx-auto text-rose-500" />
+                <p class="text-xs">正在加载批次违规快照明细...</p>
+              </div>
+
+              <!-- 批次有违规发现 -->
+              <template v-else-if="batch.bannedCount > 0 && batch.findings && batch.findings.length > 0">
+                <!-- 处置成功反馈横幅 (若刚处置过) -->
+                <div v-if="batch.cleanResult" class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+                  <span>✓ 已成功处置 {{ batch.cleanResult.successCount }} 项，释放存储空间 {{ batch.cleanResult.freedSizeFormatted }}</span>
+                  <button type="button" class="text-[11px] underline cursor-pointer" @click="batch.cleanResult = null">关闭</button>
+                </div>
+
+                <!-- 批次内工具条与操作区 (一目了然，按钮直接在眼前，无需往上滚页面) -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 text-xs">
+                  <!-- 左侧：全选与分类过滤 -->
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      class="hover:text-blue-600 flex items-center gap-1 cursor-pointer font-medium text-slate-700 dark:text-slate-300"
+                      @click="toggleSelectAllBatchBanned(batch)"
+                    >
+                      <CheckSquare v-if="isAllBatchBannedSelected(batch)" class="w-3.5 h-3.5 text-blue-600" />
+                      <Square v-else class="w-3.5 h-3.5" />
+                      <span>全选</span>
+                    </button>
+                    <span class="text-slate-500 font-mono text-[11px]">(已选 {{ batch.selectedIds.size }} / {{ getBatchFilteredBannedFiles(batch).length }} 项)</span>
+
+                    <!-- 分类胶囊 -->
+                    <div class="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] ml-1">
+                      <button
+                        type="button"
+                        class="px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer"
+                        :class="batch.activeFilter === 'all' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
+                        @click="batch.activeFilter = 'all'"
+                      >
+                        全部 ({{ batch.bannedCount }})
+                      </button>
+                      <button
+                        v-if="getBatchHarmonizedCount(batch) > 0"
+                        type="button"
+                        class="px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer"
+                        :class="batch.activeFilter === 'harmonized' ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
+                        @click="batch.activeFilter = 'harmonized'"
+                      >
+                        封禁违规 ({{ getBatchHarmonizedCount(batch) }})
+                      </button>
+                      <button
+                        v-if="getBatchDeadLinkCount(batch) > 0"
+                        type="button"
+                        class="px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer"
+                        :class="batch.activeFilter === 'deadlink' ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 font-bold shadow-2xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'"
+                        @click="batch.activeFilter = 'deadlink'"
+                      >
+                        损坏死链 ({{ getBatchDeadLinkCount(batch) }})
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 右侧：一键导出 + 移入回收站/移至隔离区 -->
+                  <div class="flex items-center gap-2 flex-wrap shrink-0">
+                    <!-- 一键导出清单 -->
+                    <button
+                      type="button"
+                      class="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                      title="导出已选中的违规清单文本文件，并自动复制到剪贴板"
+                      @click="exportBatchBannedFiles(batch)"
+                    >
+                      <Download class="w-3.5 h-3.5 text-slate-500" />
+                      <span>一键导出清单</span>
+                    </button>
+
+                    <!-- 处置违规文件按钮 (操作就在手边) -->
+                    <button
+                      type="button"
+                      class="px-3.5 py-1.5 rounded-lg font-medium text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                      :class="cleanAction === 'quarantine' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-rose-600 hover:bg-rose-700'"
+                      :disabled="batch.isCleaning || batch.selectedIds.size === 0"
+                      @click="cleanBatchBannedFiles(batch)"
+                    >
+                      <RefreshCw v-if="batch.isCleaning" class="w-3.5 h-3.5 animate-spin" />
+                      <component v-else :is="cleanAction === 'quarantine' ? ShieldCheck : Trash2" class="w-3.5 h-3.5" />
+                      <span>{{ cleanAction === 'quarantine' ? '移至隔离区' : '移入回收站' }} ({{ batch.selectedIds.size }})</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 违规文件列表 -->
+                <div class="space-y-2">
+                  <div
+                    v-for="file in getBatchFilteredBannedFiles(batch)"
+                    :key="file.id"
+                    class="p-3 rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  >
+                    <!-- 勾选与文件详情 -->
+                    <div class="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                      <input
+                        type="checkbox"
+                        class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer mt-0.5 sm:mt-0 shrink-0"
+                        :checked="batch.selectedIds.has(file.id)"
+                        @change="toggleSelectBatchBannedItem(batch, file.id)"
+                      />
+                      <div class="space-y-0.5 min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="font-bold text-slate-800 dark:text-slate-100 truncate max-w-md" :title="file.name">
+                            {{ file.name }}
+                          </span>
+                          <!-- 标签 -->
+                          <span
+                            v-if="isHarmonizedItem(file)"
+                            class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200/60"
+                          >
+                            审核拦截
+                          </span>
+                          <span
+                            v-if="isDeadLinkItem(file)"
+                            class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200/60"
+                          >
+                            死链损坏
+                          </span>
+                          <span class="text-rose-500 text-[11px] truncate max-w-xs" :title="file.reason">
+                            {{ file.reason }}
+                          </span>
+                        </div>
+                        <div class="text-[11px] font-mono text-slate-400 dark:text-slate-500 truncate" :title="file.path">
+                          {{ file.path }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 右侧：大小与单独操作 -->
+                    <div class="flex items-center gap-3 shrink-0 self-end sm:self-auto text-xs">
+                      <span class="font-mono text-slate-600 dark:text-slate-300 font-medium">
+                        {{ file.sizeFormatted }}
+                      </span>
+                      <div class="flex items-center gap-1">
+                        <button
+                          type="button"
+                          class="px-2 py-1 rounded text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                          title="加入白名单，后续巡检将跳过"
+                          @click="ignoreBatchBannedItem(batch, file)"
+                        >
+                          <span>忽略</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="px-2 py-1 rounded text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer transition-colors font-medium"
+                          :title="cleanAction === 'quarantine' ? '单独移至隔离区' : '单独移入回收站'"
+                          @click="cleanSingleBatchBannedItem(batch, file)"
+                        >
+                          <span>{{ cleanAction === 'quarantine' ? '隔离' : '移入回收站' }}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 批次健康 (0 违规) -->
+              <div v-else class="p-8 text-center text-slate-500 space-y-2">
+                <CheckCircle2 class="w-10 h-10 mx-auto text-emerald-500" />
+                <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-200">云盘资产状态健康</h4>
+                <p class="text-xs text-slate-400">此轮巡检未发现任何违规占位或失效死链文件</p>
               </div>
             </div>
           </div>
+        </div>
 
-          <div v-else class="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-            暂无巡检与治理记录，点击上方「开始巡检」即可启动云盘全方位健康排查
-          </div>
+        <!-- 当没有任何批次时的空状态引导 -->
+        <div v-else-if="!isBannedScanning" class="p-12 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl my-4">
+          <CheckCircle2 class="w-12 h-12 mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+          <h4 class="text-sm font-semibold text-slate-700 dark:text-slate-300">暂无巡检批次记录</h4>
+          <p class="text-xs text-slate-400 mt-1">点击上方「开始巡检」即可启动云盘全方位健康排查</p>
         </div>
 
         <!-- 已处置违规剧集历史归档 (仅在有归档记录时展示，杜绝无记录时用空状态干扰用户巡检判断) -->
