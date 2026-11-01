@@ -31,7 +31,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          yarn install --frozen-lockfile --ignore-engines
+          yarn install --frozen-lockfile --ignore-engines --ignore-scripts
           npm --prefix frontend ci
 
       - name: Clean build validation
@@ -108,6 +108,8 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ steps.pkg.outputs.version }},enable={{is_default_branch}}
             type=ref,event=branch
+            # dev 分支自动打 beta 标签
+            type=raw,value=beta,enable=${{ github.ref == 'refs/heads/dev' }}
             # Git tag 推送时：提取 semver（v2.2.53 -> 2.2.53）并同步更新 latest
             # 确保无论 main push CI 是否成功，latest 始终跟随最新发布 tag
             type=match,pattern=v(.*),group=1,event=tag

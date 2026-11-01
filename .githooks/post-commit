@@ -8,6 +8,12 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 0
 fi
 
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "[auto-tag] 当前为 $CURRENT_BRANCH 分支 (非 main)，跳过创建正式 Release Tag"
+  exit 0
+fi
+
 HEAD_SHA="$(git rev-parse HEAD)"
 
 # If the current commit already has a semver tag, do nothing.
