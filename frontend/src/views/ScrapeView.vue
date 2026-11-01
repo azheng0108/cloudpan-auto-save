@@ -1182,9 +1182,7 @@ async function handleOrganizeNow() {
       stagingFolderId: strategyConfig.value.stagingFolderId || undefined,
       defaultTargetFolderId: strategyConfig.value.defaultTargetFolderId || undefined,
     });
-    ElMessage.success(res.message || '已成功触发 139 云盘暂存区整理归档任务！');
-    // 切换到流水 Tab
-    activeMainTab.value = 'history';
+    ElMessage.success(res.message || '已成功触发 139 云盘待整理目录扫描整理任务！');
     await loadHistory();
   } catch (err: any) {
     ElMessage.error(`触发整理失败: ${err.message || '网络异常'}`);
@@ -2394,8 +2392,22 @@ onUnmounted(() => {
             title="立即扫描待整理目录中的视频文件并执行识别入库"
           >
             <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': organizingNow }" />
-            <span>{{ organizingNow ? '正在整理中...' : '立即整理 139 云盘' }}</span>
+            <span>{{ organizingNow ? '正在扫描整理中...' : '立即扫描整理 139 云盘' }}</span>
           </button>
+        </div>
+
+        <!-- 待整理目录实时扫描整理状态条 -->
+        <div
+          v-if="organizingNow"
+          class="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 flex items-center justify-between gap-3 animate-pulse mb-4"
+        >
+          <div class="flex items-center gap-2.5 text-xs text-amber-700 dark:text-amber-300">
+            <RotateCw class="w-4 h-4 animate-spin shrink-0 text-amber-600 dark:text-amber-400" />
+            <div>
+              <span class="font-bold">待整理目录扫描整理中</span>
+              <span class="ml-2 text-[11px] opacity-80">⚡ 正在穿透检索中转视频并执行 TMDB 识别与点分归档...</span>
+            </div>
+          </div>
         </div>
 
         <!-- 核心开关 1: 后台定时检查暂存区 (对齐 ChannelView 规范) -->
@@ -2414,10 +2426,10 @@ onUnmounted(() => {
           <el-switch v-model="strategyConfig.autoOrganize" />
         </div>
 
-        <!-- 整理轮询周期（对齐 ChannelView 规范） -->
-        <div v-if="strategyConfig.autoOrganize" class="mb-4">
+        <!-- 整理轮询周期（对齐 ChannelView 规范：常驻展示，杜绝开关关闭导致配置项丢失） -->
+        <div class="mb-4">
           <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-            后台自动检查频率 (分钟)
+            待整理目录扫描整理频率 (分钟)
           </label>
           <div class="flex flex-wrap items-center gap-2">
             <input
@@ -2430,7 +2442,7 @@ onUnmounted(() => {
             />
             <div class="flex flex-wrap items-center gap-1 text-xs">
               <button
-                v-for="min in [10, 15, 30, 60, 120]"
+                v-for="min in [5, 10, 15, 30, 60, 120]"
                 :key="min"
                 type="button"
                 class="px-2 py-1 rounded-md border text-xs font-mono cursor-pointer transition-colors"
@@ -2442,7 +2454,7 @@ onUnmounted(() => {
             </div>
           </div>
           <span class="form-text">
-            后台自动巡查待整理中转目录的周期，发现待处理影视即刻自动识别并规范整理归档（建议 15~60 分钟）
+            后台自动巡检待整理中转目录的周期，发现遗留或手动上传的影视资源即刻自动识别并规范归档（建议 15~60 分钟）
           </span>
         </div>
 
