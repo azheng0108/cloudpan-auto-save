@@ -141,20 +141,13 @@ class Cloud139QrLoginService {
             };
         }
 
-        // 构造向移动云盘官方 thirdlogin 轮询的参数
-        const secinfo = crypto.createHash('sha1').update(`fetion.com.cn:${sID}`).digest('hex').toUpperCase();
-        const payload = {
-            msisdn: '',
-            random: '',
-            dycpwd: sID,
-            cpid: 292,
-            clienttype: 670,
-            version: 'mCloud_4.3.0_536',
-            pintype: 21,
-            secinfo: secinfo,
-            loginMode: '0',
-            extInfo: { ifOpenAccount: false }
-        };
+        // 优先尝试查询指定 sID，若传入的 sID 处于等待态且用户发起检查，可聚合探测活跃会话
+        const candidateSids = [sID];
+        for (const [activeSid, s] of this.sessions.entries()) {
+            if (activeSid !== sID && s.status !== 'expired' && now <= s.expireAt) {
+                candidateSids.push(activeSid);
+            }
+        }
 
         const proxy = ProxyUtil.getProxy('cloud139');
         let agent = undefined;
@@ -162,121 +155,142 @@ class Cloud139QrLoginService {
             agent = { https: proxy.https };
         }
 
-        try {
-            const resp = await got.post('https://user-njs.yun.139.com/user/thirdlogin', {
-                json: payload,
-                headers: {
-                    'Content-Type': 'application/json;charset=UTF-8',
-                    'Accept': 'application/json, text/plain, */*',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Origin': 'https://yun.139.com',
-                    'Referer': 'https://yun.139.com/',
-                    'x-NationCode': '+86'
-                },
-                responseType: 'json',
-                timeout: { request: 5000 },
-                agent
-            });
-
-            const body = resp.body || {};
-            const code = String(body.code || '');
-            logger.debug(`[扫码登录轮询] sID=${sID.slice(0, 6)}***, success=${body.success}, code=${code}`);
-
-            // 1. 扫码成功且已确认授权
-            if (body.success && body.data) {
-                let authData = body.data;
-                if (typeof authData === 'string') {
-                    authData = this._decryptCaiyunData(authData);
-                }
-
-                const accountPhone = String(authData?.account || authData?.accountPhone || authData?.msisdn || '').trim();
-                const authToken = String(authData?.token || authData?.authToken || '').trim();
-
-                if (!authToken || !accountPhone) {
-                    logger.warn('扫码响应成功但未提取到有效账号或 token', { authData, rawData: body.data });
-                    return { status: 'waiting', message: '📱 手机端已扫描，等待确认授权中...' };
-                }
-
-                const authorization = `Basic ${Buffer.from(`pc:${accountPhone}:${authToken}`).toString('base64')}`;
-
-                // 自动保存绑定至数据库 (支持已有账号无缝热刷新与自愈唤醒)
-                const { accountRepo, folderCache } = deps;
-                if (accountRepo) {
-                    let acc = await accountRepo.findOne({ where: { username: accountPhone } });
-                    if (acc) {
-                        acc.authorization = authorization;
-                        acc.cookies = authorization;
-                        acc.isActive = true;
-                        acc.memberStatus = 'ok';
-                        acc.memberStatusText = '普通';
-                        acc.updatedAt = new Date();
-                        await accountRepo.save(acc);
-                        Cloud139Service.clearInstance(acc);
-                        logger.info(`扫码登录：已成功刷新已有账号凭证与唤醒活跃状态 [${accountPhone}]`);
-                    } else {
-                        const totalAccounts = await accountRepo.count();
-                        const hasDefault = (await accountRepo.count({ where: { isDefault: true } })) > 0;
-                        acc = accountRepo.create({
-                            username: accountPhone,
-                            alias: `139-${accountPhone.slice(-4)}`,
-                            accountType: 'cloud139',
-                            authorization: authorization,
-                            cookies: authorization,
-                            isActive: true,
-                            isDefault: !hasDefault || totalAccounts === 0
-                        });
-                        await accountRepo.save(acc);
-                        logger.info(`扫码登录：已成功自动录入全新账号 [${accountPhone}]`);
-                    }
-
-                    if (folderCache) {
-                        folderCache.clearPrefix('folders_');
-                    }
-                }
-
-                session.status = 'confirmed';
-                session.accountInfo = { account: accountPhone, authorization };
-
-                return {
-                    status: 'confirmed',
-                    account: accountPhone,
-                    message: `扫码登录成功！账号 [${accountPhone}] 凭证已就绪。`
-                };
-            }
-
-            // 2. 手机端已扫描，等待用户在手机端点击【确认登录】(官方特定状态码 200059548)
-            if (code === '200059548') {
-                return {
-                    status: 'waiting',
-                    message: '📱 手机端已扫描，请在手机上点击【确认登录】授权...'
-                };
-            }
-
-            // 3. 用户在手机端点击了取消登录 (官方状态码 200059549)
-            if (code === '200059549') {
-                session.status = 'expired';
-                return {
-                    status: 'expired',
-                    message: '手机端已取消登录授权，请刷新二维码重新获取'
-                };
-            }
-
-            // 4. 官方特定失效或过期错误码
-            if (['200059542', '200059543', '200059545', '200059546', '200059547', '102103'].includes(code)) {
-                session.status = 'expired';
-                return { status: 'expired', message: '二维码已在官方端失效，请点击刷新' };
-            }
-
-            // 5. 初始等待扫码中
-            return {
-                status: 'waiting',
-                message: '请使用中国移动云盘 App 或微信扫一扫'
+        for (const targetSid of candidateSids) {
+            const secinfo = crypto.createHash('sha1').update(`fetion.com.cn:${targetSid}`).digest('hex').toUpperCase();
+            const payload = {
+                msisdn: '',
+                random: '',
+                dycpwd: targetSid,
+                cpid: 292,
+                clienttype: 670,
+                version: 'mCloud_4.3.0_536',
+                pintype: 21,
+                secinfo: secinfo,
+                loginMode: '0',
+                extInfo: { ifOpenAccount: false }
             };
 
-        } catch (netErr) {
-            logger.warn(`轮询移动云盘二维码状态网络抖动: ${netErr.message}`);
-            return { status: 'waiting', message: '正在同步手机扫码状态...' };
+            try {
+                const resp = await got.post('https://user-njs.yun.139.com/user/thirdlogin', {
+                    json: payload,
+                    headers: {
+                        'Content-Type': 'application/json;charset=UTF-8',
+                        'Accept': 'application/json, text/plain, */*',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Origin': 'https://yun.139.com',
+                        'Referer': 'https://yun.139.com/',
+                        'x-NationCode': '+86',
+                        'caller': 'web'
+                    },
+                    responseType: 'json',
+                    timeout: { request: 5000 },
+                    agent
+                });
+
+                const body = resp.body || {};
+                const code = String(body.code || '');
+                logger.debug(`[扫码登录轮询] sID=${targetSid.slice(0, 6)}***, success=${body.success}, code=${code}`);
+
+                // 1. 扫码成功且已确认授权
+                if (body.success && body.data) {
+                    let authData = body.data;
+                    if (typeof authData === 'string') {
+                        authData = this._decryptCaiyunData(authData);
+                    }
+
+                    const accountPhone = String(authData?.account || authData?.accountPhone || authData?.msisdn || '').trim();
+                    const authToken = String(authData?.token || authData?.authToken || '').trim();
+
+                    if (!authToken || !accountPhone) {
+                        logger.warn('扫码响应成功但未提取到有效账号或 token', { authData, rawData: body.data });
+                        return { status: 'waiting', message: '📱 手机端已扫描，等待确认授权中...' };
+                    }
+
+                    const authorization = `Basic ${Buffer.from(`pc:${accountPhone}:${authToken}`).toString('base64')}`;
+
+                    // 自动保存绑定至数据库 (支持已有账号无缝热刷新与自愈唤醒)
+                    const { accountRepo, folderCache } = deps;
+                    if (accountRepo) {
+                        let acc = await accountRepo.findOne({ where: { username: accountPhone } });
+                        if (acc) {
+                            acc.authorization = authorization;
+                            acc.cookies = authorization;
+                            acc.isActive = true;
+                            acc.memberStatus = 'ok';
+                            acc.memberStatusText = '普通';
+                            acc.updatedAt = new Date();
+                            await accountRepo.save(acc);
+                            Cloud139Service.clearInstance(acc);
+                            logger.info(`扫码登录：已成功刷新已有账号凭证与唤醒活跃状态 [${accountPhone}]`);
+                        } else {
+                            const totalAccounts = await accountRepo.count();
+                            const hasDefault = (await accountRepo.count({ where: { isDefault: true } })) > 0;
+                            acc = accountRepo.create({
+                                username: accountPhone,
+                                alias: `139-${accountPhone.slice(-4)}`,
+                                accountType: 'cloud139',
+                                authorization: authorization,
+                                cookies: authorization,
+                                isActive: true,
+                                isDefault: !hasDefault || totalAccounts === 0
+                            });
+                            await accountRepo.save(acc);
+                            logger.info(`扫码登录：已成功自动录入全新账号 [${accountPhone}]`);
+                        }
+
+                        // 异步尝试同步一次容量信息
+                        try {
+                            const cloud = Cloud139Service.getInstance(acc);
+                            await cloud.getUserSizeInfo();
+                        } catch (_) {}
+
+                        if (folderCache) {
+                            folderCache.clearPrefix('folders_');
+                        }
+                    }
+
+                    session.status = 'confirmed';
+                    session.accountInfo = { account: accountPhone, authorization };
+
+                    return {
+                        status: 'confirmed',
+                        account: accountPhone,
+                        message: `扫码登录成功！账号 [${accountPhone}] 凭证已就绪。`
+                    };
+                }
+
+                // 2. 手机端已扫描，等待用户在手机端点击【确认登录】(官方特定状态码 200059548)
+                if (code === '200059548') {
+                    return {
+                        status: 'waiting',
+                        message: '📱 手机端已扫描，请在手机上点击【确认登录】授权...'
+                    };
+                }
+
+                // 3. 用户在手机端点击了取消登录 (官方状态码 200059549)
+                if (code === '200059549') {
+                    session.status = 'expired';
+                    return {
+                        status: 'expired',
+                        message: '手机端已取消登录授权，请刷新二维码重新获取'
+                    };
+                }
+
+                // 4. 官方特定失效或过期错误码
+                if (['200059542', '200059543', '200059545', '200059546', '200059547', '102103'].includes(code)) {
+                    session.status = 'expired';
+                    return { status: 'expired', message: '二维码已在官方端失效，请点击刷新' };
+                }
+            } catch (netErr) {
+                logger.warn(`轮询移动云盘二维码状态网络抖动 [${targetSid}]: ${netErr.message}`);
+            }
         }
+
+        // 默认等待状态
+        return {
+            status: 'waiting',
+            message: '请使用中国移动云盘 App 或微信扫一扫并在手机上确认'
+        };
     }
 }
 

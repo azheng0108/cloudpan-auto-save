@@ -38,8 +38,42 @@ const qrLoading = ref<boolean>(false);
 const qrExpired = ref<boolean>(false);
 const qrCountdown = ref<number>(120);
 const qrStatusText = ref<string>('请使用中国移动云盘 App 或微信扫一扫');
+const checkingAuth = ref(false);
 let qrPollTimer: any = null;
 let qrCountdownTimer: any = null;
+
+// 主动触发扫码授权检测同步（无缝成功体验）
+async function handleManualCheckQrAuth() {
+  if (checkingAuth.value) return;
+  checkingAuth.value = true;
+  try {
+    const sid = qrSid.value;
+    const res = await accountApi.checkQrStatus(sid);
+    if (res.status === 'confirmed') {
+      stopQrPoll();
+      ElMessage.success(res.message || '🎉 扫码授权成功！云盘账号凭据已自动同步刷新');
+      showForm.value = false;
+      await loadAccounts(false);
+      return;
+    }
+    
+    // 如果官方返回 waiting，同步刷新一次后台账号列表
+    await loadAccounts(true);
+    const has139Active = accounts.value.some(a => a.accountType === 'cloud139' && a.isActive);
+    if (has139Active) {
+      stopQrPoll();
+      ElMessage.success('🎉 检测到 139 移动云盘账号已成功绑定并就绪！');
+      showForm.value = false;
+      return;
+    }
+
+    ElMessage.info(res.message || '📱 正在等待手机端确认授权，若手机端已提示授权成功，请稍等 1~2 秒后再次点击');
+  } catch (err: any) {
+    ElMessage.warning(`检测授权状态: ${err.message || '请确保手机端已点击确认登录'}`);
+  } finally {
+    checkingAuth.value = false;
+  }
+}
 
 // 初始化二维码会话与轮询
 async function initQrCode() {
@@ -636,16 +670,27 @@ onUnmounted(() => {
             <div class="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2">
               <AlertTriangle class="w-5 h-5" />
             </div>
-            <div class="text-xs font-bold text-gray-800 dark:text-gray-200 mb-1">二维码已失效</div>
-            <div class="text-[11px] text-gray-400 mb-3">为保障安全，二维码已超过有效时长</div>
-            <button
-              type="button"
-              class="btn-primary text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer"
-              @click="initQrCode"
-            >
-              <RefreshCw class="w-3.5 h-3.5" />
-              <span>刷新二维码</span>
-            </button>
+            <div class="text-xs font-bold text-gray-800 dark:text-gray-200 mb-1">二维码已超时</div>
+            <div class="text-[11px] text-gray-400 mb-3">若已在手机确认，可直接点击检查；或重新生成二维码</div>
+            <div class="flex flex-col gap-2 w-full max-w-[200px]">
+              <button
+                type="button"
+                class="btn-primary text-xs h-8 px-3 flex items-center justify-center gap-1.5 cursor-pointer"
+                :disabled="checkingAuth"
+                @click="handleManualCheckQrAuth"
+              >
+                <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingAuth }" />
+                <span>我已在手机授权，立即检查</span>
+              </button>
+              <button
+                type="button"
+                class="btn-default text-xs h-8 px-3 flex items-center justify-center gap-1.5 cursor-pointer"
+                @click="initQrCode"
+              >
+                <RefreshCw class="w-3.5 h-3.5" />
+                <span>重新生成二维码</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -659,6 +704,28 @@ onUnmounted(() => {
           <span v-if="!qrExpired && qrCountdown > 0" class="text-gray-400 font-mono text-[11px]">
             ({{ qrCountdown }}s)
           </span>
+        </div>
+
+        <!-- 主动同步与刷新操作区 (响应用户诉求：无缝闭环与刷新按钮) -->
+        <div class="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+          <button
+            type="button"
+            class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-60"
+            :disabled="checkingAuth"
+            @click="handleManualCheckQrAuth"
+          >
+            <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingAuth }" />
+            <span>{{ checkingAuth ? '正在检测手机授权...' : '🔄 我已在手机上完成授权，立即检查/同步' }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="px-3 py-2 rounded-xl text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+            @click="initQrCode"
+          >
+            <RefreshCw class="w-3.5 h-3.5" />
+            <span>刷新二维码</span>
+          </button>
         </div>
 
         <div class="mt-3 text-[11px] text-gray-400 text-center">
