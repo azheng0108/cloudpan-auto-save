@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { accountApi, type AccountItem } from '../api/account';
 import { ElMessage } from 'element-plus';
 import logo139 from '../assets/139-logo.png';
@@ -22,12 +22,109 @@ import {
   Check,
   X,
   ChevronUp,
+  QrCode,
 } from 'lucide-vue-next';
 
 // 账号列表数据与加载状态
 const loading = ref(false);
 const accounts = ref<AccountItem[]>([]);
 const isRefreshing = ref(false);
+
+// 登录绑定模式切换：'qrcode' (扫码登录) | 'manual' (手动输入)
+const loginMode = ref<'qrcode' | 'manual'>('qrcode');
+const qrDataUrl = ref<string>('');
+const qrSid = ref<string>('');
+const qrLoading = ref<boolean>(false);
+const qrExpired = ref<boolean>(false);
+const qrCountdown = ref<number>(120);
+const qrStatusText = ref<string>('请使用中国移动云盘 App 或微信扫一扫');
+let qrPollTimer: any = null;
+let qrCountdownTimer: any = null;
+
+// 初始化二维码会话与轮询
+async function initQrCode() {
+  stopQrPoll();
+  qrLoading.value = true;
+  qrExpired.value = false;
+  qrCountdown.value = 120;
+  qrStatusText.value = '请使用中国移动云盘 App 或微信扫一扫';
+  try {
+    const res = await accountApi.createQrCode();
+    qrDataUrl.value = res.qrDataUrl;
+    qrSid.value = res.sID;
+    qrCountdown.value = res.expiresIn || 120;
+    startQrCountdown();
+    startQrPoll();
+  } catch (err: any) {
+    ElMessage.error(`获取二维码失败: ${err.message || '网络连接异常'}`);
+    qrStatusText.value = '二维码加载失败，请点击刷新';
+  } finally {
+    qrLoading.value = false;
+  }
+}
+
+// 倒计时计时器
+function startQrCountdown() {
+  if (qrCountdownTimer) clearInterval(qrCountdownTimer);
+  qrCountdownTimer = setInterval(() => {
+    if (qrCountdown.value > 0) {
+      qrCountdown.value--;
+    } else {
+      qrExpired.value = true;
+      qrStatusText.value = '二维码已失效，请点击刷新重新获取';
+      stopQrPoll();
+    }
+  }, 1000);
+}
+
+// 轮询官方扫码状态
+function startQrPoll() {
+  if (qrPollTimer) clearInterval(qrPollTimer);
+  qrPollTimer = setInterval(async () => {
+    if (!qrSid.value || qrExpired.value) return;
+    try {
+      const res = await accountApi.checkQrStatus(qrSid.value);
+      if (res.status === 'confirmed') {
+        stopQrPoll();
+        ElMessage.success(res.message || '扫码登录成功！账号已自动绑定');
+        showForm.value = false;
+        await loadAccounts(false);
+      } else if (res.status === 'expired') {
+        qrExpired.value = true;
+        qrStatusText.value = '二维码已失效，请点击刷新';
+        stopQrPoll();
+      } else if (res.message) {
+        qrStatusText.value = res.message;
+      }
+    } catch (_) {
+      // 容忍单次轮询网络抖动
+    }
+  }, 2000);
+}
+
+// 停止轮询与计时
+function stopQrPoll() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer);
+    qrPollTimer = null;
+  }
+  if (qrCountdownTimer) {
+    clearInterval(qrCountdownTimer);
+    qrCountdownTimer = null;
+  }
+}
+
+// 切换登录方式
+function switchLoginMode(mode: 'qrcode' | 'manual') {
+  loginMode.value = mode;
+  if (mode === 'qrcode') {
+    if (!qrDataUrl.value || qrExpired.value) {
+      initQrCode();
+    }
+  } else {
+    stopQrPoll();
+  }
+}
 
 // 页面内联表单控制（零弹窗：直接在页面流中展开与编辑）
 const showForm = ref(false);
@@ -158,6 +255,8 @@ async function handleRefreshAll() {
 
 // 展开内联添加表单
 function openInlineAddForm(shouldScroll = true) {
+  loginMode.value = 'qrcode';
+  initQrCode();
   isEditing.value = false;
   captchaVisible.value = false;
   captchaUrl.value = '';
@@ -198,6 +297,7 @@ function openInlineEditForm(account: AccountItem) {
 
 // 关闭内联表单
 function closeInlineForm() {
+  stopQrPoll();
   if (accounts.value.length === 0) {
     ElMessage.info('当前尚未绑定任何账号，请先完成绑定');
     return;
@@ -347,6 +447,10 @@ async function handlePasteCookie() {
 onMounted(() => {
   loadAccounts();
 });
+
+onUnmounted(() => {
+  stopQrPoll();
+});
 </script>
 
 <template>
@@ -476,6 +580,94 @@ onMounted(() => {
         </button>
       </div>
 
+      <!-- 绑定模式切换 Tab (扫码推荐 / 手动凭据，仅在新建账号时展示) -->
+      <div v-if="!isEditing" class="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-xl w-fit mb-4">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+          :class="loginMode === 'qrcode' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'"
+          @click="switchLoginMode('qrcode')"
+        >
+          <QrCode class="w-3.5 h-3.5" />
+          <span>扫码登录（免抓包，推荐）</span>
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+          :class="loginMode === 'manual' ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'"
+          @click="switchLoginMode('manual')"
+        >
+          <Edit3 class="w-3.5 h-3.5" />
+          <span>手动填写凭据</span>
+        </button>
+      </div>
+
+      <!-- 模式 1: 二维码扫码登录卡片 -->
+      <div
+        v-if="!isEditing && loginMode === 'qrcode'"
+        class="flex flex-col items-center justify-center py-6 px-4 bg-gray-50/70 dark:bg-gray-900/40 rounded-2xl border border-gray-100 dark:border-gray-800 my-2"
+      >
+        <div class="text-sm font-bold text-gray-800 dark:text-gray-100 mb-1 flex items-center gap-2">
+          <span>中国移动云盘免密扫码登录</span>
+        </div>
+        <div class="text-xs text-gray-500 dark:text-gray-400 mb-4 flex items-center gap-1.5">
+          <span>支持「中国移动云盘 App」或「微信」扫一扫</span>
+        </div>
+
+        <!-- 二维码展示区 -->
+        <div class="relative w-52 h-52 p-3 bg-white rounded-2xl shadow-sm border border-gray-200/80 dark:border-gray-700 flex items-center justify-center overflow-hidden">
+          <!-- 二维码图片 -->
+          <img
+            v-if="qrDataUrl && !qrLoading"
+            :src="qrDataUrl"
+            alt="139 云盘扫码登录二维码"
+            class="w-full h-full object-contain"
+          />
+          <div v-else-if="qrLoading" class="flex flex-col items-center justify-center gap-2 text-gray-400 text-xs">
+            <RefreshCw class="w-6 h-6 animate-spin text-blue-600" />
+            <span>正在生成二维码...</span>
+          </div>
+
+          <!-- 失效遮罩层 -->
+          <div
+            v-if="qrExpired"
+            class="absolute inset-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center z-10"
+          >
+            <div class="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2">
+              <AlertTriangle class="w-5 h-5" />
+            </div>
+            <div class="text-xs font-bold text-gray-800 dark:text-gray-200 mb-1">二维码已失效</div>
+            <div class="text-[11px] text-gray-400 mb-3">为保障安全，二维码已超过有效时长</div>
+            <button
+              type="button"
+              class="btn-primary text-xs h-8 px-3.5 flex items-center gap-1.5 cursor-pointer"
+              @click="initQrCode"
+            >
+              <RefreshCw class="w-3.5 h-3.5" />
+              <span>刷新二维码</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 扫码状态指示条 -->
+        <div class="mt-4 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+          <span v-if="!qrExpired" class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+          </span>
+          <span class="font-medium">{{ qrStatusText }}</span>
+          <span v-if="!qrExpired && qrCountdown > 0" class="text-gray-400 font-mono text-[11px]">
+            ({{ qrCountdown }}s)
+          </span>
+        </div>
+
+        <div class="mt-3 text-[11px] text-gray-400 text-center">
+          提示：手机扫码并点击确认授权后，系统将自动录入绑定并获取容量配额。
+        </div>
+      </div>
+
+      <!-- 模式 2: 手动表单模式 (仅在 isEditing 或 loginMode === 'manual' 时展示) -->
+      <div v-show="isEditing || loginMode === 'manual'">
       <!-- 统一集中说明区 (按设计规范第 4.2 节：紧邻卡片头部下方、表单输入项上方，全卡片仅此一处) -->
       <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 space-y-2 mb-4">
         <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
@@ -605,6 +797,7 @@ onMounted(() => {
           </button>
         </div>
       </form>
+      </div>
     </div>
 
     <!-- ================= 账号卡片网格列表 ================= -->

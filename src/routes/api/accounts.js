@@ -2,6 +2,7 @@ const { Not } = require('typeorm');
 const { Cloud139Service } = require('../../services/cloud139');
 const { logTaskEvent } = require('../../utils/logUtils');
 const { maskUsername } = require('./shared');
+const { qrLoginService } = require('../../services/Cloud139QrLoginService');
 
 const createEmptyCapacity = () => ({
     cloudCapacityInfo: { usedSize: 0, totalSize: 0 },
@@ -225,6 +226,27 @@ const registerAccountsRoutes = (app, deps) => {
                 await accountRepo.update({ id: accountId }, { isDefault: true });
             }
             res.json({ success: true });
+        } catch (error) {
+            res.json({ success: false, error: error.message });
+        }
+    });
+
+        // 移动云盘 139 二维码扫码登录：创建新会话
+    app.get('/api/accounts/qrcode/create', async (req, res) => {
+        try {
+            const data = qrLoginService.createQrSession();
+            res.json({ success: true, data });
+        } catch (error) {
+            res.json({ success: false, error: error.message });
+        }
+    });
+
+    // 移动云盘 139 二维码扫码登录：轮询扫码状态与自动入库
+    app.get('/api/accounts/qrcode/status', async (req, res) => {
+        try {
+            const { sID } = req.query;
+            const result = await qrLoginService.pollQrStatus(sID, deps);
+            res.json({ success: true, data: result });
         } catch (error) {
             res.json({ success: false, error: error.message });
         }
