@@ -662,6 +662,7 @@ async function processCloud139Task(taskService, task, account) {
                 }, 0) || transferredIds.size;
             task.currentEpisodes = totalExisting;
             if (task.lastFileUpdateTime) {
+                const daysDiff = (Date.now() - new Date(task.lastFileUpdateTime).getTime()) / (1000 * 60 * 60 * 24);
                 const expireDays = Number(ConfigService.getConfigValue('task.taskExpireDays')) || 10;
                 if (daysDiff >= expireDays) {
                     task.status = 'completed';

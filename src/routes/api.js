@@ -3220,7 +3220,9 @@ const registerApiRoutes = (app, deps) => {
                 whitelistRegex = '',
                 blacklistKeywords = [],
                 visualCards = [],
-                scanInterval = 5,
+                scanInterval,
+                organizeInterval,
+                organizeCron,
                 videoExtensions,
                 metadataExtensions,
                 enableRename = true,
@@ -3264,7 +3266,8 @@ const registerApiRoutes = (app, deps) => {
             }
 
             const current = ConfigService.getConfigValue('channelMonitor', {});
-            const safeScanInterval = Math.max(1, Number(scanInterval) || 5);
+            const safeScanInterval = scanInterval !== undefined ? Math.max(1, Number(scanInterval) || 5) : (current.scanInterval || 5);
+            const safeOrganizeInterval = organizeInterval !== undefined ? Math.max(1, Number(organizeInterval) || 30) : (current.organizeInterval || 30);
             const updated = {
                 ...current,
                 accountId: accountId !== undefined ? (accountId ? (Number(accountId) || String(accountId)) : null) : current.accountId,
@@ -3280,6 +3283,8 @@ const registerApiRoutes = (app, deps) => {
                 visualCards: Array.isArray(visualCards) ? visualCards : [],
                 scanInterval: safeScanInterval,
                 cron: `*/${safeScanInterval} * * * *`,
+                organizeInterval: safeOrganizeInterval,
+                organizeCron: organizeCron ? String(organizeCron).trim() : (current.organizeCron || `*/${safeOrganizeInterval} * * * *`),
                 videoExtensions: Array.isArray(videoExtensions) ? videoExtensions.map(e => String(e).trim().toLowerCase().replace(/^\./, '')).filter(Boolean) : (current.videoExtensions || ['mp4', 'mkv', 'avi', 'mov', 'rmvb', 'wmv', 'ts']),
                 metadataExtensions: Array.isArray(metadataExtensions) ? metadataExtensions.map(e => String(e).trim().toLowerCase().replace(/^\./, '')).filter(Boolean) : (current.metadataExtensions || ['ass', 'srt', 'ssa', 'sub', 'vtt']),
                 enableRename: Boolean(enableRename),

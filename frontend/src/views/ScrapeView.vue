@@ -138,6 +138,8 @@ const strategyConfig = ref<ChannelGlobalConfig>({
   blacklistKeywords: [],
   visualCards: [],
   scanInterval: 5,
+  organizeInterval: 30,
+  organizeCron: '*/30 * * * *',
   videoExtensions: ['mp4', 'mkv', 'avi', 'mov', 'rmvb', 'wmv', 'ts'],
   metadataExtensions: ['ass', 'srt', 'ssa', 'sub', 'vtt'],
   enableRename: true,
@@ -1380,6 +1382,8 @@ async function loadStrategyConfig() {
         accountId: res.accountId || strategyConfig.value.accountId || '',
         defaultTargetFolderName: res.defaultTargetFolderName || '默认媒体库 (/)',
         scanInterval: res.scanInterval ?? 5,
+        organizeInterval: res.organizeInterval ?? 30,
+        organizeCron: res.organizeCron || '*/30 * * * *',
         minFileSize: res.minFileSize ?? 50,
         linkStrm: Boolean(res.linkStrm),
         notifyOnStrm: Boolean(res.notifyOnStrm),
@@ -2419,7 +2423,7 @@ onUnmounted(() => {
               </div>
               <div class="flex items-center gap-2">
                 <input
-                  v-model.number="strategyConfig.scanInterval"
+                  v-model.number="strategyConfig.organizeInterval"
                   type="number"
                   min="1"
                   max="1440"
@@ -2433,8 +2437,8 @@ onUnmounted(() => {
                     :key="min"
                     type="button"
                     class="px-2 py-0.5 rounded border text-[11px] font-mono cursor-pointer transition-colors"
-                    :class="strategyConfig.scanInterval === min ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-gray-300'"
-                    @click="strategyConfig.scanInterval = min"
+                    :class="strategyConfig.organizeInterval === min ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-gray-300'"
+                    @click="strategyConfig.organizeInterval = min"
                   >
                     {{ min }}分
                   </button>
