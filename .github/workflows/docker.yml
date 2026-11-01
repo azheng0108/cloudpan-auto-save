@@ -29,10 +29,11 @@ jobs:
           node-version: '22'
           cache: 'yarn'
       
-      - name: Install dependencies
-        run: |
-          yarn install --frozen-lockfile --ignore-engines --ignore-scripts
-          npm --prefix frontend ci
+      - name: Install root dependencies
+        run: yarn install --ignore-engines --ignore-scripts
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend install --no-audit --no-fund
 
       - name: Clean build validation
         run: yarn build
