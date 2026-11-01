@@ -84,6 +84,7 @@ const tmdbCandidates = ref<TmdbCandidateItem[]>([]);
 const selectedCandidate = ref<TmdbCandidateItem | null>(null);
 
 // PanSou 盘搜 139 资源检索状态
+const activeAddMode = ref<'link' | 'search'>('link');
 const showPansouSearch = ref(false);
 const pansouKeyword = ref('');
 const pansouSearching = ref(false);
@@ -274,6 +275,25 @@ function handleShareLinkInput(val: string) {
   }
 }
 
+
+function handleShareLinkBlur() {
+  const val = (form.shareLink || '').trim();
+  if (!val) return;
+  // 若输入不包含网址特征（http 或 139.com），而明显是中文影视剧名（如 "仙逆"、"凡人修仙传"）
+  const isUrl = /^https?:\/\//i.test(val) || /(?:caiyun|yun)\.139\.com/i.test(val);
+  if (!isUrl) {
+    const { title: cleanTitle, year } = cleanResourceTitle(val);
+    const candidateTitle = cleanTitle || val;
+    // 如果剧名为空或与输入一致，智能挪入剧名输入框
+    if (!form.resourceName || form.resourceName === candidateTitle) {
+      form.resourceName = candidateTitle;
+      form.shareLink = '';
+      ElMessage.info(`检测到输入内容为片名「${candidateTitle}」，已自动移至影视名称栏`);
+      searchTmdbCandidates({ queryOverride: candidateTitle, yearOverride: year });
+    }
+  }
+}
+
 async function handlePasteShareLink() {
   try {
     const text = await navigator.clipboard.readText();
@@ -358,6 +378,40 @@ function handleResourceNameInput() {
 }
 
 // ================= 盘搜 (fish2018/pansou) 资源快搜逻辑 =================
+function formatFriendlyPansouError(rawErr: any): string {
+  const msg = String(rawErr?.message || rawErr || '');
+  if (/ECONNREFUSED/i.test(msg)) {
+    return '未能连接到本地盘搜服务（127.0.0.1:8888 端口未响应）。若您尚未在本地部署 PanSou 容器/服务，建议直接切换到「已有链接」模式手动粘贴；若已部署，请检查服务是否处于运行状态。';
+  }
+  if (/ETIMEDOUT|timeout/i.test(msg)) {
+    return '盘搜服务请求超时，可能是网络缓慢或上游搜索源延迟过高，请稍后重试或直接填入链接。';
+  }
+  if (/ENOTFOUND/i.test(msg)) {
+    return '无法解析盘搜服务主机地址，请前往「系统设置」核对服务地址配置。';
+  }
+  if (/401|403/i.test(msg)) {
+    return '盘搜服务身份校验失败，请检查系统设置中的 API Key 访问密钥是否正确。';
+  }
+  return msg;
+}
+
+function switchToSearchMode() {
+  activeAddMode.value = 'search';
+  if (!pansouKeyword.value && form.resourceName) {
+    pansouKeyword.value = form.resourceName.trim();
+  }
+  if (pansouKeyword.value && (!hasSearched.value || lastSearchedKeyword.value !== pansouKeyword.value)) {
+    handlePansouSearch(false);
+  }
+}
+
+function handlePansouFromTitle() {
+  if (form.resourceName && form.resourceName.trim()) {
+    pansouKeyword.value = form.resourceName.trim();
+  }
+  switchToSearchMode();
+}
+
 function togglePansouSearch() {
   showPansouSearch.value = !showPansouSearch.value;
   if (showPansouSearch.value) {
@@ -390,8 +444,11 @@ async function handlePansouSearch(refresh: boolean = false) {
       ElMessage.success(`成功召回 ${pansouCandidates.value.length} 个 139 移动云盘有效资源`);
     }
   } catch (err: any) {
-    pansouError.value = err.message || '网络连接超时或无法连接盘搜服务';
-    ElMessage.error(`盘搜检索失败: ${err.message || '网络异常'}`);
+    const friendly = formatFriendlyPansouError(err);
+    pansouError.value = friendly;
+    if (!/ECONNREFUSED/i.test(String(err?.message || ''))) {
+      ElMessage.warning(friendly);
+    }
   } finally {
     pansouSearching.value = false;
   }
@@ -411,7 +468,7 @@ async function checkPansouStatus() {
       ElMessage.warning(pansouError.value);
     }
   } catch (err: any) {
-    pansouError.value = err.message || '无法连接盘搜服务';
+    pansouError.value = formatFriendlyPansouError(err);
     ElMessage.error(pansouError.value);
   }
 }
@@ -422,31 +479,17 @@ function applyPansouCandidate(item: PansouResourceItem) {
     form.accessCode = item.password.trim();
   }
 
-  // 若尚未填写影视剧名称或当前名称为空
-  if (!form.resourceName || !form.resourceName.trim()) {
-    const { title: cleanTitle, year, episode } = cleanResourceTitle(item.title);
-    if (cleanTitle) {
-      form.resourceName = cleanTitle;
-      searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
-    } else {
-      // 未能可靠提纯出规范片名：杜绝填入脏文本，等待用户手动填写
-      form.resourceName = '';
-      tmdbCandidates.value = [];
-      selectedCandidate.value = null;
-      ElMessage.info('已填入分享链接，未能识别规范片名，请在下方手动填写影视剧名称后点击「智能匹配」');
-    }
-  } else {
-    // 若当前输入框内已有内容，但包含未清理的脏后缀，顺带提纯
-    const { title: cleanTitle, year, episode } = cleanResourceTitle(form.resourceName);
-    if (cleanTitle && cleanTitle !== form.resourceName) {
-      form.resourceName = cleanTitle;
-      if (!form.tmdbId) {
-        searchTmdbCandidates({ queryOverride: cleanTitle, yearOverride: year });
-      }
-    }
+  const { title: cleanTitle, year } = cleanResourceTitle(item.title);
+  const targetTitle = cleanTitle || form.resourceName || '';
+  if (targetTitle) {
+    form.resourceName = targetTitle;
+    searchTmdbCandidates({ queryOverride: targetTitle, yearOverride: year });
   }
 
-  ElMessage.success('已填入 139 分享链接' + (item.password ? '与提取码' : '') + '！');
+  // 选用资源后，平滑切回「已有链接」确认表单
+  activeAddMode.value = 'link';
+  showPansouSearch.value = false;
+  ElMessage.success(`已选用《${targetTitle || '该资源'}》，已自动填入 139 分享链接与提取码，请确认后创建追更！`);
 }
 
 function handleCronPresetChange(preset: string) {
@@ -961,22 +1004,193 @@ function getErrorTier(errText?: string) {
               {{ isEditing ? `编辑追更任务：《${form.resourceName || '未命名'}》` : '新建追更任务' }}
             </h3>
             <p class="text-xs text-gray-500 dark:text-gray-400">
-              添加 139 移动云盘分享链接并自动执行更新检测与入库
+              {{ isEditing ? '修改追更配置、轮询周期与 TMDB 权威绑定信息' : '添加 139 移动云盘分享链接并自动执行更新检测与入库' }}
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-          title="关闭表单"
-          @click="closeInlineForm"
-        >
-          <X class="w-4 h-4" />
-        </button>
+
+        <div class="flex items-center gap-3">
+          <!-- 录入模式切换胶囊（仅在新建模式下展示） -->
+          <div
+            v-if="!isEditing"
+            class="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium"
+          >
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 cursor-pointer"
+              :class="activeAddMode === 'link'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs font-semibold'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'"
+              @click="activeAddMode = 'link'"
+            >
+              <Link class="w-3.5 h-3.5" />
+              <span>已有链接</span>
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 cursor-pointer"
+              :class="activeAddMode === 'search'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs font-semibold'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'"
+              @click="switchToSearchMode"
+            >
+              <Search class="w-3.5 h-3.5" />
+              <span>盘搜找资源</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+            title="关闭表单"
+            @click="closeInlineForm"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      <!-- 表单主体网格 -->
-      <form @submit.prevent="handleSubmit" class="space-y-4">
+      <!-- 模式 2: 盘搜找资源卡片（全网检索并一键带入表单） -->
+      <div v-if="!isEditing && activeAddMode === 'search'" class="space-y-4">
+        <!-- 引导小贴士 -->
+        <div class="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/50 flex items-start gap-2.5 text-xs text-blue-700 dark:text-blue-300">
+          <Sparkles class="w-4 h-4 shrink-0 text-blue-500 mt-0.5" />
+          <div class="leading-relaxed">
+            <p class="font-medium">盘搜找资源：输入想追的影视剧名，全网检索 139 移动云盘可用资源。</p>
+            <p class="text-[11px] text-blue-600/80 dark:text-blue-400/80 mt-0.5">
+              选定资源后，系统会自动为您填入分享链接、提取码并自动智能匹配 TMDB，您只需确认后即可一键创建追更！
+            </p>
+          </div>
+        </div>
+
+        <!-- 搜索输入框与按钮组 -->
+        <div class="flex items-center gap-2">
+          <div class="flex-1 flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 h-10 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 transition-all">
+            <Search class="w-4 h-4 text-slate-400 shrink-0 mr-2.5" />
+            <input
+              v-model="pansouKeyword"
+              type="text"
+              placeholder="输入影视剧名搜索 139 网盘资源（如: 仙逆 / 凡人修仙传 / 繁花）"
+              class="w-full bg-transparent text-xs text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400"
+              @keydown.enter.prevent="handlePansouSearch(false)"
+            />
+            <button
+              v-if="pansouKeyword"
+              type="button"
+              class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 cursor-pointer p-0.5 ml-1"
+              title="清空关键词"
+              @click="pansouKeyword = ''"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            class="btn-primary text-xs h-10 px-5 flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer font-medium"
+            :disabled="pansouSearching || !pansouKeyword.trim()"
+            @click="handlePansouSearch(false)"
+          >
+            <RefreshCw v-if="pansouSearching" class="w-3.5 h-3.5 animate-spin" />
+            <Search v-else class="w-3.5 h-3.5" />
+            <span>{{ pansouSearching ? '检索中...' : '搜索 139 资源' }}</span>
+          </button>
+        </div>
+
+        <!-- 服务异常温情友好引导卡片（告别 ECONNREFUSED 乱码） -->
+        <div
+          v-if="pansouError"
+          class="p-4 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/20 text-xs space-y-2.5"
+        >
+          <div class="flex items-start gap-2.5">
+            <AlertTriangle class="w-4 h-4 shrink-0 text-amber-500 mt-0.5" />
+            <div class="space-y-1">
+              <p class="font-semibold text-amber-800 dark:text-amber-300">
+                盘搜服务暂时无法连接
+              </p>
+              <p class="text-amber-700/90 dark:text-amber-400/90 leading-relaxed text-[11px]">
+                {{ pansouError }}
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 pt-1 pl-6.5">
+            <button
+              type="button"
+              class="btn-default !text-xs !h-7 !px-3 font-medium flex items-center gap-1 text-slate-700 dark:text-slate-200"
+              @click="activeAddMode = 'link'"
+            >
+              <Link class="w-3 h-3 text-blue-500" />
+              <span>切换为手动填入链接</span>
+            </button>
+            <router-link
+              to="/settings"
+              class="inline-flex items-center gap-1 text-[11px] text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200 font-medium underline px-2 py-1"
+            >
+              <Sliders class="w-3 h-3" />
+              <span>检查盘搜服务配置</span>
+            </router-link>
+          </div>
+        </div>
+
+        <!-- 候选资源卡片列表 -->
+        <div v-if="pansouCandidates.length > 0" class="space-y-2.5">
+          <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-0.5">
+            <span>找到 {{ pansouCandidates.length }} 条 139 移动云盘资源（点击直接采用并创建）：</span>
+            <span v-if="lastSearchedKeyword" class="text-[11px] font-mono">「{{ lastSearchedKeyword }}」</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
+            <div
+              v-for="(item, idx) in pansouCandidates"
+              :key="item.link + idx"
+              class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-xs transition-all cursor-pointer flex items-start justify-between gap-3 group"
+              @click="applyPansouCandidate(item)"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-semibold text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400" :title="item.title">
+                  {{ item.title }}
+                </div>
+                <div class="flex items-center gap-2 mt-1.5 text-[11px] text-slate-400">
+                  <span v-if="item.sizeFormatted" class="font-mono text-slate-700 dark:text-slate-300 font-medium">
+                    {{ item.sizeFormatted }}
+                  </span>
+                  <span v-if="item.source" class="truncate max-w-[140px]">
+                    {{ item.source }}
+                  </span>
+                  <span v-if="item.password" class="px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-mono text-[10px]">
+                    提取码: {{ item.password }}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:border-blue-500 group-hover:bg-blue-50 group-hover:text-blue-600 dark:group-hover:bg-blue-950 dark:group-hover:text-blue-400 shrink-0 transition-colors"
+                @click.stop="applyPansouCandidate(item)"
+              >
+                选用此资源
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空状态提示 -->
+        <div
+          v-else-if="hasSearched && !pansouSearching && !pansouError"
+          class="py-8 text-center text-xs text-slate-400 space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl"
+        >
+          <Inbox class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
+          <p class="font-medium text-slate-500">未在全网检索到与「{{ lastSearchedKeyword }}」匹配的 139 移动云盘资源</p>
+          <p class="text-[11px] text-slate-400">
+            提示：可尝试更精简的剧名关键词，或直接
+            <button type="button" class="text-blue-500 underline font-medium hover:text-blue-600 cursor-pointer" @click="activeAddMode = 'link'">
+              切换回手动粘贴分享链接
+            </button>
+          </p>
+        </div>
+      </div>
+
+      <!-- 模式 1: 完整的追更配置表单 -->
+      <form v-show="activeAddMode === 'link' || isEditing" @submit.prevent="handleSubmit" class="space-y-4">
         <!-- 阶段 1: 资源链接与提取码（同一行自然联动，动线顺畅） -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <!-- 139 云盘分享链接 (占 3 列) -->
@@ -986,17 +1200,6 @@ function getErrorTier(errText?: string) {
                 139 云盘分享链接 <span class="text-red-500">*</span>
               </label>
               <div class="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  class="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-all"
-                  :class="showPansouSearch
-                    ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 font-semibold shadow-xs'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'"
-                  @click="togglePansouSearch"
-                >
-                  <Search class="w-3 h-3" />
-                  <span>{{ showPansouSearch ? '收起盘搜' : '盘搜找资源' }}</span>
-                </button>
                 <button
                   type="button"
                   class="cursor-pointer inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-all"
@@ -1015,6 +1218,7 @@ function getErrorTier(errText?: string) {
               class="input-base text-xs font-mono w-full"
               required
               @input="handleShareLinkInput(form.shareLink)"
+              @blur="handleShareLinkBlur"
             />
           </div>
 
@@ -1032,122 +1236,15 @@ function getErrorTier(errText?: string) {
           </div>
         </div>
 
-        <!-- PanSou 盘搜展开面板 (极简灰蓝雅致风格，在链接下方紧随展开) -->
-        <div
-          v-if="showPansouSearch"
-          class="p-3.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/40 border border-slate-200/90 dark:border-slate-700/80 space-y-3 transition-all"
-        >
-          <!-- 搜索框与按钮组 -->
-          <div class="flex items-center gap-2">
-            <div class="flex-1 flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 h-[38px] focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 transition-all">
-              <Search class="w-4 h-4 text-slate-400 shrink-0 mr-2.5" />
-              <input
-                v-model="pansouKeyword"
-                type="text"
-                placeholder="输入影视剧名搜索 139 网盘资源（如: 全职高手 / 繁花 / 凡人修仙传）"
-                class="w-full bg-transparent text-xs text-slate-900 dark:text-slate-100 outline-none placeholder:text-slate-400"
-                @keydown.enter.prevent="handlePansouSearch(false)"
-              />
-              <button
-                v-if="pansouKeyword"
-                type="button"
-                class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 cursor-pointer p-0.5 ml-1"
-                title="清空关键词"
-                @click="pansouKeyword = ''"
-              >
-                <X class="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              class="btn-primary text-xs h-[38px] px-4 flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-              :disabled="pansouSearching || !pansouKeyword.trim()"
-              @click="handlePansouSearch(false)"
-            >
-              <RefreshCw v-if="pansouSearching" class="w-3.5 h-3.5 animate-spin" />
-              <Search v-else class="w-3.5 h-3.5" />
-              <span>{{ pansouSearching ? '搜索中...' : '搜索资源' }}</span>
-            </button>
-          </div>
-
-          <!-- 异常错误提示条 -->
-          <div
-            v-if="pansouError"
-            class="p-2.5 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/70 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs flex items-center justify-between gap-2"
-          >
-            <div class="flex items-center gap-1.5 min-w-0">
-              <AlertTriangle class="w-4 h-4 shrink-0 text-red-500" />
-              <span class="truncate">{{ pansouError }}</span>
-            </div>
-            <router-link
-              to="/settings"
-              class="text-[11px] underline hover:text-red-700 shrink-0 font-medium"
-            >
-              检查盘搜服务配置
-            </router-link>
-          </div>
-
-          <!-- 候选资源卡片列表 -->
-          <div v-if="pansouCandidates.length > 0" class="space-y-2">
-            <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>找到 {{ pansouCandidates.length }} 条 139 移动云盘资源（点击直接填入表单）：</span>
-              <span v-if="lastSearchedKeyword" class="text-[11px] font-mono">「{{ lastSearchedKeyword }}」</span>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-              <div
-                v-for="(item, idx) in pansouCandidates"
-                :key="item.link + idx"
-                class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-xs transition-all cursor-pointer flex items-start justify-between gap-2 group"
-                @click="applyPansouCandidate(item)"
-              >
-                <div class="min-w-0 flex-1">
-                  <div class="text-xs font-medium text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400" :title="item.title">
-                    {{ item.title }}
-                  </div>
-                  <div class="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
-                    <span v-if="item.sizeFormatted" class="font-mono text-slate-600 dark:text-slate-300">
-                      {{ item.sizeFormatted }}
-                    </span>
-                    <span v-if="item.source" class="truncate max-w-[130px]">
-                      {{ item.source }}
-                    </span>
-                    <span v-if="item.password" class="px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-mono text-[10px]">
-                      提取码: {{ item.password }}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  class="px-2 py-1 text-[11px] font-medium rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:border-blue-500 group-hover:bg-blue-50 group-hover:text-blue-600 dark:group-hover:bg-blue-950 dark:group-hover:text-blue-400 shrink-0 transition-colors"
-                  @click.stop="applyPansouCandidate(item)"
-                >
-                  填入
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- 空状态提示 -->
-          <div
-            v-else-if="hasSearched && !pansouSearching && !pansouError"
-            class="py-4 text-center text-xs text-slate-400 space-y-1"
-          >
-            <p>未在全网检索到与「{{ lastSearchedKeyword }}」匹配的 139 移动云盘资源</p>
-            <p class="text-[11px] text-slate-400">
-              提示：频道与插件可能暂未收录该资源，您可尝试更简短的片名或从剪贴板直接粘贴。
-            </p>
-          </div>
-        </div>
-
         <!-- 阶段 2: 影视识别与转存账号（核心业务对称排布） -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- 影视剧集名称与智能匹配 -->
+          <!-- 影视剧集名称与智能匹配 + 盘搜找资源 -->
           <div>
-            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-              影视名称与 TMDB 匹配 <span class="text-red-500">*</span>
-            </label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                影视名称与 TMDB 匹配 <span class="text-red-500">*</span>
+              </label>
+            </div>
             <div class="flex items-center gap-2">
               <input
                 v-model="form.resourceName"
@@ -1162,10 +1259,21 @@ function getErrorTier(errText?: string) {
                 class="btn-default text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer font-medium"
                 :disabled="tmdbSearching"
                 @click="searchTmdbCandidates"
+                title="向 TMDB 权威媒体库检索该剧元数据与海报"
               >
                 <RefreshCw v-if="tmdbSearching" class="w-3.5 h-3.5 animate-spin" />
                 <Search v-else class="w-3.5 h-3.5 text-blue-500" />
                 <span>{{ tmdbSearching ? '检索中...' : '智能匹配' }}</span>
+              </button>
+              <button
+                v-if="!isEditing"
+                type="button"
+                class="btn-default text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer font-medium text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                title="携带当前片名快速全网检索 139 网盘资源"
+                @click="handlePansouFromTitle"
+              >
+                <Compass class="w-3.5 h-3.5 text-indigo-500" />
+                <span>盘搜找资源</span>
               </button>
             </div>
           </div>
