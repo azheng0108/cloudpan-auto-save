@@ -113,6 +113,24 @@ function formatBytes(bytes: number | undefined): string {
   return `${value.toFixed(exponent >= 3 ? 2 : 1)} ${units[exponent]}`;
 }
 
+// 获取单个账号合并总容量 (个人 + 家庭合并统一展示)
+function getAccountTotalCapacity(acc: any) {
+  const pTotal = acc?.capacity?.cloudCapacityInfo?.totalSize || 0;
+  const pUsed = acc?.capacity?.cloudCapacityInfo?.usedSize || 0;
+  const fTotal = acc?.capacity?.familyCapacityInfo?.totalSize || 0;
+  const fUsed = acc?.capacity?.familyCapacityInfo?.usedSize || 0;
+  const total = pTotal + fTotal;
+  const used = pUsed + fUsed;
+  const percent = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+  return {
+    total,
+    used,
+    percent,
+    totalFormatted: formatBytes(total),
+    usedFormatted: formatBytes(used),
+  };
+}
+
 // 获取账号列表
 async function loadAccounts(silent = false) {
   if (!silent) loading.value = true;
@@ -707,42 +725,20 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- 容量监控进度条（139 移动云盘综合云空间与细分） -->
-          <div class="space-y-3 py-2 border-t border-b border-gray-100 dark:border-gray-800 my-2">
-            <!-- 综合云空间总计 (当存在家庭云时，优先展示对齐官方的“云空间”总计) -->
-            <div v-if="account.capacity?.familyCapacityInfo && account.capacity.familyCapacityInfo.totalSize > 0">
-              <div class="flex items-center justify-between text-xs mb-1">
-                <span class="text-gray-700 dark:text-gray-300 font-semibold flex items-center gap-1">
-                  <Cloud class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  <span>云空间 (综合总计)</span>
+          <!-- 容量监控进度条（合并统一云空间，不单独展示个人与家庭） -->
+          <div class="py-2.5 border-t border-b border-gray-100 dark:border-gray-800 my-2">
+            <div>
+              <div class="flex items-center justify-between text-xs mb-1.5">
+                <span class="text-gray-700 dark:text-gray-300 font-semibold flex items-center gap-1.5">
+                  <Cloud class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span>云空间</span>
                 </span>
                 <span class="font-mono text-gray-900 dark:text-gray-100 font-bold">
-                  {{ formatBytes((account.capacity.cloudCapacityInfo?.usedSize || 0) + account.capacity.familyCapacityInfo.usedSize) }} / {{ formatBytes((account.capacity.cloudCapacityInfo?.totalSize || 0) + account.capacity.familyCapacityInfo.totalSize) }}
-                </span>
-              </div>
-              <div class="w-full bg-gray-100 dark:bg-gray-800 h-2.5 rounded-full overflow-hidden">
-                <div
-                  class="bg-blue-600 dark:bg-blue-500 h-full rounded-full transition-all duration-300"
-                  :style="{
-                    width: `${Math.min(100, Math.round((((account.capacity.cloudCapacityInfo?.usedSize || 0) + account.capacity.familyCapacityInfo.usedSize) / Math.max(1, (account.capacity.cloudCapacityInfo?.totalSize || 0) + account.capacity.familyCapacityInfo.totalSize)) * 100))}%`,
-                  }"
-                />
-              </div>
-            </div>
-
-            <!-- 个人云空间 -->
-            <div>
-              <div class="flex items-center justify-between text-xs mb-1">
-                <span class="text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                  <Database class="w-3.5 h-3.5 text-blue-500" />
-                  <span>{{ account.capacity?.familyCapacityInfo && account.capacity.familyCapacityInfo.totalSize > 0 ? '个人云细分' : '个人云空间' }}</span>
-                </span>
-                <span class="font-mono text-gray-800 dark:text-gray-200 font-medium">
                   <template v-if="account.memberStatus === 'auth_failed'">
                     <span class="text-red-500">Cookie 失效</span>
                   </template>
-                  <template v-else-if="account.capacity?.cloudCapacityInfo">
-                    {{ formatBytes(account.capacity.cloudCapacityInfo.usedSize) }} / {{ formatBytes(account.capacity.cloudCapacityInfo.totalSize) }}
+                  <template v-else-if="account.capacity">
+                    {{ getAccountTotalCapacity(account).usedFormatted }} / {{ getAccountTotalCapacity(account).totalFormatted }}
                   </template>
                   <template v-else>
                     <span class="text-gray-400">未知容量</span>
@@ -750,39 +746,18 @@ onMounted(() => {
                 </span>
               </div>
 
-              <!-- 个人云进度条 -->
-              <div class="w-full bg-gray-100 dark:bg-gray-800 h-2 rounded-full overflow-hidden">
+              <!-- 合并总空间进度条 -->
+              <div class="w-full bg-gray-100 dark:bg-gray-800 h-2.5 rounded-full overflow-hidden">
                 <div
-                  v-if="account.capacity?.cloudCapacityInfo && account.capacity.cloudCapacityInfo.totalSize > 0"
+                  v-if="getAccountTotalCapacity(account).total > 0"
                   class="h-full rounded-full transition-all duration-300"
                   :class="{
-                    'bg-blue-600 dark:bg-blue-500': (account.capacity.cloudCapacityInfo.usedSize / account.capacity.cloudCapacityInfo.totalSize) < 0.85,
-                    'bg-amber-500': (account.capacity.cloudCapacityInfo.usedSize / account.capacity.cloudCapacityInfo.totalSize) >= 0.85 && (account.capacity.cloudCapacityInfo.usedSize / account.capacity.cloudCapacityInfo.totalSize) < 0.95,
-                    'bg-red-500': (account.capacity.cloudCapacityInfo.usedSize / account.capacity.cloudCapacityInfo.totalSize) >= 0.95,
+                    'bg-blue-600 dark:bg-blue-500': getAccountTotalCapacity(account).percent < 85,
+                    'bg-amber-500': getAccountTotalCapacity(account).percent >= 85 && getAccountTotalCapacity(account).percent < 95,
+                    'bg-red-500': getAccountTotalCapacity(account).percent >= 95,
                   }"
                   :style="{
-                    width: `${Math.min(100, Math.round((account.capacity.cloudCapacityInfo.usedSize / account.capacity.cloudCapacityInfo.totalSize) * 100))}%`,
-                  }"
-                />
-              </div>
-            </div>
-
-            <!-- 家庭云空间 (若存在家庭云配额) -->
-            <div v-if="account.capacity?.familyCapacityInfo && account.capacity.familyCapacityInfo.totalSize > 0">
-              <div class="flex items-center justify-between text-xs mb-1">
-                <span class="text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                  <Users class="w-3.5 h-3.5 text-indigo-500" />
-                  <span>家庭云细分</span>
-                </span>
-                <span class="font-mono text-gray-800 dark:text-gray-200 font-medium">
-                  {{ formatBytes(account.capacity.familyCapacityInfo.usedSize) }} / {{ formatBytes(account.capacity.familyCapacityInfo.totalSize) }}
-                </span>
-              </div>
-              <div class="w-full bg-gray-100 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                <div
-                  class="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                  :style="{
-                    width: `${Math.min(100, Math.round((account.capacity.familyCapacityInfo.usedSize / account.capacity.familyCapacityInfo.totalSize) * 100))}%`,
+                    width: `${getAccountTotalCapacity(account).percent}%`,
                   }"
                 />
               </div>
