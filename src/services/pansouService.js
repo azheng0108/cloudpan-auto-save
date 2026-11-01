@@ -26,6 +26,23 @@ function formatFriendlyError(error, baseUrl) {
     return `${detail} (详情: ${msg})`;
 }
 
+function formatFriendlyError(error, baseUrl) {
+    const msg = String(error?.message || error || '');
+    if (/ECONNREFUSED/i.test(msg)) {
+        return `未能连接到本地盘搜服务（${baseUrl} 端口未响应）。若您尚未启动 PanSou 镜像/服务，建议直接粘贴 139 分享链接；若已部署，请检查该服务是否处于运行状态。`;
+    }
+    if (/ETIMEDOUT|timeout/i.test(msg)) {
+        return `盘搜服务请求超时（${baseUrl}），可能是网络缓慢或上游搜索源延迟过高，请重试或直接填入链接。`;
+    }
+    if (/ENOTFOUND/i.test(msg)) {
+        return `无法解析盘搜服务地址（${baseUrl}），请检查系统设置中的盘搜地址配置。`;
+    }
+    if (/401|403/i.test(msg)) {
+        return `盘搜服务鉴权失败，请检查系统设置中的 API Key 访问密钥是否正确。`;
+    }
+    return `盘搜服务暂时不可用: ${msg}`;
+}
+
 function cleanTitle(raw) {
     if (!raw || typeof raw !== 'string') return '139移动云盘资源';
     const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -276,7 +293,7 @@ class PansouService {
                 return { connected: true, latency, message: `服务在线 (状态码 ${error.response.statusCode}, 耗时 ${latency}ms)` };
             }
             const friendly = formatFriendlyError(error, baseUrl);
-            return { connected: false, latency: 0, message: friendly, rawError: error.message };
+            return { connected: false, latency: 0, message: `${friendly} (详情: ${error.message})`, rawError: error.message };
         }
     }
 }
