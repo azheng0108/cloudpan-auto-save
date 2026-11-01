@@ -245,3 +245,4 @@ module.exports = {
     Cloud139QrLoginService,
     qrLoginService
 };
+

@@ -28,11 +28,14 @@ class AIService {
         const cfg = Object.assign({}, stored, customConfig || {});
         let rawBaseUrl = (customConfig && customConfig.baseUrl !== undefined) ? customConfig.baseUrl : (cfg.baseUrl || 'https://api.openai.com/v1');
         let baseUrl = String(rawBaseUrl || '').trim().replace(/\/+$/, '');
+        const provider = String(cfg.provider || '').trim();
         return {
             enable: Boolean(cfg.enable),
+            provider: provider || 'custom',
+            providerName: String(cfg.providerName || (provider === 'mobile' ? '移动灵犀' : '自定义')).trim(),
             apiKey: String(cfg.apiKey || '').trim(),
-            baseUrl,
-            model: String(cfg.model || 'gpt-4o-mini').trim(),
+            baseUrl: provider === 'mobile' ? 'https://ai.yun.139.com' : baseUrl,
+            model: String(cfg.model || (provider === 'mobile' ? '移动灵犀智能大模型' : 'gpt-4o-mini')).trim(),
             temperature: typeof cfg.temperature === 'number' ? cfg.temperature : 0.1,
             maxTokens: typeof cfg.maxTokens === 'number' ? cfg.maxTokens : (cfg.max_tokens || 2000),
             mode: cfg.mode || 'fallback'
@@ -44,6 +47,9 @@ class AIService {
      */
     isEnabled(customConfig = null) {
         const cfg = this.getEffectiveConfig(customConfig);
+        if (cfg.provider === 'mobile') {
+            return Boolean(cfg.enable);
+        }
         return Boolean(cfg.enable && cfg.apiKey && cfg.baseUrl && cfg.model);
     }
 
@@ -177,8 +183,8 @@ class AIService {
             return { success: true, data: cached, fromCache: true };
         }
 
-        // 主通道未配置/未启用 → 移动 AI 兜底通道（唯一识别源，方案 §5 路径 A）
-        if (!this.isEnabled(eff)) {
+        // 选定移动灵犀免密通道 或 外部通道未就绪 → 直接走移动灵犀通道
+        if (eff.provider === 'mobile' || !eff.apiKey || !this.isEnabled(eff)) {
             return this._parseViaMobile(text, context);
         }
 

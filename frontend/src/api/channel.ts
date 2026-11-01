@@ -47,6 +47,8 @@ export interface MobileFallbackConfig {
 
 export interface ChannelAiConfig {
   enable: boolean;
+  provider?: string;
+  providerName?: string;
   baseUrl: string;
   apiKey: string;
   model: string;
