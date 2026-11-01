@@ -2450,24 +2450,13 @@ onUnmounted(() => {
                 整理后自动删除空文件夹
               </h4>
               <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                当视频被分类改名搬移到媒体库后，自动删除暂存区里已经被搬空的无用空文件夹，保持网盘整洁清爽。
+                当视频被分类改名搬移到媒体库后，自动删除源目录中已经被搬空的无用空文件夹，保持网盘整洁清爽。
               </p>
             </div>
             <el-switch v-model="strategyConfig.sweepEmptyFolders" />
           </div>
 
-          <!-- 核心开关 3: 联动生成 STRM (小白大白话) -->
-          <div class="p-3.5 rounded-xl border border-gray-200/90 dark:border-gray-800 bg-white dark:bg-gray-850 flex items-center justify-between gap-3">
-            <div class="space-y-0.5 flex-1 pr-2">
-              <h4 class="text-xs font-bold text-gray-900 dark:text-white">
-                自动同步生成 STRM 在线播放文件
-              </h4>
-              <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                每次影视整理完成后，自动为 Emby / Jellyfin / 播放器生成或更新对应的 <code class="text-blue-600 dark:text-blue-400">.strm</code> 文件，无需下载即可在线播放（需在系统左侧「STRM 生成」中预先设置路径）。
-              </p>
-            </div>
-            <el-switch v-model="strategyConfig.linkStrm" />
-          </div>
+
 
 
         </div>
