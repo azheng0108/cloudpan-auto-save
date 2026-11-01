@@ -2410,7 +2410,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 核心开关 1: 后台定时自动整理 (各司其职，对齐 ChannelView 规范) -->
+        <!-- 核心开关 1: 后台定时自动整理 (对齐 ChannelView 规范) -->
         <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/50 p-3.5 flex items-center justify-between mb-4">
           <div class="space-y-0.5 pr-3">
             <h4 class="text-xs font-bold text-gray-900 dark:text-white">
@@ -2451,7 +2451,7 @@ onUnmounted(() => {
             </div>
           </div>
           <span class="form-text">
-            后台自动巡检待整理中转目录的周期，发现视频即刻识别并归档入库（如需更快入库可设为 5 分钟）
+            后台自动巡检待整理中转目录的周期，发现待处理影视即刻自动识别并规范整理归档（建议 15~60 分钟）
           </span>
         </div>
 
