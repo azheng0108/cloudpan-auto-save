@@ -348,7 +348,7 @@ async function sendTestMessage() {
       chatId: form.bot.chatId.trim(),
       proxyUrl: proxyQuickUrl.value.trim(),
     });
-    ElMessage.success('测试消息已成功发送至 Telegram！');
+    ElMessage.success('影视入库测试卡片《玉簟秋 (2026)》已成功推送至 Telegram！');
   } catch (err: any) {
     ElMessage.error('发送测试消息失败: ' + (err.message || '网络超时或凭据错误'));
   } finally {
@@ -946,7 +946,7 @@ onUnmounted(() => {
         <ul class="space-y-1.5 pl-1 leading-relaxed text-slate-600 dark:text-slate-300">
           <li>• <strong>Bot Token 获取方法</strong>：在 Telegram 中搜索并私聊 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">@BotFather</code>，发送 <code class="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">/newbot</code> 根据提示设置名称后，即可获取形如 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">123456789:ABCdef...</code> 的 Token 字符串。</li>
           <li>• <strong>管理员 Chat ID 获取方法</strong>：在 Telegram 中搜索并私聊 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">@userinfobot</code>，发送任意消息，它会回复你的专属数字 ID（如 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">987654321</code>），请将纯数字填入右侧输入框。</li>
-          <li>• <strong>连通性验证</strong>：两项填好后，点击右侧“发送测试”，若您的 Telegram 账号收到测试消息即表示配置成功。</li>
+          <li>• <strong>连通性验证</strong>：两项填好后，点击右侧“推送入库卡片测试”，即可向您的 Telegram 直接推送《玉簟秋 (2026)》影视入库通知卡片，兼具连通性验证与卡片视觉效果预览。</li>
         </ul>
       </div>
 
@@ -996,7 +996,7 @@ onUnmounted(() => {
             >
               <RefreshCw v-if="isSendingTestMsg" class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 animate-spin" />
               <Send v-else class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span>{{ isSendingTestMsg ? '发送中...' : '发送测试' }}</span>
+              <span>{{ isSendingTestMsg ? '推送中...' : '推送入库卡片测试' }}</span>
             </button>
           </div>
         </div>
