@@ -37,7 +37,30 @@ class TMDBService {
             }).json();
             return response;
         } catch (error) {
-            logger.error(`TMDB请求失败 [${endpoint}]`, { error: error.message, stack: error.stack });
+            let reason = error.message;
+            if (error.code === 'ECONNREFUSED') {
+                const proxyUrl = ProxyUtil.getProxy('tmdb');
+                reason = proxyUrl
+                    ? `代理连接被拒绝 [${proxyUrl}]（请检查代理服务是否正常运行，Docker容器内请勿填写 127.0.0.1）`
+                    : `目标连接被拒绝 [${this.baseURL}]`;
+            } else if (error.code === 'ETIMEDOUT') {
+                reason = '连接超时（请检查网络或配置代理）';
+            } else if (error.response?.statusCode === 401) {
+                reason = 'TMDB API Key 无效或未授权 (HTTP 401)';
+            } else if (error.response?.statusCode === 404) {
+                reason = '资源未找到 (HTTP 404)';
+            } else if (error.response?.body) {
+                try {
+                    const b = typeof error.response.body === 'string' ? JSON.parse(error.response.body) : error.response.body;
+                    if (b?.status_message) reason = `${b.status_message} (HTTP ${error.response.statusCode})`;
+                } catch (_) {}
+            }
+
+            if (error.response?.statusCode === 404) {
+                logger.debug(`[TMDB探测] 接口 [${endpoint}] 返回 404（资源不存在）: ${reason}`);
+            } else {
+                logger.error(`[TMDB请求失败] 接口: ${endpoint} | 原因: ${reason}`, { error: reason, stack: error.stack });
+            }
             throw error;
         }
     }

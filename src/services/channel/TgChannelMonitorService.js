@@ -1326,6 +1326,9 @@ class TgChannelMonitorService {
                 logTaskEvent(`[频道监控-隔离暂存] 已就绪批次隔离目录: ${canonicalBatchFolderName} (${batchFolderId})`);
             }
         } catch (batchErr) {
+            if (Cloud139Service.isAuthFailure(batchErr)) {
+                throw batchErr;
+            }
             logger.warn(`[频道监控-隔离暂存] 创建批次目录失败，平滑降级至暂存根目录: ${batchErr.message}`);
         }
 
@@ -1604,7 +1607,9 @@ class TgChannelMonitorService {
                     transferredCount += result.transferredCount;
                 }
             } catch (ingestErr) {
-                const failMsg = `[频道监控] 转存处理失败: ${ingestErr.message}`;
+                const isAuth = Cloud139Service.isAuthFailure(ingestErr);
+                const authNotice = isAuth ? ' (⚠️ 关联账号凭据已过期失效，请在【云盘账号】页面重新扫码登录绑定)' : '';
+                const failMsg = `[频道监控] 频道【${monitor.name}】推文《${postFirstLine}》(消息ID: ${post.messageId}) 转存失败: ${ingestErr.message}${authNotice}`;
                 logger.error(failMsg);
                 logTaskEvent(failMsg);
                 await historyRepo.save({
