@@ -3,7 +3,8 @@ import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { accountApi } from '../api/account';
 import { ElMessage } from 'element-plus';
-import { Folder, Key, WarningFilled } from '@element-plus/icons-vue';
+import { Folder, Key, WarningFilled, User } from '@element-plus/icons-vue';
+import type { AccountSwitcherItem } from './accountSwitcher';
 
 interface FolderNode {
   id: string;
@@ -15,15 +16,18 @@ const props = defineProps<{
   modelValue: boolean;
   accountId: number | string;
   title?: string;
+  accounts?: AccountSwitcherItem[];
 }>();
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void;
+  (e: 'update:accountId', value: number | string): void;
   (e: 'select', folder: { id: string; name: string }): void;
 }>();
 
 const router = useRouter();
 const visible = ref(props.modelValue);
+const activeAccountId = ref<number | string>(props.accountId || '');
 const selectedNode = ref<FolderNode | null>(null);
 const selectedFullPath = ref<string>('/');
 const authFailed = ref(false);
@@ -37,7 +41,8 @@ watch(
     if (val) {
       selectedNode.value = null;
       selectedFullPath.value = '/';
-      if (!props.accountId) {
+      activeAccountId.value = props.accountId || '';
+      if (!activeAccountId.value) {
         authFailed.value = true;
         authErrorMessage.value = '未检测到已登录的 139 移动云盘账号，请先完成扫码绑定。';
       } else {
@@ -52,6 +57,7 @@ watch(
 watch(
   () => props.accountId,
   (val) => {
+    activeAccountId.value = val || '';
     if (!val) {
       authFailed.value = true;
       authErrorMessage.value = '未检测到已登录的 139 移动云盘账号，请先完成扫码绑定。';
@@ -67,6 +73,21 @@ watch(visible, (val) => {
   emit('update:modelValue', val);
 });
 
+function getAccountDisplayName(acc: AccountSwitcherItem): string {
+  if (!acc) return '未命名账号';
+  return acc.accountName || acc.username || acc.phone || `账号 ${acc.id}`;
+}
+
+function handleAccountChange(newId: number | string) {
+  activeAccountId.value = newId;
+  emit('update:accountId', newId);
+  selectedNode.value = null;
+  selectedFullPath.value = '/';
+  authFailed.value = false;
+  authErrorMessage.value = '';
+  treeKey.value++;
+}
+
 function isAuthFailure(err: any): boolean {
   if (!err) return false;
   if (err.code === 'AUTH_FAILED') return true;
@@ -75,7 +96,8 @@ function isAuthFailure(err: any): boolean {
 }
 
 async function loadNode(node: any, resolve: (data: FolderNode[]) => void) {
-  if (!props.accountId) {
+  const currentId = activeAccountId.value;
+  if (!currentId) {
     authFailed.value = true;
     authErrorMessage.value = '未检测到已登录的 139 移动云盘账号，请先完成扫码绑定。';
     resolve([]);
@@ -96,7 +118,7 @@ async function loadNode(node: any, resolve: (data: FolderNode[]) => void) {
 
   const parentId = node.data?.id === '-11' ? '-11' : (node.data?.id || '-11');
   try {
-    const files = await accountApi.getFolders(props.accountId, parentId);
+    const files = await accountApi.getFolders(currentId, parentId);
     const folders = (files || [])
       .filter((item: any) => item.isFolder !== false && !item.isFile)
       .map((item: any) => ({
@@ -160,10 +182,40 @@ function handleGoToAccounts() {
   <el-dialog
     v-model="visible"
     :title="title || '选择云盘目标目录'"
-    width="520px"
+    width="540px"
     destroy-on-close
     append-to-body
   >
+    <!-- 多账号切换条 (仅当存在多个 139 账号时呈现) -->
+    <div v-if="props.accounts && props.accounts.length > 1" class="folder-account-bar">
+      <div class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 font-medium shrink-0">
+        <el-icon class="text-indigo-600 dark:text-indigo-400"><User /></el-icon>
+        <span>选择云盘账号:</span>
+      </div>
+      <el-select
+        v-model="activeAccountId"
+        size="small"
+        class="folder-account-select flex-1"
+        placeholder="请选择云盘账号"
+        @change="handleAccountChange"
+      >
+        <el-option
+          v-for="acc in props.accounts"
+          :key="acc.id"
+          :label="getAccountDisplayName(acc)"
+          :value="acc.id"
+        >
+          <div class="flex items-center justify-between w-full text-xs">
+            <span class="font-medium text-slate-800 dark:text-slate-200">{{ getAccountDisplayName(acc) }}</span>
+            <div class="flex items-center gap-1">
+              <span v-if="acc.isDefault" class="px-1.5 py-0.5 rounded text-[10px] bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60">默认</span>
+              <span v-if="acc.isActive === false" class="px-1.5 py-0.5 rounded text-[10px] bg-rose-50 text-rose-600 border border-rose-200">未激活</span>
+            </div>
+          </div>
+        </el-option>
+      </el-select>
+    </div>
+
     <div class="tree-container">
       <!-- 凭证失效 / 未登录全流程友好引导卡片 -->
       <div v-if="authFailed" class="auth-guard-panel">
@@ -227,6 +279,17 @@ function handleGoToAccounts() {
 </template>
 
 <style scoped>
+.folder-account-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background-color: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+}
+
 .tree-container {
   min-height: 240px;
   max-height: 380px;

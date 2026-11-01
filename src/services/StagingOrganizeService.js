@@ -432,6 +432,12 @@ class StagingOrganizeService {
                 account = await accountRepo.findOne({ where: { id: options.accountId } });
             }
             if (!account) {
+                const configAccountId = ConfigService.getConfigValue('channelMonitor.accountId');
+                if (configAccountId) {
+                    account = await accountRepo.findOne({ where: { id: configAccountId } });
+                }
+            }
+            if (!account) {
                 account = (await accountRepo.findOne({ where: { accountType: 'cloud139', isDefault: true, isActive: true } })) ||
                           (await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: true } })) ||
                           (await accountRepo.findOne({ where: { accountType: 'cloud139' } }));

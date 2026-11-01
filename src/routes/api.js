@@ -3151,6 +3151,7 @@ const registerApiRoutes = (app, deps) => {
                 success: true,
                 data: {
                     enabled: config.enabled ?? true,
+                    accountId: config.accountId || null,
                     channels: Array.isArray(config.channels) ? config.channels : [],
                     defaultTargetFolderId: config.defaultTargetFolderId || '/',
                     defaultTargetFolderName: config.defaultTargetFolderName || '默认媒体库',
@@ -3208,6 +3209,7 @@ const registerApiRoutes = (app, deps) => {
     app.post('/api/channel/global-config', async (req, res) => {
         try {
             const {
+                accountId,
                 enabled = true,
                 channels = [],
                 stagingFolderId = '',
@@ -3265,6 +3267,7 @@ const registerApiRoutes = (app, deps) => {
             const safeScanInterval = Math.max(1, Number(scanInterval) || 5);
             const updated = {
                 ...current,
+                accountId: accountId !== undefined ? (accountId ? (Number(accountId) || String(accountId)) : null) : current.accountId,
                 enabled: Boolean(enabled),
                 channels: Array.isArray(channels) ? channels.map(c => String(c).trim()).filter(Boolean) : [],
                 stagingFolderId: cleanStagingId,
