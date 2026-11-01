@@ -51,22 +51,13 @@ async function handleManualCheckQrAuth() {
     const res = await accountApi.checkQrStatus(sid);
     if (res.status === 'confirmed') {
       stopQrPoll();
-      ElMessage.success(res.message || '🎉 扫码授权成功！云盘账号凭据已自动同步刷新');
+      ElMessage.success(res.message || '🎉 扫码授权成功！新账号凭据已自动同步绑定');
       showForm.value = false;
       await loadAccounts(false);
       return;
     }
     
-    // 如果官方返回 waiting，同步刷新一次后台账号列表
-    await loadAccounts(true);
-    const has139Active = accounts.value.some(a => a.accountType === 'cloud139' && a.isActive);
-    if (has139Active) {
-      stopQrPoll();
-      ElMessage.success('🎉 检测到 139 移动云盘账号已成功绑定并就绪！');
-      showForm.value = false;
-      return;
-    }
-
+    // 官方仍在等待中，保持轮询并提示用户
     ElMessage.info(res.message || '📱 正在等待手机端确认授权，若手机端已提示授权成功，请稍等 1~2 秒后再次点击');
   } catch (err: any) {
     ElMessage.warning(`检测授权状态: ${err.message || '请确保手机端已点击确认登录'}`);
