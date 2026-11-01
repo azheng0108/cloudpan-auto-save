@@ -106,6 +106,8 @@ export interface ChannelGlobalConfig {
   linkStrm?: boolean;
   notifyOnStrm?: boolean;
   scanInterval?: number;
+  organizeInterval?: number;
+  organizeCron?: string;
   videoExtensions?: string[];
   metadataExtensions?: string[];
   enableRename?: boolean;

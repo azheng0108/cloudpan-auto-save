@@ -572,7 +572,8 @@ class SchedulerService {
 
         // 2. 自动定时整理（独立运作，只受 autoOrganize 开关控制，绝不受频道监控全局开关牵连）
         if (channelMonitorConfig.autoOrganize !== false) {
-            const organizeCron = this.normalizeCronExpression(channelMonitorConfig.cron || '*/5 * * * *');
+            const rawOrganizeCron = channelMonitorConfig.organizeCron || (channelMonitorConfig.organizeInterval ? `*/${channelMonitorConfig.organizeInterval} * * * *` : '*/30 * * * *');
+            const organizeCron = this.normalizeCronExpression(rawOrganizeCron);
             if (cron.validate(organizeCron)) {
                 this.removeTaskJob('139云盘暂存区定时整理'); // 清理历史旧任务键
                 this.saveDefaultTaskJob('自动定时整理', organizeCron, async () => {
