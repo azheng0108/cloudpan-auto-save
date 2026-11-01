@@ -271,27 +271,15 @@ class AssetSyncService {
      * 解析多行秒传文本，并在目标 139 账号中批量秒传落地
      */
     static async importRapidLinks(targetCloud139, rawText = '', targetFolderId = '/') {
-        const lines = String(rawText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        const parsedEntries = [];
-
-        for (const line of lines) {
-            // 支持格式 1: 文件名#大小#SHA256
-            // 支持格式 2: 文件名|大小|SHA256
-            // 支持格式 3: 139://文件名|大小|SHA256
-            const cleanLine = line.replace(/^139:\/\//i, '');
-            let parts = cleanLine.split('#');
-            if (parts.length < 3) parts = cleanLine.split('|');
-
-            if (parts.length >= 3) {
-                const name = parts[0].trim();
-                const size = parseInt(parts[1].trim(), 10) || 0;
-                const hash = parts[2].trim().toLowerCase();
-
-                if (name && hash.length === 64) {
-                    parsedEntries.push({ name, size, hash });
-                }
-            }
-        }
+        const { RapidLinkParser } = require('../utils/RapidLinkParser');
+        const parseResult = RapidLinkParser.parse(rawText);
+        const parsedEntries = parseResult.items
+            .filter(it => it.sha256 && it.sha256.length === 64)
+            .map(it => ({
+                name: it.name,
+                size: it.size,
+                hash: it.sha256
+            }));
 
         if (parsedEntries.length === 0) {
             return {
