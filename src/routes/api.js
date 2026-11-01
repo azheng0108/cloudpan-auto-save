@@ -585,10 +585,10 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // 主机器人连通性与发送测试消息
+    // 主机器人连通性与发送影视入库通知卡片测试消息
     app.post('/api/settings/test-telegram', async (req, res) => {
         try {
-            const { botToken = '', chatId = '', proxyUrl = '' } = req.body || {};
+            const { botToken = '', chatId = '', proxyUrl = '', mediaTitle = '玉簟秋' } = req.body || {};
             const token = botToken || ConfigService.getConfigValue('telegram.bot.botToken') || ConfigService.getConfigValue('telegram.botToken');
             const chat = chatId || ConfigService.getConfigValue('telegram.bot.chatId') || ConfigService.getConfigValue('telegram.chatId');
             if (!token || !chat) {
@@ -601,19 +601,87 @@ const registerApiRoutes = (app, deps) => {
                 agent = { https: new HttpsProxyAgent(pUrl) };
             }
             const got = require('got');
-            await got.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-                json: {
-                    chat_id: chat,
-                    text: '[系统通知] 139移动云盘自动追更系统：主机器人测试消息已成功送达！网络与机器人配置正常。',
-                    parse_mode: 'Markdown'
-                },
-                timeout: { request: 8000 },
-                agent
-            }).json();
-            res.json({ success: true, message: '测试消息发送成功！请检查你的 Telegram 聊天窗口。' });
+
+            // 1. 组装《玉簟秋 (2026)》入库卡片元数据
+            let title = `${mediaTitle} (2026)`;
+            let category = '国产剧 / 剧情 / 爱情';
+            let rating = '8.0';
+            let starCount = 4;
+            let stars = '★★★★☆';
+            let overview = '20世纪20年代的乱世中，少帅虞昶轩与女学生叶平君因一场邂逅深陷爱恨漩涡，彻底改写二人的人生轨迹。纵然身份悬殊、前路艰险，二人仍毅然冲破一切阻隔，在战火与命运的洪流中坚定携手，沙场硝烟与儿女情长交织，将热血、信仰与挚爱，共同谱写成一段荡气回肠的传奇。';
+            let posterUrl = 'https://image.tmdb.org/t/p/w500/r5N8g3WEes9x1z76Sil614Do9Bv.jpg';
+
+            try {
+                const { TmdbService } = require('../services/tmdb');
+                const tmdb = new TmdbService();
+                const candidates = await tmdb.searchCandidates(mediaTitle);
+                if (candidates && candidates.length > 0) {
+                    const m = candidates[0];
+                    title = `${m.title || m.name} (${m.year || '2026'})`;
+                    if (m.secondaryCategory || m.category) category = `${m.secondaryCategory || m.category}`;
+                    if (m.voteAverage) {
+                        rating = Number(m.voteAverage).toFixed(1);
+                        starCount = Math.min(5, Math.max(1, Math.round(Number(rating) / 2)));
+                        stars = '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
+                    }
+                    if (m.overview) overview = m.overview;
+                    if (m.posterPath || m.backdropPath) posterUrl = m.posterPath || m.backdropPath;
+                }
+            } catch (tmdbErr) {
+                logger.warn(`获取 TMDB 元数据失败，使用预设玉簟秋数据: ${tmdbErr.message}`);
+            }
+
+            const caption = [
+                `🎉 <b>影视入库通知 · 《${title}》</b>`,
+                `━━━━━━━━━━━━━━━━━━`,
+                `🏷️ <b>类型</b>：${category}`,
+                `⭐ <b>评分</b>：${rating} ${stars}`,
+                `📅 <b>年份</b>：2026`,
+                `📦 <b>入库规格</b>：S01E01-E12 · 2160p 4K HDR · 12 集已入库`,
+                `📁 <b>归档目录</b>：<code>/媒体库/电视剧/${title}/Season 1/</code>`,
+                `📝 <b>影视简介</b>：`,
+                `${overview.slice(0, 160)}${overview.length > 160 ? '...' : ''}`,
+                `━━━━━━━━━━━━━━━━━━`,
+                `💡 <i>系统测试：Telegram 机器人连接正常，影视入库通知卡片渲染成功！</i>`
+            ].join('\n');
+
+            let sendSuccess = false;
+            // 优先尝试发送带海报的照片卡片
+            if (posterUrl) {
+                try {
+                    await got.post(`https://api.telegram.org/bot${token}/sendPhoto`, {
+                        json: {
+                            chat_id: chat,
+                            photo: posterUrl,
+                            caption: caption,
+                            parse_mode: 'HTML'
+                        },
+                        timeout: { request: 12000 },
+                        agent
+                    }).json();
+                    sendSuccess = true;
+                } catch (photoErr) {
+                    logger.warn(`通过 sendPhoto 发送测试卡片失败，降级为 sendMessage: ${photoErr.message}`);
+                }
+            }
+
+            // 若照片发送未成功，降级发送 HTML 富文本卡片
+            if (!sendSuccess) {
+                await got.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+                    json: {
+                        chat_id: chat,
+                        text: caption,
+                        parse_mode: 'HTML'
+                    },
+                    timeout: { request: 8000 },
+                    agent
+                }).json();
+            }
+
+            res.json({ success: true, message: `入库通知测试卡片《${title}》已成功推送至 Telegram！请在客户端查看。` });
         } catch (err) {
             logger.error('测试 Telegram 机器人失败', { error: err.message });
-            res.status(500).json({ success: false, error: `发送测试消息失败: ${err.message}` });
+            res.status(500).json({ success: false, error: `发送测试卡片失败: ${err.message}` });
         }
     });
 

@@ -31,7 +31,7 @@ const COMMANDS = Object.freeze([
     Object.freeze({ name: 'clean_empty', aliases: ['sweep_empty'], group: '云盘运维', description: '修剪空文件夹', pattern: /^\/(?:clean_empty|sweep_empty)$/, handler: 'handleSweepEmpty', registerMenu: true, requireAccount: true }),
     Object.freeze({ name: 'dedup', aliases: ['dedup_scan'], group: '云盘运维', description: '多版本资产去重巡检', pattern: /^\/(?:dedup|dedup_scan)$/, handler: 'handleScanDedup', registerMenu: true, requireAccount: true }),
     Object.freeze({ name: 'dedup_clean', aliases: [], group: '云盘运维', description: '一键清理冗余多版本', pattern: /^\/dedup_clean$/, handler: 'handleCleanDedup', registerMenu: true, requireAccount: true }),
-    Object.freeze({ name: 'test_card', aliases: ['test_notify'], group: '媒体查询', description: '测试影视入库通知卡片效果', pattern: /^\/test_card(?:@\w+)?(?:\s+(.+))?$/, paramHint: '[片名]', handler: 'testMediaCard', registerMenu: true, requireAccount: false }),
+    Object.freeze({ name: 'test_card', aliases: ['test_notify'], group: '媒体查询', description: '测试影视入库通知卡片效果', pattern: /^\/(?:test_card|test_notify)(?:@\w+)?(?:\s+(.+))?$/, paramHint: '[片名]', handler: 'testMediaCard', registerMenu: true, requireAccount: false }),
     Object.freeze({ name: 'tmdb', aliases: [], group: '媒体查询', description: 'TMDB 影视信息查询', pattern: /^\/tmdb(?:\s+(.+))?$/, paramHint: '[片名] [年份]', handler: 'handleTmdb', registerMenu: true, requireAccount: false }),
 ]);
 
