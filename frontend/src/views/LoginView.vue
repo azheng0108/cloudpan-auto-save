@@ -178,24 +178,25 @@ onUnmounted(() => {
         </div>
 
         <!-- 登录表单 -->
-        <el-form label-position="top" @keyup.enter="handleLogin">
-          <el-form-item label="管理员账号" class="custom-form-item">
+        <el-form @keyup.enter="handleLogin">
+          <el-form-item class="custom-form-item">
             <el-input
               v-model="loginForm.username"
               :prefix-icon="User"
-              placeholder="默认账号: admin"
+              placeholder="用户名"
               size="large"
               class="custom-input"
+              clearable
             />
           </el-form-item>
 
-          <el-form-item label="登录密码" class="custom-form-item">
+          <el-form-item class="custom-form-item">
             <el-input
               v-model="loginForm.password"
               :prefix-icon="Lock"
               type="password"
               show-password
-              placeholder="请输入系统密码"
+              placeholder="密码"
               size="large"
               class="custom-input"
             />
