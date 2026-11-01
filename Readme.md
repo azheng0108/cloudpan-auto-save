@@ -118,53 +118,6 @@
 
 ## 快速开始
 
-### 方式一：Docker Run（推荐）
-
-```bash
-docker run -d \
-  -v $(pwd)/data:/home/data \
-  -v $(pwd)/strm:/home/strm \
-  -p 3001:3000 \
-  --restart unless-stopped \
-  --name cloudpan-auto-save \
-  -e TZ=Asia/Shanghai \
-  azheng0108/cloudpan-auto-save:latest
-```
-
-> `data` 和 `strm` 目录会自动创建在执行命令的当前目录下。
-> 
-> 💡 **宿主机权限与 PUID/PGID 自愈说明**：
-> - 镜像内置 `docker-entrypoint` 权限自愈机制，容器启动时会自动检测挂载目录并自适应修复可写权限；
-> - 如需指定特定用户身份，可传入 `-e PUID=1000 -e PGID=1000`；若遇只读外部挂载设备亦可传 `--user root` 运行。
-
-### 方式二：Docker Compose
-
-```yaml
-version: '3.8'
-
-services:
-  cloudpan-auto-save:
-    image: azheng0108/cloudpan-auto-save:latest
-    container_name: cloudpan-auto-save
-    restart: unless-stopped
-    ports:
-      - "3001:3000"
-    volumes:
-      - ./data:/home/data
-      - ./strm:/home/strm
-    environment:
-      - TZ=Asia/Shanghai
-```
-
-启动命令：
-
-```bash
-docker compose up -d
-```
-
-访问地址：`http://localhost:3001`
-
-默认账号密码：`admin / admin`（首次登录后请立即修改）
 
 ## 使用说明
 
