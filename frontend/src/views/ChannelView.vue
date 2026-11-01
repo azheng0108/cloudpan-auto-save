@@ -978,20 +978,31 @@ function parsePostDetails(item: any) {
     .replace(/[丨|｜丶]/g, '')
     .replace(/^[【\[][^】\]]*[】\]]/, '')
     .replace(/[（(](?:19|20)\d{2}[)）]/g, ' ')
-    .replace(/(?:更新至|连载至|更新到|更新)\s*(?:第\s*)?\d+(?:[-~至到]\d+)?\s*[集话期]?.*$/i, '')
+    .replace(/(?:更新至|连载至|更新到|更新|更至|更到|更新为|连载)\s*(?:第\s*)?\d+(?:[-~至到]\d+)?\s*[集话期]?.*$/i, '')
     .replace(/(?:完结季|完结篇|终结篇|特别篇|第[一二三四五六七八九十\d]+季).*$/i, '')
-    .replace(/(?:全\s*\d+\s*[集话期]|共\s*\d+\s*[集话期]|\d+集全|全集|完结).*$/i, '')
+    .replace(/(?:全\s*\d+\s*[集话期]|共\s*\d+\s*[集话期]|\d+集全|全集|(?:已|全)?完结|(?:已|全)?完).*$/i, '')
     .replace(/(?:第\s*\d+\s*[集话期]|\d+\s*[-~至到]\s*\d+\s*[集话期]).*$/i, '')
     .replace(/(?:S\d+\s*E\d+|E\d+(?:-E\d+)?).*$/i, '')
     .replace(/\b(?:4K|2160[pi]|1080[pi]|720[pi]|HDR|HDR10|DV|杜比|DOLBY|REMUX|WEB-DL|BLURAY|H\.?26[45]|HEVC|AVC|10bit|60fps|AMAZ|NF)\b.*$/i, '')
     .replace(/\s+\d{1,4}(?:\s+.*)?$/, '')
     .replace(/[（(].*?[)）]/g, '')
+    .replace(/\s+(?:已|更|共|全)\s*$/i, '')
     .trim();
 
   const bookMatch = cleanTitle.match(/《([^》]+)》/);
   if (bookMatch) {
     cleanTitle = bookMatch[1].trim();
   }
+
+  // 6.2 历史条目权威兜底：若推文正则清洗残留脏词(如"小城良方已")，且转存成功原因包含《正名》，权威纠偏
+  const reasonMatch = (item.reason || '').match(/《([^》]+)》/);
+  if (reasonMatch && reasonMatch[1]) {
+    const canonicalName = reasonMatch[1].trim();
+    if (canonicalName && (cleanTitle.endsWith('已') || cleanTitle.endsWith('更') || cleanTitle.length <= 1 || cleanTitle !== canonicalName)) {
+      cleanTitle = canonicalName;
+    }
+  }
+
 
   // 6. 提取分类 (优先推文显式标注: 类型: 日番 / 分类: [有声书])
   let category = '';
@@ -1027,14 +1038,16 @@ function parsePostDetails(item: any) {
     if (!category) category = '综艺';
     mediaTypeLabel = '综艺';
     isTv = true;
-  } else if (seasonEpisode || progress || /剧|季|集/i.test(`${raw} ${title}`)) {
+  } else if (seasonEpisode || progress || /剧|季|集/i.test(`${raw} ${title}`) || /\b\d{1,4}\b/.test(title)) {
     if (!category) category = '剧集';
     mediaTypeLabel = '剧集';
     isTv = true;
   } else {
     // 既无季集号，也无电影/动漫明确关键词（例如仅有短标题+网盘链接且未入库刮削）
-    // 工业规范：禁止在无事实依据时武断脑补为“电影”，保持为“待识别”
-    if (!category) category = '待识别';
+    // 工业规范：若已入库成功则默认为影视，未入库保持为待识别
+    if (!category) {
+      category = (item.status === 'success' || item.reason?.includes('TMDB')) ? '剧集' : '待识别';
+    }
     mediaTypeLabel = category;
     isTv = true;
   }
@@ -1059,10 +1072,30 @@ function parsePostDetails(item: any) {
     try {
       const details = typeof item.transferredDetails === 'string' ? JSON.parse(item.transferredDetails) : item.transferredDetails;
       if (Array.isArray(details) && details.length > 0) {
+        // 优先采用后端已识别持久化的权威片名与元数据
+        const titleFound = details.find((d: any) => d && d.title);
+        if (titleFound && titleFound.title) {
+          cleanTitle = titleFound.title;
+        }
         const found = details.find((d: any) => d && (d.tmdbId || d.tmdb_id));
         if (found) tmdbId = String(found.tmdbId || found.tmdb_id);
         const pFound = details.find((d: any) => d && (d.posterPath || d.poster_path));
         if (pFound) posterPath = pFound.posterPath || pFound.poster_path;
+        const metaFound = details.find((d: any) => d && (d.category || d.mediaType));
+        if (metaFound) {
+          if (metaFound.category) {
+            category = metaFound.category;
+            mediaTypeLabel = metaFound.category;
+          } else if (metaFound.mediaType === 'tv') {
+            category = '剧集';
+            mediaTypeLabel = '剧集';
+            isTv = true;
+          } else if (metaFound.mediaType === 'movie') {
+            category = '电影';
+            mediaTypeLabel = '电影';
+            isTv = false;
+          }
+        }
         const epFound = details.find((d: any) => d && d.episodeTitle);
         if (epFound) {
           episodeTitle = epFound.seasonEpisode ? `${epFound.seasonEpisode} · ${epFound.episodeTitle}` : epFound.episodeTitle;

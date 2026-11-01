@@ -541,14 +541,15 @@ class TgChannelMonitorService {
             }
 
             candidateText = candidateText
-                .replace(/(?:更新至|连载至|更新到|更新)\s*(?:第\s*)?\d+(?:[-~至到]\d+)?\s*[集话期]?.*$/i, '')
+                .replace(/(?:更新至|连载至|更新到|更新|更至|更到|更新为|连载)\s*(?:第\s*)?\d+(?:[-~至到]\d+)?\s*[集话期]?.*$/i, '')
                 .replace(/(?:完结季|完结篇|终结篇|特别篇|第[一二三四五六七八九十\d]+季).*$/i, '')
-                .replace(/(?:全\s*\d+\s*[集话期]|共\s*\d+\s*[集话期]|\d+集全|全集|完结).*$/i, '')
+                .replace(/(?:全\s*\d+\s*[集话期]|共\s*\d+\s*[集话期]|\d+集全|全集|(?:已|全)?完结|(?:已|全)?完).*$/i, '')
                 .replace(/(?:第\s*\d+\s*[集话期]|\d+\s*[-~至到]\s*\d+\s*[集话期]).*$/i, '')
                 .replace(/(?:S\d+\s*E\d+|E\d+(?:-E\d+)?).*$/i, '')
                 .replace(/\b(?:4K|2160[pi]|1080[pi]|720[pi]|HDR|HDR10|DV|杜比|DOLBY|REMUX|WEB-DL|BLURAY|H\.?26[45]|HEVC|AVC|10bit|60fps|AMAZ|NF)\b.*$/i, '')
                 .replace(/\s+\d{1,4}(?:\s+.*)?$/, '')
                 .replace(/[（(].*?[)）]/g, '')
+                .replace(/\s+(?:已|更|共|全)\s*$/i, '')
                 .trim();
 
             // 5.5 识别中文剧名后直接附带的季数/续集数字 (如 "大王饶命3" => 剧名: "大王饶命", 季数: 3)
@@ -1361,6 +1362,9 @@ class TgChannelMonitorService {
             logger.warn(`[频道监控] 等待文件在暂存区可见异常: ${visErr.message}`);
         }
 
+        // 4.5 自动检测并增量自愈 139 移动云盘因同名冲突追加时间戳生成的克隆目录
+        await this.mergeTimestampConflictFolders(cloud139, effectiveStagingFolderId);
+
         // 5. 生产者与消费者解耦：转存成功即完成该推文摄入；媒体库整理作为独立管道异步执行
         const totalTransferred = coPathLst.length + caPathLst.length;
         const targetResolved = this.resolveTargetFolder(post.text, monitor);
@@ -1397,8 +1401,85 @@ class TgChannelMonitorService {
             status: 'success',
             reason: `转存至暂存区成功: 《${preFlight.title}》 [TMDB #${preFlight.tmdbId}]`,
             transferredCount: totalTransferred,
-            details: expectedNames.map(name => ({ name, status: 'transferred_to_staging' }))
+            details: expectedNames.map(name => ({
+                name,
+                status: 'transferred_to_staging',
+                tmdbId: preFlight.tmdbId ? String(preFlight.tmdbId) : null,
+                title: preFlight.title || null,
+                year: preFlight.year ? String(preFlight.year) : null,
+                mediaType: preFlight.mediaType || 'tv',
+                category: preFlight.category || (preFlight.mediaType === 'tv' ? '剧集' : '电影'),
+                posterPath: preFlight.posterPath || null,
+                stagingFolderPath: effectiveStagingFolderName
+            }))
         };
+    }
+
+
+    /**
+     * 自动检测并合并 139 移动云盘因同名冲突追加时间戳生成的克隆目录
+     * 例如将 "嫁金钗 (2026) [tmdbid-300146]_20261101_153508" 内部的文件增量合并入 "嫁金钗 (2026) [tmdbid-300146]"
+     * 合并完成后自动清理时间戳空文件夹，彻底规避暂存区分裂
+     * @param {Cloud139Service} cloud139
+     * @param {string} parentFolderId 批次暂存区或根暂存区目录 ID
+     */
+    async mergeTimestampConflictFolders(cloud139, parentFolderId) {
+        if (!parentFolderId) return;
+        try {
+            const items = await cloud139.listDiskDirAll(parentFolderId).catch(() => []);
+            const folders = items.filter(it => it.type === 'folder' || it.folderId || it.fileType === '1');
+            const timestampRegex = /^(.*?)_(\d{8}(?:_\d{6})?)$/;
+            const timestampFolders = [];
+            const folderMapByName = new Map();
+
+            for (const f of folders) {
+                folderMapByName.set(f.name, f);
+                const m = f.name.match(timestampRegex);
+                if (m) {
+                    timestampFolders.push({ folder: f, baseName: m[1], suffix: m[2] });
+                }
+            }
+
+            for (const ts of timestampFolders) {
+                const baseFolder = folderMapByName.get(ts.baseName);
+                if (baseFolder) {
+                    logger.info(`[频道监控-冲突自愈] 发现同名时间戳克隆目录 "${ts.folder.name}"，准备增量合并入主目录 "${baseFolder.name}"`);
+                    logTaskEvent(`[频道监控-冲突自愈] 发现同名时间戳克隆目录 "${ts.folder.name}"，正在增量合并入主目录 "${baseFolder.name}"...`);
+
+                    const subItems = await cloud139.listDiskDirAll(ts.folder.fileId).catch(() => []);
+                    if (subItems.length > 0) {
+                        const fileIdsToMove = [];
+                        const baseSubItems = await cloud139.listDiskDirAll(baseFolder.fileId).catch(() => []);
+                        const baseSubNames = new Set(baseSubItems.map(b => b.name));
+
+                        for (const sub of subItems) {
+                            if (sub.type === 'folder') {
+                                fileIdsToMove.push(sub.fileId);
+                            } else {
+                                if (baseSubNames.has(sub.name)) {
+                                    logger.info(`[频道监控-冲突自愈] 主目录已存在同名文件 "${sub.name}"，跳过`);
+                                } else {
+                                    fileIdsToMove.push(sub.fileId);
+                                }
+                            }
+                        }
+
+                        if (fileIdsToMove.length > 0) {
+                            await cloud139.batchMoveHcy(fileIdsToMove, baseFolder.fileId);
+                            logTaskEvent(`[频道监控-冲突自愈] 已将 ${fileIdsToMove.length} 个新文件增量移入主目录 "${baseFolder.name}"`);
+                        }
+                    }
+
+                    const remainItems = await cloud139.listDiskDirAll(ts.folder.fileId).catch(() => []);
+                    if (remainItems.length === 0) {
+                        await cloud139.deleteFiles([ts.folder.fileId]).catch(() => {});
+                        logTaskEvent(`[频道监控-冲突自愈] 已清理多余的时间戳冲突目录 "${ts.folder.name}"`);
+                    }
+                }
+            }
+        } catch (mergeErr) {
+            logger.warn(`[频道监控-冲突自愈] 合并时间戳冲突目录异常: ${mergeErr.message}`);
+        }
     }
 
     /**
