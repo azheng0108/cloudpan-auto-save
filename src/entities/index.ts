@@ -17,20 +17,10 @@ export class Account {
     @Column('boolean', { default: true })
     isActive!: boolean;
 
-    @CreateDateColumn({
-        transformer: {
-            from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
-            to: (date: Date) => date
-        }
-    })
+    @CreateDateColumn()
     createdAt!: Date;
 
-    @UpdateDateColumn({
-        transformer: {
-            from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
-            to: (date: Date) => date
-        }
-    })
+    @UpdateDateColumn()
     updatedAt!: Date;
 
     @Column('boolean', { nullable: true, default: false })
@@ -102,10 +92,7 @@ export class Task {
     @Column('text', { nullable: true })
     lastError!: string;
 
-    @Column('datetime', { nullable: true, transformer: {
-        from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
-        to: (date: Date) => date
-    } })
+    @Column('datetime', { nullable: true })
     lastCheckTime!: Date;
 
     @Column('datetime', { nullable: true})
@@ -148,20 +135,10 @@ export class Task {
     @Column('text', { nullable: true })
     pathType!: string;
 
-    @CreateDateColumn({
-        transformer: {
-            from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
-            to: (date: Date) => date
-        }
-    })
+    @CreateDateColumn()
     createdAt!: Date;
 
-    @UpdateDateColumn({
-        transformer: {
-            from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
-            to: (date: Date) => date
-        }
-    })
+    @UpdateDateColumn()
     updatedAt!: Date;
 
     @Column('text', { nullable: true })
@@ -188,10 +165,7 @@ export class Task {
 
     @Column('integer', { nullable: true })
     retryCount!: number;
-    @Column('datetime', { nullable: true, transformer: {
-        from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
-        to: (date: Date) => date
-    } })
+    @Column('datetime', { nullable: true })
     nextRetryTime!: Date;
 
     @Column('text', { nullable: true })
@@ -703,12 +677,7 @@ export class MaintenanceJob {
     @Column('text', { nullable: true })
     error!: string;
 
-    @CreateDateColumn({
-        transformer: {
-            from: (date: Date) => date && new Date(date.getTime() + (8 * 60 * 60 * 1000)),
-            to: (date: Date) => date
-        }
-    })
+    @CreateDateColumn()
     @Index()
     createdAt!: Date;
 }

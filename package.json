@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "start:prod": "npm run migration:run:prod && node dist/index.js",
-    "build": "tsc && npm run build:frontend && node -e \"const fs=require('fs');fs.rmSync('dist/public',{recursive:true,force:true});fs.cpSync('frontend/dist','dist/public',{recursive:true});\"",
+    "build": "tsc && node -e \"const fs=require('fs');if(fs.existsSync('dist/entities/index.js'))fs.copyFileSync('dist/entities/index.js','src/entities/index.js');\" && npm run build:frontend && node -e \"const fs=require('fs');fs.rmSync('dist/public',{recursive:true,force:true});fs.cpSync('frontend/dist','dist/public',{recursive:true});\"",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
