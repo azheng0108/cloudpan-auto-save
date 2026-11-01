@@ -91,10 +91,34 @@ class MaintenanceJobService {
     }
 
     /**
+     * 自动检测并修复因服务重启或超时遗留的僵尸任务
+     */
+    static async cleanupZombieJobs() {
+        try {
+            const repo = getMaintenanceJobRepository();
+            const zombies = await repo.find({ where: { status: 'running' } });
+            const now = Date.now();
+            for (const z of zombies) {
+                const createdTime = z.createdAt ? new Date(z.createdAt).getTime() : 0;
+                if (now - createdTime > 30 * 60 * 1000) {
+                    z.status = 'failed';
+                    z.error = '服务重启或超时，作业异常中断';
+                    z.summary = '服务重启导致作业执行中断';
+                    await repo.save(z);
+                    logger.warn(`[维护作业审计] 自动清理超时僵尸作业 #${z.id} (${z.title}) -> failed`);
+                }
+            }
+        } catch (err) {
+            logger.error(`[维护作业审计] 自动清理僵尸作业失败: ${err.message}`);
+        }
+    }
+
+    /**
      * 查询历史作业列表 (分页，按时间倒序)
      */
     static async listJobs(options = {}) {
         try {
+            await this.cleanupZombieJobs();
             const repo = getMaintenanceJobRepository();
             const limit = Math.min(Math.max(parseInt(options.limit) || 30, 1), 100);
             const offset = Math.max(parseInt(options.offset) || 0, 0);

@@ -5766,13 +5766,19 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <!-- 错误信息 -->
-                <div v-if="expandedJobDetail.error" class="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 rounded-lg text-xs text-rose-700 dark:text-rose-300 font-mono break-all">
-                  异常详情: {{ expandedJobDetail.error }}
+                <!-- 错误或中断信息 -->
+                <div v-if="expandedJobDetail.error || expandedJobDetail.status === 'failed'" class="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 rounded-lg text-xs text-rose-700 dark:text-rose-300 font-mono break-all">
+                  异常详情: {{ expandedJobDetail.error || expandedJobDetail.summary || '作业未正常执行完毕' }}
                 </div>
 
-                <!-- 扫描巡检无异常（健康状态） -->
-                <div v-if="(job.type === 'banned_scan' || job.type === 'missing_scan') && getJobFindingsList(expandedJobDetail).length === 0" class="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                <!-- 任务后台运行中状态 -->
+                <div v-else-if="expandedJobDetail.status === 'running'" class="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2 animate-pulse">
+                  <RefreshCw class="w-4 h-4 animate-spin text-amber-600 shrink-0" />
+                  <span>巡检任务正在后台执行排查中，扫描完成后将在此展示详细结果...</span>
+                </div>
+
+                <!-- 扫描巡检无异常（健康状态）：仅在状态为已完成/已处置且检出结果为空时显示 -->
+                <div v-else-if="(job.type === 'banned_scan' || job.type === 'missing_scan') && (expandedJobDetail.status === 'completed' || expandedJobDetail.status === 'cleaned') && getJobFindingsList(expandedJobDetail).length === 0" class="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                   <CheckCircle2 class="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{{ job.type === 'banned_scan' ? '此轮巡检未发现任何违规占位或死链文件，状态完全健康。' : '此轮剧集巡检全部完整收齐，未发现任何缺更分集。' }}</span>
                 </div>
