@@ -857,7 +857,7 @@ class StagingOrganizeService {
                             size: f.size,
                             accountId: account?.id
                         }));
-                        const autoMsg = `[媒体挂载-STRM自动生成] 媒体整理入库完成，自动为 ${strmFiles.length} 个入库视频生成 .strm 映射`;
+                        const autoMsg = `[STRM生成] 媒体整理入库完成，自动为 ${strmFiles.length} 个入库视频生成 .strm 映射`;
                         logger.info(autoMsg);
                         logTaskEvent(autoMsg);
                         await strmService.generateForOrganizedFiles(strmFiles, {
@@ -866,7 +866,7 @@ class StagingOrganizeService {
                             accountId: account?.id
                         });
                     } catch (strmErr) {
-                        const errMsg = `[媒体挂载-STRM自动生成] 自动生成异常: ${strmErr.message}`;
+                        const errMsg = `[STRM生成] 自动生成异常: ${strmErr.message}`;
                         logger.error(errMsg, { error: strmErr });
                         logTaskEvent(errMsg);
                     }
