@@ -354,7 +354,7 @@ async function loadConfig() {
         .join('');
     }
   } catch (err: any) {
-    ElMessage.error('加载挂载与 STRM 配置失败: ' + (err.message || '网络异常'));
+    ElMessage.error('加载 STRM 配置失败: ' + (err.message || '网络异常'));
   } finally {
     isLoading.value = false;
   }
@@ -399,9 +399,9 @@ async function saveConfig() {
 
     await settingsApi.saveSettings(payload);
     rawConfig = payload;
-    ElMessage.success('媒体挂载与 STRM 直链配置已保存并即时生效！');
+    ElMessage.success('STRM 生成与直链配置已保存并即时生效！');
   } catch (err: any) {
-    ElMessage.error('保存挂载配置失败: ' + (err.message || '未知异常'));
+    ElMessage.error('保存 STRM 配置失败: ' + (err.message || '未知异常'));
   } finally {
     isSaving.value = false;
   }
@@ -477,7 +477,7 @@ onUnmounted(() => {
     <!-- 内容区统一加载占位 -->
     <div v-if="isLoading" class="p-16 text-center text-gray-500">
       <RefreshCw class="w-8 h-8 mx-auto animate-spin text-blue-500 mb-2" />
-      <span class="text-xs">正在加载媒体挂载与直链配置...</span>
+      <span class="text-xs">正在加载 STRM 生成与直链配置...</span>
     </div>
 
     <template v-else>

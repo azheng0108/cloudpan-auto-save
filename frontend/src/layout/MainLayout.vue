@@ -253,6 +253,24 @@ function handleHeaderSaveClick() {
               <span>单链追更</span>
             </router-link>
             <router-link
+              to="/missing"
+              class="sidebar-nav-item"
+              :class="{ active: route.path === '/missing' || route.path === '/episodes' }"
+              @click="sidebarOpen = false"
+            >
+              <Tv class="w-4 h-4" />
+              <span>缺集检测</span>
+            </router-link>
+            <router-link
+              to="/sync"
+              class="sidebar-nav-item"
+              :class="{ active: route.path === '/sync' }"
+              @click="sidebarOpen = false"
+            >
+              <RefreshCw class="w-4 h-4" />
+              <span>资产同步</span>
+            </router-link>
+            <router-link
               to="/maintenance"
               class="sidebar-nav-item"
               :class="{ active: route.path === '/maintenance' }"
@@ -304,31 +322,13 @@ function handleHeaderSaveClick() {
               <span>洗版策略</span>
             </router-link>
             <router-link
-              to="/missing"
-              class="sidebar-nav-item"
-              :class="{ active: route.path === '/missing' || route.path === '/episodes' }"
-              @click="sidebarOpen = false"
-            >
-              <Tv class="w-4 h-4" />
-              <span>缺集检测</span>
-            </router-link>
-            <router-link
               to="/mount"
               class="sidebar-nav-item"
               :class="{ active: route.path === '/mount' }"
               @click="sidebarOpen = false"
             >
               <FolderSymlink class="w-4 h-4" />
-              <span>媒体挂载</span>
-            </router-link>
-            <router-link
-              to="/sync"
-              class="sidebar-nav-item"
-              :class="{ active: route.path === '/sync' }"
-              @click="sidebarOpen = false"
-            >
-              <RefreshCw class="w-4 h-4" />
-              <span>资产同步</span>
+              <span>STRM 生成</span>
             </router-link>
           </div>
         </div>
