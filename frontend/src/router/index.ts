@@ -81,17 +81,6 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: 'missing',
-        name: 'Missing',
-        alias: ['episodes', 'missing-episodes'],
-        component: MaintenanceView,
-        meta: {
-          title: '缺集检测',
-          badge: '断集巡检',
-          desc: '比对 TMDB 官方分集目录与媒体库剧集，秒级定位缺更断集，支持一键补更推送',
-        },
-      },
-      {
         path: 'sync',
         name: 'Sync',
         component: SyncView,
@@ -101,6 +90,17 @@ const routes: RouteRecordRaw[] = [
           desc: '139 移动云盘跨账号转存与 123 网盘离线任务调度',
           showSaveBtn: true,
           saveBtnText: '保存同步配置',
+        },
+      },
+      {
+        path: 'missing',
+        name: 'Missing',
+        alias: ['episodes', 'missing-episodes'],
+        component: MaintenanceView,
+        meta: {
+          title: '缺集检测',
+          badge: '断集巡检',
+          desc: '比对 TMDB 官方分集目录与媒体库剧集，秒级定位缺更断集，支持一键补更推送',
         },
       },
       {

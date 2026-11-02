@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, watch, onMounted } from 'vue';
 import {
   Sparkles,
@@ -10,6 +10,15 @@ import {
   Radio,
   X,
   FileCheck,
+  BookOpen,
+  ArrowRight,
+  ArrowLeft,
+  Compass,
+  CheckCircle2,
+  RefreshCw,
+  SlidersHorizontal,
+  KeyRound,
+  DownloadCloud,
 } from 'lucide-vue-next';
 
 const props = withDefaults(
@@ -32,7 +41,7 @@ import { ElMessage } from 'element-plus';
 import { settingsApi } from '../api/settings';
 
 const agreed = ref(true);
-const activeTab = ref<'updates' | 'disclaimer'>('updates');
+const activeTab = ref<'updates' | 'guide' | 'disclaimer'>('updates');
 
 const ACK_KEY = 'cloudpan_v2415_notice_ack';
 
@@ -107,7 +116,7 @@ function handleConfirm() {
             <div>
               <div class="flex items-center gap-2">
                 <h3 class="text-base font-bold text-gray-900 dark:text-white leading-tight">
-                  系统升级与风险规范须知
+                  系统版本与全流程使用指引
                 </h3>
                 <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-600 text-white tracking-wide">
                   v2.4.15
@@ -128,11 +137,11 @@ function handleConfirm() {
           </button>
         </div>
 
-        <!-- Tab 切换 -->
-        <div class="flex border-b border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/40 px-5 pt-2 shrink-0">
+        <!-- 3 步走独立 Tab 切换 (版本概览 ➔ 新手使用说明 ➔ 风险免责) -->
+        <div class="flex border-b border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/40 px-3 sm:px-5 pt-2 shrink-0 overflow-x-auto no-scrollbar">
           <button
             type="button"
-            class="px-4 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5"
+            class="px-3.5 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
             :class="
               activeTab === 'updates'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
@@ -141,11 +150,25 @@ function handleConfirm() {
             @click="activeTab = 'updates'"
           >
             <Sparkles class="w-3.5 h-3.5" />
-            更新亮点概览
+            <span>1. 重构版本概览</span>
           </button>
           <button
             type="button"
-            class="px-4 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5"
+            class="px-3.5 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+            :class="
+              activeTab === 'guide'
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+            "
+            @click="activeTab = 'guide'"
+          >
+            <BookOpen class="w-3.5 h-3.5" />
+            <span>2. 新手使用指南</span>
+            <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse ml-0.5" />
+          </button>
+          <button
+            type="button"
+            class="px-3.5 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
             :class="
               activeTab === 'disclaimer'
                 ? 'border-amber-600 text-amber-600 dark:text-amber-400 dark:border-amber-400'
@@ -154,13 +177,13 @@ function handleConfirm() {
             @click="activeTab = 'disclaimer'"
           >
             <ShieldAlert class="w-3.5 h-3.5" />
-            使用风险与免责声明
+            <span>3. 安全规范与免责</span>
           </button>
         </div>
 
-        <!-- 弹窗正文内容 -->
-        <div class="p-5 overflow-y-auto space-y-4 text-xs text-gray-600 dark:text-gray-300 leading-relaxed flex-1">
-          <!-- 标签页 1：更新亮点 -->
+        <!-- 弹窗正文内容 (随 Tab 独立展示，杜绝杂糅) -->
+        <div class="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs text-gray-600 dark:text-gray-300 leading-relaxed flex-1">
+          <!-- 标签页 1：更新亮点概览 (重构版本) -->
           <div v-if="activeTab === 'updates'" class="space-y-3.5">
             <div class="p-3 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-xl">
               <p class="font-medium text-blue-900 dark:text-blue-300">
@@ -219,9 +242,138 @@ function handleConfirm() {
                 </p>
               </div>
             </div>
+
+            <!-- 向下翻页引导 -->
+            <div class="pt-2 flex justify-end">
+              <button
+                type="button"
+                class="px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 font-medium text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                @click="activeTab = 'guide'"
+              >
+                <span>下一步：查看新手快速使用指南</span>
+                <ArrowRight class="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          <!-- 标签页 2：风险与免责声明 -->
+          <!-- 标签页 2：新手使用指南 (独立下一页，避免与更新重构杂糅) -->
+          <div v-else-if="activeTab === 'guide'" class="space-y-4">
+            <div class="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl flex items-start gap-2.5">
+              <Compass class="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+              <div class="space-y-0.5">
+                <p class="font-bold text-indigo-900 dark:text-indigo-200">
+                  从 0 到 1 自动化追更与影视直链全流程
+                </p>
+                <p class="text-[11px] text-indigo-700/90 dark:text-indigo-300/80 leading-normal">
+                  系统采用「凭据绑定 ➔ 资源转存 ➔ 影视智能整理 ➔ STRM 直链生成 ➔ 资产健康巡检」五位一体的标准流水线。
+                </p>
+              </div>
+            </div>
+
+            <!-- 核心 4 步走标准链路 -->
+            <div class="space-y-2.5">
+              <!-- 第 1 步 -->
+              <div class="p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-850 shadow-2xs space-y-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[11px]">1</span>
+                    <span class="font-bold text-xs text-slate-900 dark:text-white">绑定 139 移动云盘账号</span>
+                  </div>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 border border-blue-200/50 dark:border-blue-900/50">
+                    导航 ➔ 139 移动云盘 ➔ 云盘账号
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-normal pl-7">
+                  支持多账号统一托管、扫码免密登录与 Token 自动保活；设为主力的账号将作为默认转存与整理归档的落盘主体。
+                </p>
+              </div>
+
+              <!-- 第 2 步 -->
+              <div class="p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-850 shadow-2xs space-y-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[11px]">2</span>
+                    <span class="font-bold text-xs text-slate-900 dark:text-white">配置订阅获取（频道监控 / 单链追更）</span>
+                  </div>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-900/50">
+                    导航 ➔ 频道监控 / 单链追更
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-normal pl-7">
+                  <b>频道监控</b>：流式监听 Telegram 资源频道推文，免登极速转存至暂存目录；<br>
+                  <b>单链追更</b>：针对单个 139 分享链接设定轮询时间表，自动保存最新更新集数。
+                </p>
+              </div>
+
+              <!-- 第 3 步 -->
+              <div class="p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-850 shadow-2xs space-y-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-[11px]">3</span>
+                    <span class="font-bold text-xs text-slate-900 dark:text-white">智能影视整理与洗版淘汰</span>
+                  </div>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-300 border border-violet-200/50 dark:border-violet-900/50">
+                    导航 ➔ 影视中心 ➔ 媒体整理 / 洗版策略
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-normal pl-7">
+                  <b>媒体整理</b>：自动调用 TMDB API 识别影视剧集，提取标准季集号与点分命名，自动创建分季目录归档落盘；<br>
+                  <b>洗版策略</b>：8 项画质权重比对，当同剧集出现更高清版本（如 4K HDR 替换 1080p）时自动淘汰低画质。
+                </p>
+              </div>
+
+              <!-- 第 4 步 -->
+              <div class="p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-850 shadow-2xs space-y-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[11px]">4</span>
+                    <span class="font-bold text-xs text-slate-900 dark:text-white">STRM 原生直链生成与 Emby 串流</span>
+                  </div>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-900/50">
+                    导航 ➔ 影视中心 ➔ STRM 生成
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-normal pl-7">
+                  一键为入库目录生成 <code>.strm</code> 文件提供给 Emby/Jellyfin，播放时直连 139 移动云盘官方 CDN 302 串流，零宿主机带宽开销，无损高速秒开。
+                </p>
+              </div>
+
+              <!-- 进阶资产治理 -->
+              <div class="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 text-[11px] space-y-1.5">
+                <div class="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <ShieldAlert class="w-3.5 h-3.5 text-amber-500" />
+                  进阶巡检与资产治理（日常维护与健康保障）
+                </div>
+                <div class="text-slate-500 dark:text-slate-400 grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5">
+                  <div>• <b>资产同步</b>：139 多账号秒级互转 / 123 网盘离线调度</div>
+                  <div>• <b>缺集检测</b>：TMDB 官方目录实时对账断集漏集</div>
+                  <div>• <b>网盘清理</b>：隔离被拦截和谐死链与安全空目录修剪</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 下一步 / 上一步按钮导航 -->
+            <div class="pt-2 flex items-center justify-between">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                @click="activeTab = 'updates'"
+              >
+                <ArrowLeft class="w-3.5 h-3.5" />
+                <span>返回版本概览</span>
+              </button>
+              <button
+                type="button"
+                class="px-4 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/80 text-amber-700 dark:text-amber-300 font-medium text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                @click="activeTab = 'disclaimer'"
+              >
+                <span>下一步：阅读安全风险规范</span>
+                <ArrowRight class="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <!-- 标签页 3：风险与免责声明 -->
           <div v-else class="space-y-3.5">
             <div class="p-3 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 rounded-xl flex items-start gap-2.5">
               <AlertTriangle class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -266,6 +418,18 @@ function handleConfirm() {
                 </p>
               </div>
             </div>
+
+            <!-- 返回上一页按钮 -->
+            <div class="pt-2 flex justify-start">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                @click="activeTab = 'guide'"
+              >
+                <ArrowLeft class="w-3.5 h-3.5" />
+                <span>返回新手使用指南</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -278,7 +442,7 @@ function handleConfirm() {
               class="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
             />
             <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
-              我已仔细阅读并了解上述更新说明与使用风险
+              我已仔细阅读并了解上述更新说明、使用流程与风险规范
             </span>
           </label>
 
@@ -313,5 +477,12 @@ function handleConfirm() {
 }
 .animate-fade-in {
   animation: fadeIn 0.15s ease-out;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 </style>
