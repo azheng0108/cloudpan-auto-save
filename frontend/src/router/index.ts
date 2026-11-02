@@ -146,8 +146,8 @@ const routes: RouteRecordRaw[] = [
         component: SyncView,
         meta: {
           title: '资产同步',
-          badge: '秒传离线',
-          desc: '139 移动云盘跨号秒传与 123 网盘离线任务调度',
+          badge: '跨号转存',
+          desc: '139 移动云盘跨账号转存与 123 网盘离线任务调度',
           showSaveBtn: true,
           saveBtnText: '保存同步配置',
         },
