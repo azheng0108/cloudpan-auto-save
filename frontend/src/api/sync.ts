@@ -165,7 +165,7 @@ export const syncApi = {
     return http.post('/api/sync/cross-account/scan', data);
   },
 
-  // 执行 139 账号间跨号秒传
+  // 执行 139 账号间跨号转存
   executeCrossAccount(data: {
     sourceAccountId: number | string;
     targetAccountId: number | string;
@@ -178,12 +178,12 @@ export const syncApi = {
     return http.post('/api/sync/cross-account/execute', data);
   },
 
-  // 139 目录秒传特征码清单导出
+  // 139 目录特征码清单导出
   exportRapidLinks(data: { accountId?: number | string; folderId?: string }): Promise<RapidExportResult> {
     return http.post('/api/sync/rapid-links/export', data);
   },
 
-  // 批量秒传特征码导入并落盘 139 账号
+  // 批量特征码导入并落盘 139 账号
   importRapidLinks(data: { accountId?: number | string; rawText: string; targetFolderId?: string }): Promise<RapidImportResult> {
     return http.post('/api/sync/rapid-links/import', data);
   },

@@ -57,7 +57,7 @@ const route = useRoute();
 const router = useRouter();
 
 // ================= 主选项卡切换 (优化移除多余的配置独立页) =================
-const showRapidTab = ref(false); // 默认隐藏秒传特征码互转
+const showRapidTab = ref(false); // 默认隐藏特征码导入导出
 const activeTab = ref<'cross' | 'rapid' | 'offline'>('cross');
 const isPan123ConfigExpanded = ref(false);
 
@@ -222,7 +222,7 @@ function onHeaderSaveClick() {
   handleSaveConfig();
 }
 
-// ================= Tab 1: 139 账号间跨号秒传 =================
+// ================= Tab 1: 139 账号间跨号转存 =================
 const crossSourceAccountId = ref<number | string>('');
 const crossSourceFolderId = ref<string>('/');
 const crossSourceFolderName = ref<string>('根目录');
@@ -235,6 +235,19 @@ const crossExistSkip = ref(true);
 const crossPreservePath = ref(true);
 const crossTrashSource = ref(false);
 const crossMediaOnly = ref(true);
+
+function onCrossStrategyChange() {
+  form.sync.existSkip = crossExistSkip.value;
+  form.sync.preservePath = crossPreservePath.value;
+  form.sync.trashSource = crossTrashSource.value;
+  handleSaveConfig();
+}
+
+function saveMediaOnlyPref() {
+  try {
+    localStorage.setItem('sync_cross_media_only_v1', crossMediaOnly.value ? 'true' : 'false');
+  } catch (_) {}
+}
 
 const isScanning = ref(false);
 const scanResult = ref<SyncScanResult | null>(null);
@@ -312,7 +325,7 @@ async function handleExecuteSync() {
     return;
   }
   if (crossSourceAccountId.value === crossTargetAccountId.value && crossSourceFolderId.value === crossTargetFolderId.value) {
-    ElMessage.warning('源账号与目标账号同账号同目录，无需秒传转存');
+    ElMessage.warning('源账号与目标账号同账号同目录，无需跨号转存');
     return;
   }
   if (!scanResult.value || scanResult.value.files.length === 0) {
@@ -328,7 +341,7 @@ async function handleExecuteSync() {
   if (crossTrashSource.value) {
     try {
       await ElMessageBox.confirm(
-        '您已开启「秒传成功后安全移入源账号回收站」，已成功秒传的文件将被移入源账号 139 回收站（0 物理硬删）。确定执行吗？',
+        '您已开启「转存成功后安全移入源账号回收站」，已成功转存的文件将被移入源账号 139 回收站（可在回收站随时还原）。确定执行吗？',
         '安全风险提示',
         {
           confirmButtonText: '确定执行',
@@ -362,9 +375,9 @@ async function handleExecuteSync() {
     });
 
     executeResult.value = res;
-    ElMessage.success(`跨号秒传完成！成功: ${res.successCount}，已存在跳过: ${res.existCount}，失败: ${res.failCount}`);
+    ElMessage.success(`跨号转存完成！成功: ${res.successCount}，已存在跳过: ${res.existCount}，失败: ${res.failCount}`);
   } catch (err: any) {
-    ElMessage.error(err.message || '执行跨号秒传失败');
+    ElMessage.error(err.message || '执行跨号转存失败');
   } finally {
     isExecuting.value = false;
   }
@@ -376,7 +389,7 @@ const filteredExecuteDetails = computed(() => {
   return executeResult.value.details.filter((d) => d.status === executeFilter.value);
 });
 
-// ================= Tab 2: 秒传特征码互转 =================
+// ================= Tab 2: 特征码导入导出 =================
 const rapidTab = ref<'export' | 'import'>('export');
 
 // 导出
@@ -400,9 +413,9 @@ async function handleExportLinks() {
       folderId: rapidExportFolderId.value,
     });
     exportResult.value = res;
-    ElMessage.success(`秒传码生成成功！共提取 ${res.validLinkCount} 条有效秒传特征码`);
+    ElMessage.success(`特征码提取成功！共提取 ${res.validLinkCount} 条有效特征码`);
   } catch (err: any) {
-    ElMessage.error(err.message || '生成秒传特征码失败');
+    ElMessage.error(err.message || '提取特征码失败');
   } finally {
     isExporting.value = false;
   }
@@ -412,7 +425,7 @@ function copyExportText() {
   if (!exportResult.value?.text) return;
   navigator.clipboard.writeText(exportResult.value.text).then(() => {
     isCopied.value = true;
-    ElMessage.success('已将全部秒传码复制至剪贴板');
+    ElMessage.success('已将全部特征码复制至剪贴板');
     setTimeout(() => {
       isCopied.value = false;
     }, 2000);
@@ -454,7 +467,7 @@ async function handleImportLinks() {
     return;
   }
   if (!importRawText.value.trim()) {
-    ElMessage.warning('请输入待秒传的特征码清单');
+    ElMessage.warning('请输入待导入的特征码清单');
     return;
   }
 
@@ -467,9 +480,9 @@ async function handleImportLinks() {
       targetFolderId: rapidImportFolderId.value,
     });
     importResult.value = res;
-    ElMessage.success(`秒传导入完成！成功: ${res.successCount}，已存在: ${res.existCount}，失败: ${res.failCount}`);
+    ElMessage.success(`特征码导入完成！成功: ${res.successCount}，已存在: ${res.existCount}，失败: ${res.failCount}`);
   } catch (err: any) {
-    ElMessage.error(err.message || '秒传特征码导入失败');
+    ElMessage.error(err.message || '特征码导入失败');
   } finally {
     isImporting.value = false;
   }
@@ -718,9 +731,9 @@ const folderPickerTitle = computed(() => {
     case 'crossTarget':
       return '选择 139 目标落盘目录';
     case 'rapidExport':
-      return '选择 139 待导出秒传码目录';
+      return '选择 139 待导出特征码目录';
     case 'rapidImport':
-      return '选择 139 秒传导入落盘目录';
+      return '选择 139 特征码导入落盘目录';
     case 'offlineSource':
       return '选择 139 离线推送媒体源目录';
     default:
@@ -800,7 +813,7 @@ onUnmounted(() => {
           class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
         >
           <ArrowRightLeft class="w-3.5 h-3.5" />
-          <span>139 跨号秒传</span>
+          <span>139 跨号转存</span>
         </button>
 
         <button
@@ -811,7 +824,7 @@ onUnmounted(() => {
           class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
         >
           <FileCode2 class="w-3.5 h-3.5" />
-          <span>秒传特征码互转</span>
+          <span>特征码导入导出</span>
         </button>
 
         <button
@@ -828,8 +841,8 @@ onUnmounted(() => {
       <!-- 右侧辅助徽章提示 -->
       <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
         <span v-if="activeTab === 'cross'" class="inline-flex items-center gap-1">
-          <ShieldCheck class="w-3.5 h-3.5 text-blue-500" />
-          PC 纯协议秒传 (3 线程并发)
+          <ArrowRightLeft class="w-3.5 h-3.5 text-blue-500" />
+          免流量跨账号转存
         </span>
         <span v-else-if="showRapidTab && activeTab === 'rapid'" class="inline-flex items-center gap-1">
           <Share2 class="w-3.5 h-3.5 text-indigo-500" />
@@ -853,7 +866,7 @@ onUnmounted(() => {
       <div v-if="accountsLoaded && !hasActiveAccount" class="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
         <div class="flex items-center gap-2.5 text-xs">
           <AlertTriangle class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，跨号秒传与同步已进入受保护防空状态。</span>
+          <span><strong>云盘未登录安全保护机制生效中</strong>：当前未检测到正常在线的 139 移动云盘账号，跨号转存与同步已进入受保护防空状态。</span>
         </div>
         <button
           type="button"
@@ -865,7 +878,7 @@ onUnmounted(() => {
       </div>
 
       <!-- ═════════════════════════════════════════════════════════════ -->
-      <!-- TAB 1: 139 账号间跨号秒传 (纯协议秒级建树)                   -->
+      <!-- TAB 1: 139 账号间跨号转存                   -->
       <!-- ═════════════════════════════════════════════════════════════ -->
       <div v-if="activeTab === 'cross'" class="space-y-6">
         <!-- 账号与目录映射配置卡片 -->
@@ -876,9 +889,9 @@ onUnmounted(() => {
                 <ArrowRightLeft class="w-5 h-5" />
               </div>
               <div>
-                <h3 class="text-sm font-bold text-gray-900 dark:text-white">139 移动云盘账号间跨号秒传</h3>
+                <h3 class="text-sm font-bold text-gray-900 dark:text-white">139 移动云盘跨账号转存</h3>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  基于 139 官方 PC 纯协议与 64 位 SHA256 特征码，免流量快速在多账号间转存与同名建树
+                  免流量在多个 139 移动云盘账号之间快速转存资产与同步目录结构
                 </p>
               </div>
             </div>
@@ -903,7 +916,7 @@ onUnmounted(() => {
               >
                 <Play v-if="!isExecuting" class="w-3.5 h-3.5" />
                 <RefreshCw v-else class="w-3.5 h-3.5 animate-spin" />
-                <span>{{ isExecuting ? '秒传转存中...' : '开始跨号秒传' }}</span>
+                <span>{{ isExecuting ? '正在转存中...' : '开始跨号转存' }}</span>
               </button>
             </div>
           </div>
@@ -955,7 +968,7 @@ onUnmounted(() => {
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
                   <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  目标账号 (秒传落地)
+                  目标账号 (转存落地)
                 </span>
                 <span class="text-[11px] text-gray-400 font-mono">TARGET</span>
               </div>
@@ -991,42 +1004,51 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 跨号同步策略开关 -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-5 pt-4 border-t border-gray-100 dark:border-gray-800">
-            <!-- 开关 1: 已存在跳过 -->
-            <div class="flex items-center justify-between p-3 rounded-lg border border-gray-200/60 dark:border-gray-700/60 bg-white dark:bg-gray-900">
-              <div class="pr-2">
-                <label class="text-xs font-medium text-gray-800 dark:text-gray-200">目标已存在自动跳过</label>
-                <p class="text-[11px] text-gray-400 mt-0.5">命中同名或特征码跳过</p>
-              </div>
-              <el-switch v-model="crossExistSkip" />
+          <!-- 跨号转存策略开关 (整合排布，自动保存) -->
+          <div class="mt-6 pt-5 border-t border-gray-100 dark:border-gray-800 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                <SlidersHorizontal class="w-3.5 h-3.5 text-blue-500" />
+                <span>转存与过滤策略 (自动保存)</span>
+              </span>
             </div>
 
-            <!-- 开关 2: 保持目录结构 -->
-            <div class="flex items-center justify-between p-3 rounded-lg border border-gray-200/60 dark:border-gray-700/60 bg-white dark:bg-gray-900">
-              <div class="pr-2">
-                <label class="text-xs font-medium text-gray-800 dark:text-gray-200">保持子目录层级结构</label>
-                <p class="text-[11px] text-gray-400 mt-0.5">目标端同名建树归档</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <!-- 开关 1: 目标已存在跳过 -->
+              <div class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30">
+                <div class="pr-2">
+                  <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">目标已存在自动跳过</label>
+                  <p class="text-[11px] text-gray-400 mt-0.5">命中同名或相同文件自动跳过</p>
+                </div>
+                <el-switch v-model="crossExistSkip" @change="onCrossStrategyChange" />
               </div>
-              <el-switch v-model="crossPreservePath" />
-            </div>
 
-            <!-- 开关 3: 移入源回收站 -->
-            <div class="flex items-center justify-between p-3 rounded-lg border border-gray-200/60 dark:border-gray-700/60 bg-white dark:bg-gray-900">
-              <div class="pr-2">
-                <label class="text-xs font-medium text-gray-800 dark:text-gray-200">成功后软删源文件</label>
-                <p class="text-[11px] text-gray-400 mt-0.5">移入源回收站 (0硬删)</p>
+              <!-- 开关 2: 保持目录结构 -->
+              <div class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30">
+                <div class="pr-2">
+                  <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">保持子目录层级结构</label>
+                  <p class="text-[11px] text-gray-400 mt-0.5">目标端同名建树，保留相对路径</p>
+                </div>
+                <el-switch v-model="crossPreservePath" @change="onCrossStrategyChange" />
               </div>
-              <el-switch v-model="crossTrashSource" />
-            </div>
 
-            <!-- 开关 4: 仅媒体文件 -->
-            <div class="flex items-center justify-between p-3 rounded-lg border border-gray-200/60 dark:border-gray-700/60 bg-white dark:bg-gray-900">
-              <div class="pr-2">
-                <label class="text-xs font-medium text-gray-800 dark:text-gray-200">仅扫描影视媒体文件</label>
-                <p class="text-[11px] text-gray-400 mt-0.5">过滤视频/字幕/nfo</p>
+              <!-- 开关 3: 成功后移入源回收站 -->
+              <div class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30">
+                <div class="pr-2">
+                  <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">成功后移入源回收站</label>
+                  <p class="text-[11px] text-gray-400 mt-0.5">转存成功软删除（回收站可还原）</p>
+                </div>
+                <el-switch v-model="crossTrashSource" @change="onCrossStrategyChange" />
               </div>
-              <el-switch v-model="crossMediaOnly" />
+
+              <!-- 开关 4: 仅媒体文件 -->
+              <div class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30">
+                <div class="pr-2">
+                  <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">仅扫描影视媒体文件</label>
+                  <p class="text-[11px] text-gray-400 mt-0.5">过滤并仅处理视频与字幕文件</p>
+                </div>
+                <el-switch v-model="crossMediaOnly" @change="saveMediaOnlyPref" />
+              </div>
             </div>
           </div>
         </div>
@@ -1116,16 +1138,16 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 秒传执行结果卡片 (若已执行) -->
+        <!-- 转存执行结果卡片 (若已执行) -->
         <div v-if="executeResult" class="settings-card">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
             <div>
               <h4 class="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <CheckCircle2 class="w-4 h-4 text-emerald-500" />
-                <span>跨号秒传执行审计报告</span>
+                <span>跨号转存执行报告</span>
               </h4>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                共调度 {{ executeResult.total }} 项任务，成功完成秒传建树
+                共调度 {{ executeResult.total }} 项任务，成功完成跨号转存
               </p>
             </div>
 
@@ -1167,7 +1189,7 @@ onUnmounted(() => {
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
             <div class="p-3 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20 text-center">
-              <span class="text-xs text-emerald-600 dark:text-emerald-400">秒传成功</span>
+              <span class="text-xs text-emerald-600 dark:text-emerald-400">转存成功</span>
               <p class="text-xl font-bold font-mono text-emerald-700 dark:text-emerald-300 mt-1">{{ executeResult.successCount }}</p>
             </div>
             <div class="p-3 rounded-xl border border-blue-200/80 dark:border-blue-800/60 bg-blue-50/50 dark:bg-blue-950/20 text-center">
@@ -1203,7 +1225,7 @@ onUnmounted(() => {
                       v-if="item.status === 'success'"
                       class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
                     >
-                      秒传成功
+                      转存成功
                     </span>
                     <span
                       v-else-if="item.status === 'exist'"
@@ -1226,63 +1248,10 @@ onUnmounted(() => {
             </table>
           </div>
         </div>
-
-        <!-- 跨号秒传与同步策略卡片 -->
-        <div class="settings-card space-y-4">
-          <div class="flex items-center justify-between pb-3.5 border-b border-gray-100 dark:border-gray-800">
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                <ShieldCheck class="w-4 h-4" />
-              </div>
-              <div>
-                <h4 class="text-xs font-bold text-gray-900 dark:text-white">跨号秒传与同步策略</h4>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                  控制跨账号秒传时的重复防碰撞、同名建树与源文件软删除回收站安全防护
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              @click="handleSaveConfig"
-              :disabled="isSaving"
-              class="btn-default text-xs h-8 px-3 flex items-center gap-1.5 cursor-pointer font-medium disabled:opacity-50"
-            >
-              <RefreshCw v-if="isSaving" class="w-3.5 h-3.5 animate-spin" />
-              <Save v-else class="w-3.5 h-3.5 text-indigo-500" />
-              <span>{{ isSaving ? '保存中...' : '保存策略' }}</span>
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div class="p-3 rounded-xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between gap-2">
-              <div class="pr-2">
-                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">存在同特征跳过</label>
-                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">避免重复创建冗余副本</p>
-              </div>
-              <el-switch v-model="form.sync.existSkip" @change="handleSaveConfig" />
-            </div>
-
-            <div class="p-3 rounded-xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between gap-2">
-              <div class="pr-2">
-                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">保持相对子层级</label>
-                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">递归创建多层目录树</p>
-              </div>
-              <el-switch v-model="form.sync.preservePath" @change="handleSaveConfig" />
-            </div>
-
-            <div class="p-3 rounded-xl border border-gray-200/80 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-800/30 flex items-center justify-between gap-2">
-              <div class="pr-2">
-                <label class="text-xs font-semibold text-gray-800 dark:text-gray-200 block">成功移入回收站</label>
-                <p class="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">仅 batchTrash 软删除</p>
-              </div>
-              <el-switch v-model="form.sync.trashSource" @change="handleSaveConfig" />
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- ═════════════════════════════════════════════════════════════ -->
-      <!-- TAB 2: 秒传特征码互转 (文件名#大小#SHA256 导入导出)           -->
+      <!-- TAB 2: 特征码导入导出 (文件名#大小#SHA256 导入导出)           -->
       <!-- ═════════════════════════════════════════════════════════════ -->
       <div v-if="showRapidTab && activeTab === 'rapid'" class="space-y-6">
         <!-- 内部子选项卡 -->
@@ -1294,7 +1263,7 @@ onUnmounted(() => {
             class="px-3 py-1.5 text-xs cursor-pointer flex items-center gap-1.5 transition-colors"
           >
             <Share2 class="w-3.5 h-3.5" />
-            <span>从 139 目录导出秒传特征码清单</span>
+            <span>从 139 目录导出特征码清单</span>
           </button>
           <button
             type="button"
@@ -1303,11 +1272,11 @@ onUnmounted(() => {
             class="px-3 py-1.5 text-xs cursor-pointer flex items-center gap-1.5 transition-colors"
           >
             <Upload class="w-3.5 h-3.5" />
-            <span>批量秒传特征码导入并落地 139</span>
+            <span>批量特征码导入并落地 139</span>
           </button>
         </div>
 
-        <!-- 子视图 A: 导出秒传特征码 -->
+        <!-- 子视图 A: 导出特征码 -->
         <div v-if="rapidTab === 'export'" class="settings-card space-y-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
             <div class="flex items-center gap-3">
@@ -1315,9 +1284,9 @@ onUnmounted(() => {
                 <Share2 class="w-5 h-5" />
               </div>
               <div>
-                <h3 class="text-sm font-bold text-gray-900 dark:text-white">139 目录秒传特征码清单导出</h3>
+                <h3 class="text-sm font-bold text-gray-900 dark:text-white">139 目录特征码清单导出</h3>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  递归全量提取指定 139 目录中所有文件的 64 位 SHA256 特征码，生成标准秒传码清单（文件名#大小#SHA256）
+                  递归全量提取指定 139 目录中所有文件的 64 位 SHA256 特征码，生成标准特征码清单（文件名#大小#SHA256）
                 </p>
               </div>
             </div>
@@ -1330,7 +1299,7 @@ onUnmounted(() => {
             >
               <RefreshCw v-if="isExporting" class="w-3.5 h-3.5 animate-spin" />
               <FileCode2 v-else class="w-3.5 h-3.5" />
-              <span>{{ isExporting ? '提取特征码中...' : '一键提取秒传特征码' }}</span>
+              <span>{{ isExporting ? '提取特征码中...' : '一键提取特征码' }}</span>
             </button>
           </div>
 
@@ -1373,7 +1342,7 @@ onUnmounted(() => {
                 <span class="text-gray-500 dark:text-gray-400">
                   共扫描 {{ exportResult.totalFiles }} 个文件，生成
                   <strong class="text-indigo-600 dark:text-indigo-400">{{ exportResult.validLinkCount }}</strong>
-                  条标准秒传码 (共 {{ exportResult.totalSizeFormatted }})
+                  条标准特征码 (共 {{ exportResult.totalSizeFormatted }})
                 </span>
               </div>
 
@@ -1407,7 +1376,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 子视图 B: 导入秒传特征码并落盘 -->
+        <!-- 子视图 B: 导入特征码并落盘 -->
         <div v-if="rapidTab === 'import'" class="settings-card space-y-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
             <div class="flex items-center gap-3">
@@ -1415,9 +1384,9 @@ onUnmounted(() => {
                 <Upload class="w-5 h-5" />
               </div>
               <div>
-                <h3 class="text-sm font-bold text-gray-900 dark:text-white">批量秒传特征码导入并落地 139</h3>
+                <h3 class="text-sm font-bold text-gray-900 dark:text-white">批量特征码导入并落地 139</h3>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  输入秒传文本清单，系统将调用 139 PC 官方接口在目标账号指定目录下免流量秒传建盘落盘
+                  输入特征码文本清单，系统将在目标账号指定目录下免流量快速转存落盘
                 </p>
               </div>
             </div>
@@ -1438,7 +1407,7 @@ onUnmounted(() => {
               >
                 <RefreshCw v-if="isImporting" class="w-3.5 h-3.5 animate-spin" />
                 <Play v-else class="w-3.5 h-3.5" />
-                <span>{{ isImporting ? '正在秒传落盘...' : '解析并批量秒传落盘' }}</span>
+                <span>{{ isImporting ? '正在转存落盘...' : '解析并批量转存落盘' }}</span>
               </button>
             </div>
           </div>
@@ -1477,7 +1446,7 @@ onUnmounted(() => {
           <div>
             <div class="flex items-center justify-between mb-1.5">
               <label class="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                秒传特征码清单 (支持 文件名#大小#SHA256、文件名|大小|SHA256 或 139:// 前缀)
+                特征码清单 (支持 文件名#大小#SHA256、文件名|大小|SHA256 或 139:// 前缀)
               </label>
               <span class="text-[11px] text-gray-400 font-mono">每行一项，支持多行批量</span>
             </div>
@@ -1497,7 +1466,7 @@ onUnmounted(() => {
                 <p class="text-lg font-bold font-mono text-gray-800 dark:text-gray-200 mt-1">{{ importResult.total }}</p>
               </div>
               <div class="p-3 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 text-center">
-                <span class="text-xs text-emerald-600">秒传成功落盘</span>
+                <span class="text-xs text-emerald-600">转存成功落盘</span>
                 <p class="text-lg font-bold font-mono text-emerald-600 mt-1">{{ importResult.successCount }}</p>
               </div>
               <div class="p-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 text-center">
@@ -1532,7 +1501,7 @@ onUnmounted(() => {
                         v-if="item.status === 'success'"
                         class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300"
                       >
-                        秒传成功
+                        转存成功
                       </span>
                       <span
                         v-else

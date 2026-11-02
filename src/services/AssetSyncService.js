@@ -71,7 +71,7 @@ class AssetSyncService {
     }
 
     /**
-     * 139 账号间跨号秒传（基于 139 PC 官方 /hcy/file/create 纯协议）
+     * 139 账号间跨号转存（基于 139 PC 官方 /hcy/file/create 纯协议）
      * @param {object} sourceCloud139 - 源 139 账号实例
      * @param {object} targetCloud139 - 目标 139 账号实例
      * @param {object} params
@@ -79,7 +79,7 @@ class AssetSyncService {
      * @param {string} [params.targetParentId='/'] - 目标落盘根目录 ID
      * @param {boolean} [params.existSkip=true] - 目标已存在同特征文件自动跳过
      * @param {boolean} [params.preservePath=true] - 保持源目录子层级结构
-     * @param {boolean} [params.trashSource=false] - 秒传成功后将源账号文件移入源回收站 (0 物理硬删)
+     * @param {boolean} [params.trashSource=false] - 转存成功后将源账号文件移入源回收站 (软删除)
      * @returns {Promise<{total: number, successCount: number, existCount: number, failCount: number, trashedSourceCount: number, details: Array}>}
      */
     static async executeCrossAccountSync(sourceCloud139, targetCloud139, params = {}) {
@@ -141,7 +141,7 @@ class AssetSyncService {
                     fileId: file.fileId,
                     name: fileName,
                     status: 'failed',
-                    reason: '缺少 64 位 SHA256 特征码，无法执行秒传'
+                    reason: '缺少特征码，无法执行跨号转存'
                 });
                 return;
             }
@@ -187,7 +187,7 @@ class AssetSyncService {
                         name: fileName,
                         targetFileId: createdId,
                         status: 'success',
-                        message: '秒传创建成功'
+                        message: '跨号转存成功'
                     });
 
                     // 若需安全清理源文件，推入回收站队列
@@ -209,7 +209,7 @@ class AssetSyncService {
                     fileId: file.fileId,
                     name: fileName,
                     status: 'failed',
-                    reason: err.message || '跨号秒传异常'
+                    reason: err.message || '跨号转存异常'
                 });
             }
         }));
@@ -221,7 +221,7 @@ class AssetSyncService {
             try {
                 await sourceCloud139.batchTrash(sourceTrashQueue);
                 trashedSourceCount = sourceTrashQueue.length;
-                logger.info(`[资产同步] 已将源账号 ${trashedSourceCount} 个已成功秒传的文件安全移入 139 回收站`);
+                logger.info(`[资产同步] 已将源账号 ${trashedSourceCount} 个已成功转存的文件安全移入 139 回收站`);
             } catch (trashErr) {
                 logger.warn(`[资产同步] 源文件移入回收站异常: ${trashErr.message}`);
             }
@@ -288,7 +288,7 @@ class AssetSyncService {
                 existCount: 0,
                 failCount: 0,
                 results: [],
-                message: '未能识别出有效的秒传特征码行，请使用「文件名#大小#64位SHA256」格式'
+                message: '未能识别出有效的特征码行，请使用「文件名#大小#64位SHA256」格式'
             };
         }
 
@@ -316,7 +316,7 @@ class AssetSyncService {
                         hash: entry.hash,
                         fileId: createdId,
                         status: 'success',
-                        message: '秒传成功'
+                        message: '转存成功'
                     });
                 } else {
                     failCount++;
@@ -335,7 +335,7 @@ class AssetSyncService {
                     size: entry.size,
                     hash: entry.hash,
                     status: 'failed',
-                    reason: err.message || '秒传创建异常'
+                    reason: err.message || '转存创建异常'
                 });
             }
         }));

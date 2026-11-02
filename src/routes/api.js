@@ -3517,7 +3517,7 @@ const registerApiRoutes = (app, deps) => {
     });
 
     // ═════════════════════════════════════════════════════════════════════
-    // 资产同步：139 移动云盘跨号秒传与 123 网盘离线调度中枢 (/api/sync/*)
+    // 资产同步：139 移动云盘跨号转存与 123 网盘离线调度中枢 (/api/sync/*)
     // ═════════════════════════════════════════════════════════════════════
 
     // 1. 获取资产同步与 123 网盘配置
@@ -3710,7 +3710,7 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // 9. 执行 139 账号间跨号秒传
+    // 9. 执行 139 账号间跨号转存
     app.post('/api/sync/cross-account/execute', async (req, res) => {
         try {
             const {
@@ -3735,8 +3735,8 @@ const registerApiRoutes = (app, deps) => {
 
             const srcAccount = await accountRepo.findOne({ where: { id: parseInt(sourceAccountId) } });
             const tgtAccount = await accountRepo.findOne({ where: { id: parseInt(targetAccountId) } });
-            ensureCloud139Account(srcAccount, '跨号秒传-源账号');
-            ensureCloud139Account(tgtAccount, '跨号秒传-目标账号');
+            ensureCloud139Account(srcAccount, '跨号转存-源账号');
+            ensureCloud139Account(tgtAccount, '跨号转存-目标账号');
 
             const srcCloud = Cloud139Service.getInstance(srcAccount);
             const tgtCloud = Cloud139Service.getInstance(tgtAccount);
@@ -3756,7 +3756,7 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // 10. 139 目录秒传特征码清单导出
+    // 10. 139 目录特征码清单导出
     app.post('/api/sync/rapid-links/export', async (req, res) => {
         try {
             const { accountId, folderId } = req.body || {};
@@ -3767,7 +3767,7 @@ const registerApiRoutes = (app, deps) => {
                 account = (await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: Not(false) } })) ||
                           (await accountRepo.findOne({ where: { accountType: 'cloud139' } }));
             }
-            ensureCloud139Account(account, '秒传特征码导出');
+            ensureCloud139Account(account, '特征码导出');
             const cloud139 = Cloud139Service.getInstance(account);
             const { AssetSyncService } = require('../services/AssetSyncService');
             const result = await AssetSyncService.exportRapidLinks(cloud139, folderId || '/');
@@ -3777,12 +3777,12 @@ const registerApiRoutes = (app, deps) => {
         }
     });
 
-    // 11. 批量秒传特征码导入并落盘 139 账号
+    // 11. 批量特征码导入并落盘 139 账号
     app.post('/api/sync/rapid-links/import', async (req, res) => {
         try {
             const { accountId, rawText, targetFolderId = '/' } = req.body || {};
             if (!rawText || !String(rawText).trim()) {
-                return res.status(400).json({ success: false, error: '秒传特征码文本不能为空' });
+                return res.status(400).json({ success: false, error: '特征码文本不能为空' });
             }
             let account;
             if (accountId) {
@@ -3791,7 +3791,7 @@ const registerApiRoutes = (app, deps) => {
                 account = (await accountRepo.findOne({ where: { accountType: 'cloud139', isActive: Not(false) } })) ||
                           (await accountRepo.findOne({ where: { accountType: 'cloud139' } }));
             }
-            ensureCloud139Account(account, '秒传特征码导入');
+            ensureCloud139Account(account, '特征码导入');
             const cloud139 = Cloud139Service.getInstance(account);
             const { AssetSyncService } = require('../services/AssetSyncService');
             const result = await AssetSyncService.importRapidLinks(cloud139, rawText, targetFolderId);
