@@ -302,17 +302,18 @@ class Cloud139Service {
     /**
      * 调用 share-kd-njs.yun.139.com 接口（分享相关，无需 mcloud-sign）
      */
-    async _shareKdNjsPost(path, body) {
-        return this.limit(() => this._shareKdNjsPostImpl(path, body));
+    async _shareKdNjsPost(path, body, customHeaders = {}) {
+        return this.limit(() => this._shareKdNjsPostImpl(path, body, customHeaders));
     }
 
-    async _shareKdNjsPostImpl(path, body) {
+    async _shareKdNjsPostImpl(path, body, customHeaders = {}) {
         const SHARE_HEADERS = {
-            'caller': 'web',
-            'x-m4c-caller': 'PC',
-            'mcloud-client': '10701',
-            'mcloud-version': '7.17.2',
+            'caller': 'app',
+            'x-m4c-caller': 'APP',
+            'mcloud-client': '10101',
+            'mcloud-version': '11.2.0',
             'mcloud-channel': '1000101',
+            ...customHeaders,
         };
         try {
             const res = await this.http.post(`${SHARE_KD_NJS_URL}${path}`, {
