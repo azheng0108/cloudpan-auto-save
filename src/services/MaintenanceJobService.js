@@ -424,7 +424,22 @@ class MaintenanceJobService {
     static async reconcileCleanedBannedScanJobs() {
         try {
             const repo = getMaintenanceJobRepository();
-            // 查询所有状态仍为 completed 且 bannedCount > 0 的 banned_scan 作业
+
+            // 自愈修复：若历史上有未检出违规（bannedCount=0 且无处置记录）但被误标为 cleaned 的巡检记录，一律纠正恢复为原汁原味的 completed（已完成）
+            const zeroBannedMisCleaned = await repo.find({
+                where: { type: 'banned_scan', status: 'cleaned' }
+            });
+            for (const j of zeroBannedMisCleaned) {
+                if ((j.cleanedCount || 0) === 0 && (!j.findingsJson || j.findingsJson === '[]' || j.findingsJson === '')) {
+                    if (j.summary && (j.summary.includes('未发现违规') || j.summary.includes('排查 1 目录、0 文件'))) {
+                        j.status = 'completed';
+                        await repo.save(j);
+                        logger.info(`[维护作业审计] 恢复健康无违规巡检记录 #${j.id} 状态为 completed (已完成)`);
+                    }
+                }
+            }
+
+            // 查询所有状态仍为 completed 且 bannedCount > 0 的待对账 banned_scan 作业
             const uncleanedScanJobs = await repo.find({
                 where: { type: 'banned_scan', status: 'completed' }
             });
@@ -437,9 +452,8 @@ class MaintenanceJobService {
             if (!cleanJobs || cleanJobs.length === 0) return;
 
             for (const scanJob of uncleanedScanJobs) {
+                // 如果根本就没有检出违规（bannedCount <= 0），绝对保持 completed（已完成），不篡改为 cleaned
                 if ((scanJob.bannedCount || 0) <= 0) {
-                    scanJob.status = 'cleaned';
-                    await repo.save(scanJob);
                     continue;
                 }
                 // 查找在这个 scanJob 之后创建的 cleanJobs

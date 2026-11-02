@@ -4559,7 +4559,7 @@ onUnmounted(() => {
                     巡检失败
                   </span>
 
-                  <!-- 违规检出状态 -->
+                  <!-- 巡检完成与健康状态：没检测出违规或已处置完毕的统一以绿色的已完成展示 -->
                   <template v-else>
                     <span
                       v-if="batch.bannedCount > 0 && batch.status !== 'cleaned'"
@@ -4569,16 +4569,11 @@ onUnmounted(() => {
                       <span class="font-normal font-mono">({{ batch.totalBannedSizeFormatted }})</span>
                     </span>
                     <span
-                      v-else-if="batch.status === 'cleaned'"
-                      class="px-2 py-0.5 rounded-md font-medium bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60"
-                    >
-                      已全部处置
-                    </span>
-                    <span
                       v-else
-                      class="px-2 py-0.5 rounded-md font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60"
+                      class="px-2 py-0.5 rounded-md font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60 flex items-center gap-1"
                     >
-                      状态完全健康 (0 违规)
+                      <CheckCircle2 class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>已完成</span>
                     </span>
                   </template>
                 </div>
@@ -6454,8 +6449,8 @@ onUnmounted(() => {
                 <span
                   class="px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1"
                   :class="{
-                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300': job.status === 'completed',
-                    'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300': job.status === 'cleaned',
+                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300': job.status === 'completed' || (job.status === 'cleaned' && job.type === 'banned_scan'),
+                    'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300': job.status === 'cleaned' && job.type !== 'banned_scan',
                     'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300': job.status === 'running',
                     'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300': job.status === 'failed',
                   }"
@@ -6466,7 +6461,7 @@ onUnmounted(() => {
                       job.status === 'completed'
                         ? '已完成'
                         : job.status === 'cleaned'
-                        ? '已处置'
+                        ? (job.type === 'banned_scan' ? '已完成' : '已处置')
                         : job.status === 'running'
                         ? '执行中'
                         : '失败'
