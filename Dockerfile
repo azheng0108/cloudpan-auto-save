@@ -8,10 +8,10 @@ RUN apk add --no-cache python3 make g++
 
 # 先复制依赖清单，充分利用 Docker 层缓存
 COPY package.json yarn.lock ./
-COPY frontend/package.json frontend/package-lock.json ./frontend/
+COPY frontend/package.json frontend/package-lock.json* ./frontend/
 
 # 安装根项目与前端全量依赖（含 devDependencies，编译 TypeScript 与 Vite 构建需要）
-RUN yarn install --ignore-engines && cd frontend && npm ci
+RUN yarn install --ignore-engines && cd frontend && (npm ci || npm install --no-audit --no-fund)
 
 # 复制源码并编译
 COPY . .
