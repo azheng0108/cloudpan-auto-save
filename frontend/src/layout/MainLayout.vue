@@ -253,15 +253,6 @@ function handleHeaderSaveClick() {
               <span>单链追更</span>
             </router-link>
             <router-link
-              to="/missing"
-              class="sidebar-nav-item"
-              :class="{ active: route.path === '/missing' || route.path === '/episodes' }"
-              @click="sidebarOpen = false"
-            >
-              <Tv class="w-4 h-4" />
-              <span>缺集检测</span>
-            </router-link>
-            <router-link
               to="/sync"
               class="sidebar-nav-item"
               :class="{ active: route.path === '/sync' }"
@@ -269,6 +260,15 @@ function handleHeaderSaveClick() {
             >
               <RefreshCw class="w-4 h-4" />
               <span>资产同步</span>
+            </router-link>
+            <router-link
+              to="/missing"
+              class="sidebar-nav-item"
+              :class="{ active: route.path === '/missing' || route.path === '/episodes' }"
+              @click="sidebarOpen = false"
+            >
+              <Tv class="w-4 h-4" />
+              <span>缺集检测</span>
             </router-link>
             <router-link
               to="/maintenance"
@@ -338,6 +338,16 @@ function handleHeaderSaveClick() {
       <div class="p-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/60 flex-shrink-0 space-y-2">
         <button
           type="button"
+          class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/30 hover:bg-indigo-100/70 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
+          title="打开全流程新手使用指南与规范"
+          @click="showNoticeModal = true"
+        >
+          <HelpCircle class="w-3.5 h-3.5 text-indigo-500" />
+          <span>新手使用指南</span>
+        </button>
+
+        <button
+          type="button"
           class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors shadow-sm cursor-pointer"
           title="退出当前控制台会话"
           @click="handleLogout"
@@ -385,8 +395,19 @@ function handleHeaderSaveClick() {
           </div>
         </div>
 
-        <!-- 顶部右侧：主题切换与保存按钮 -->
+        <!-- 顶部右侧：使用指南、主题切换与保存按钮 -->
         <div class="flex items-center gap-2 sm:gap-3">
+          <!-- 新手使用指南按钮 -->
+          <button
+            type="button"
+            class="h-8 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs text-xs font-medium"
+            title="查看系统使用指南与版本说明"
+            @click="showNoticeModal = true"
+          >
+            <HelpCircle class="w-3.5 h-3.5 text-indigo-500" />
+            <span class="hidden sm:inline">使用指南</span>
+          </button>
+
           <!-- 暗黑/亮色切换按钮 -->
           <button
             type="button"
