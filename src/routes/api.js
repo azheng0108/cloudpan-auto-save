@@ -928,7 +928,7 @@ const registerApiRoutes = (app, deps) => {
         const startTime = Date.now();
         let job = null;
         try {
-            const { accountId, bannedFiles, action, quarantinePath, cascadeCompanion, notifyEmby, pruneEmptyParent } = req.body || {};
+            const { accountId, bannedFiles, action, quarantinePath, cascadeCompanion, notifyEmby, pruneEmptyParent, scanJobId } = req.body || {};
             const actionTitle = action === 'quarantine' ? '违规文件隔离暂存' : '违规文件移入回收站';
             job = await MaintenanceJobService.createJob({
                 type: 'banned_clean',
@@ -955,15 +955,31 @@ const registerApiRoutes = (app, deps) => {
                 pruneEmptyParent
             });
 
-            const summary = `成功处置 ${result.cleanedCount} 个文件，释放空间 ${result.freedSizeFormatted} (耗时 ${(result.durationMs / 1000).toFixed(1)}s)`;
+            const durationMs = result.durationMs || (Date.now() - startTime);
+            const summary = `成功处置 ${result.cleanedCount} 个文件，释放空间 ${result.freedSizeFormatted} (耗时 ${(durationMs / 1000).toFixed(1)}s)`;
             if (job) {
                 await MaintenanceJobService.completeJob(job.id, {
                     status: 'cleaned',
                     summary,
-                    durationMs: result.durationMs,
+                    durationMs,
                     cleanedCount: result.cleanedCount,
                     freedFormatted: result.freedSizeFormatted,
                     cleanedDetails: result.details
+                });
+            }
+
+            if (result.cleanedCount > 0) {
+                const stillThereIds = new Set((result.stillThere || []).map(x => String(x.id)));
+                const cleanedFileIds = (bannedFiles || [])
+                    .map(f => String(f.id))
+                    .filter(id => !stillThereIds.has(id));
+
+                await MaintenanceJobService.recordBannedFilesCleaned({
+                    cleanedIds: cleanedFileIds,
+                    scanJobId,
+                    action,
+                    quarantinePath,
+                    freedFormatted: result.freedSizeFormatted
                 });
             }
 

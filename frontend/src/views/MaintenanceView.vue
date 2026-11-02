@@ -522,6 +522,14 @@ const selectedBannedSizeFormatted = computed(() => {
   return size + ' B';
 });
 
+function formatBytes(size?: number): string {
+  if (!size || size <= 0) return '0 B';
+  if (size >= 1024 * 1024 * 1024) return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  if (size >= 1024 * 1024) return (size / (1024 * 1024)).toFixed(2) + ' MB';
+  if (size >= 1024) return (size / 1024).toFixed(2) + ' KB';
+  return size + ' B';
+}
+
 // ─────────────────────────────────────────────────────────────
 // 网盘和谐与死链结果分类过滤 ('all' | 'harmonized' | 'deadlink')
 // ─────────────────────────────────────────────────────────────
@@ -538,9 +546,11 @@ const activeOrLatestBannedBatch = computed(() => {
 function syncHistoricalBannedJobsToBatches(jobs: MaintenanceJobItem[]) {
   const bannedJobs = jobs.filter(j => j.type === 'banned_scan');
   bannedJobs.forEach(j => {
-    const exists = bannedBatches.value.some(b => b.jobId === j.id || b.id === `job-${j.id}` || (Math.abs(b.timestamp - (j.timestamp ?? (j.createdAt ? new Date(j.createdAt).getTime() : 0))) < 5000));
+    const rawJobId = j.id;
+    const exists = bannedBatches.value.some(b => b.jobId === rawJobId || b.id === `job-${rawJobId}` || (Math.abs(b.timestamp - (j.timestamp ?? (j.createdAt ? new Date(j.createdAt).getTime() : 0))) < 5000));
     if (!exists) {
-      const bCount = j.bannedCount || 0;
+      const isCleaned = j.status === 'cleaned';
+      const bCount = isCleaned ? 0 : (j.bannedCount || 0);
       bannedBatches.value.push({
         id: `job-${j.id}`,
         jobId: j.id,
@@ -554,20 +564,36 @@ function syncHistoricalBannedJobsToBatches(jobs: MaintenanceJobItem[]) {
         scannedFolders: j.scannedFolders || 0,
         totalFiles: j.totalFiles || 0,
         bannedCount: bCount,
-        totalBannedSizeFormatted: j.freedFormatted || '0 B',
+        totalBannedSizeFormatted: isCleaned ? '0 B' : (j.freedFormatted || '0 B'),
         isExpanded: false,
         activeFilter: 'all',
         selectedIds: new Set(),
       });
+    } else {
+      // 存在时同步最新状态，避免历史已处置状态未刷新
+      const existingBatch = bannedBatches.value.find(b => b.jobId === rawJobId || b.id === `job-${rawJobId}`);
+      if (existingBatch) {
+        existingBatch.status = (j.status as any) || existingBatch.status;
+        if (j.status === 'cleaned') {
+          existingBatch.bannedCount = 0;
+          existingBatch.totalBannedSizeFormatted = '0 B';
+          if (existingBatch.findings && existingBatch.findings.length > 0) {
+            existingBatch.findings = [];
+          }
+          existingBatch.selectedIds.clear();
+        } else if (j.bannedCount !== undefined) {
+          existingBatch.bannedCount = j.bannedCount;
+        }
+      }
     }
   });
 
   // 按时间倒序排序
   bannedBatches.value.sort((a, b) => b.timestamp - a.timestamp);
 
-  // 默认展开：优先展开有违规检出 (bannedCount > 0) 的批次，让用户第一眼看到需要处理的内容
+  // 默认展开：仅当存在未处置的违规检出 (bannedCount > 0 且 status !== 'cleaned') 时才自动展开
   if (bannedBatches.value.length > 0 && !bannedBatches.value.some(b => b.isExpanded)) {
-    const target = bannedBatches.value.find(b => b.bannedCount > 0) || bannedBatches.value[0];
+    const target = bannedBatches.value.find(b => (b.bannedCount || 0) > 0 && b.status !== 'cleaned') || null;
     if (target) {
       toggleBannedBatchExpand(target);
     }
@@ -577,6 +603,10 @@ function syncHistoricalBannedJobsToBatches(jobs: MaintenanceJobItem[]) {
 async function toggleBannedBatchExpand(batch: BannedScanBatch) {
   batch.isExpanded = !batch.isExpanded;
   if (batch.isExpanded && !batch.findings && batch.jobId) {
+    if (batch.status === 'cleaned' || (batch.bannedCount || 0) === 0) {
+      batch.findings = [];
+      return;
+    }
     batch.isLoadingDetail = true;
     try {
       const jobDetail = await maintenanceApi.getJobDetail(batch.jobId);
@@ -586,6 +616,9 @@ async function toggleBannedBatchExpand(batch: BannedScanBatch) {
           files = jobDetail.findings as any;
         } else if ((jobDetail.findings as any).bannedFiles) {
           files = (jobDetail.findings as any).bannedFiles;
+        }
+        if (jobDetail.status === 'cleaned') {
+          files = [];
         }
         batch.findings = files;
         batch.bannedCount = files.length;
@@ -767,9 +800,12 @@ async function cleanBatchBannedFiles(batch: BannedScanBatch) {
   batch.isCleaning = true;
   const cleanStartTime = Date.now();
   try {
+    const rawId = String(batch.id || '');
+    const scanJobId = batch.jobId || (rawId.startsWith('job-') ? rawId.replace('job-', '') : undefined);
     const res = await maintenanceApi.cleanBanned({
       accountId: activeAccountId.value,
       bannedFiles: targets,
+      scanJobId,
       action: cleanAction.value,
       quarantinePath: quarantinePath.value.trim() || '/.quarantine',
       cascadeCompanion: cascadeCompanion.value,
@@ -806,20 +842,42 @@ async function cleanBatchBannedFiles(batch: BannedScanBatch) {
       addTombstones(res.tombstones);
     }
 
-    if (res.successCount > 0 && batch.findings) {
-      const stillPresentSet = new Set((res.stillThere || []).map((x: any) => x.id));
-      batch.findings = batch.findings.filter(f => stillPresentSet.has(f.id));
-      batch.bannedCount = batch.findings.length;
-      batch.selectedIds.clear();
-      if (batch.bannedCount === 0) {
-        batch.status = 'cleaned';
+    if (res.successCount > 0) {
+      const stillPresentSet = new Set((res.stillThere || []).map((x: any) => String(x.id)));
+      const cleanedIds = new Set(targets.filter(t => !stillPresentSet.has(String(t.id))).map(t => String(t.id)));
+
+      if (batch.findings) {
+        batch.findings = batch.findings.filter(f => !cleanedIds.has(String(f.id)));
+        batch.bannedCount = batch.findings.length;
+        batch.selectedIds.clear();
+        if (batch.bannedCount === 0) {
+          batch.status = 'cleaned';
+          batch.totalBannedSizeFormatted = '0 B';
+          batch.isExpanded = false; // 处置完毕后自动收起，不遮挡视线
+        }
       }
+
+      // 同步全局与当前扫描缓存
+      if (bannedScanResult.value && bannedScanResult.value.bannedFiles) {
+        bannedScanResult.value.bannedFiles = bannedScanResult.value.bannedFiles.filter(f => !cleanedIds.has(String(f.id)));
+        bannedScanResult.value.bannedCount = bannedScanResult.value.bannedFiles.length;
+        if (bannedScanResult.value.bannedCount === 0) {
+          bannedScanResult.value.totalBannedSize = 0;
+          bannedScanResult.value.totalBannedSizeFormatted = '0 B';
+        } else {
+          const newSize = bannedScanResult.value.bannedFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+          bannedScanResult.value.totalBannedSize = newSize;
+          bannedScanResult.value.totalBannedSizeFormatted = formatBytes(newSize);
+        }
+        saveBannedScanResult(bannedScanResult.value);
+      }
+      cleanedIds.forEach(id => selectedBannedIds.value.delete(id));
     }
   } catch (err: any) {
     ElMessage.error(`处置失败: ${err.message || '执行异常'}`);
   } finally {
     batch.isCleaning = false;
-    loadMaintenanceJobs();
+    await loadMaintenanceJobs();
   }
 }
 
@@ -842,9 +900,12 @@ async function cleanSingleBatchBannedItem(batch: BannedScanBatch, item: BannedFi
   saveCleanPref();
   const cleanStartTime = Date.now();
   try {
+    const rawId = String(batch.id || '');
+    const scanJobId = batch.jobId || (rawId.startsWith('job-') ? rawId.replace('job-', '') : undefined);
     const res = await maintenanceApi.cleanBanned({
       accountId: activeAccountId.value,
       bannedFiles: [item],
+      scanJobId,
       action: cleanAction.value,
       quarantinePath: quarantinePath.value.trim() || '/.quarantine',
       cascadeCompanion: cascadeCompanion.value,
@@ -868,18 +929,35 @@ async function cleanSingleBatchBannedItem(batch: BannedScanBatch, item: BannedFi
       });
 
       if (batch.findings) {
-        batch.findings = batch.findings.filter(f => f.id !== item.id);
+        batch.findings = batch.findings.filter(f => String(f.id) !== String(item.id));
         batch.bannedCount = batch.findings.length;
         batch.selectedIds.delete(item.id);
         if (batch.bannedCount === 0) {
           batch.status = 'cleaned';
+          batch.totalBannedSizeFormatted = '0 B';
+          batch.isExpanded = false;
         }
       }
+
+      if (bannedScanResult.value && bannedScanResult.value.bannedFiles) {
+        bannedScanResult.value.bannedFiles = bannedScanResult.value.bannedFiles.filter(f => String(f.id) !== String(item.id));
+        bannedScanResult.value.bannedCount = bannedScanResult.value.bannedFiles.length;
+        if (bannedScanResult.value.bannedCount === 0) {
+          bannedScanResult.value.totalBannedSize = 0;
+          bannedScanResult.value.totalBannedSizeFormatted = '0 B';
+        } else {
+          const newSize = bannedScanResult.value.bannedFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+          bannedScanResult.value.totalBannedSize = newSize;
+          bannedScanResult.value.totalBannedSizeFormatted = formatBytes(newSize);
+        }
+        saveBannedScanResult(bannedScanResult.value);
+      }
+      selectedBannedIds.value.delete(item.id);
     }
   } catch (err: any) {
     ElMessage.error(`处置单项失败: ${err.message || '执行异常'}`);
   } finally {
-    loadMaintenanceJobs();
+    await loadMaintenanceJobs();
   }
 }
 
@@ -2014,16 +2092,24 @@ async function loadMaintenanceJobs() {
     if (scanBatches.value.length > 0 && !scanBatches.value.some(b => b.isExpanded)) {
       toggleBatchExpand(scanBatches.value[0]);
     }
-    // 自动将最近一次已完成的违规巡检检出数据水合至主视图，杜绝进入界面空白、需要用户手动去历史记录查找点击载入
-    if (!bannedScanResult.value || !bannedScanResult.value.bannedFiles || bannedScanResult.value.bannedFiles.length === 0) {
-      const latestBannedJob = maintenanceJobs.value.find((j) => j.type === 'banned_scan' && (j.status === 'completed' || j.status === 'cleaned'));
-      if (latestBannedJob && (latestBannedJob.bannedCount || 0) > 0) {
-        try {
-          const detail = await maintenanceApi.getJobDetail(latestBannedJob.id);
-          if (detail && detail.findings && detail.findings.length > 0) {
-            loadJobFindingsIntoInspection(detail, true);
-          }
-        } catch (_) {}
+    // 自动将最近一次未完成/有待处置违规的巡检数据水合至主视图
+    const latestPendingBannedJob = maintenanceJobs.value.find((j) => j.type === 'banned_scan' && j.status === 'completed' && (j.bannedCount || 0) > 0);
+    if (latestPendingBannedJob) {
+      try {
+        const detail = await maintenanceApi.getJobDetail(latestPendingBannedJob.id);
+        if (detail && detail.findings && detail.findings.length > 0) {
+          loadJobFindingsIntoInspection(detail, true);
+        }
+      } catch (_) {}
+    } else {
+      // 若没有未处理的违规巡检记录（全部已处置或无违规）
+      // 如果当前缓存或状态中仍有残留违规，彻底重置为健康状态，防止旧缓存导致死灰复燃弹出已处置文件
+      if (bannedScanResult.value && (bannedScanResult.value.bannedCount || 0) > 0) {
+        bannedScanResult.value.bannedFiles = [];
+        bannedScanResult.value.bannedCount = 0;
+        bannedScanResult.value.totalBannedSize = 0;
+        bannedScanResult.value.totalBannedSizeFormatted = '0 B';
+        saveBannedScanResult(bannedScanResult.value);
       }
     }
   } catch (err: any) {
@@ -4476,11 +4562,17 @@ onUnmounted(() => {
                   <!-- 违规检出状态 -->
                   <template v-else>
                     <span
-                      v-if="batch.bannedCount > 0"
+                      v-if="batch.bannedCount > 0 && batch.status !== 'cleaned'"
                       class="px-2 py-0.5 rounded-md font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60"
                     >
                       发现违规 {{ batch.bannedCount }} 项
                       <span class="font-normal font-mono">({{ batch.totalBannedSizeFormatted }})</span>
+                    </span>
+                    <span
+                      v-else-if="batch.status === 'cleaned'"
+                      class="px-2 py-0.5 rounded-md font-medium bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60"
+                    >
+                      已全部处置
                     </span>
                     <span
                       v-else
@@ -4697,9 +4789,13 @@ onUnmounted(() => {
 
               <!-- 批次健康 (0 违规) -->
               <div v-else class="p-8 text-center text-slate-500 space-y-2">
-                <CheckCircle2 class="w-10 h-10 mx-auto text-emerald-500" />
-                <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-200">云盘资产状态健康</h4>
-                <p class="text-xs text-slate-400">此轮巡检未发现任何违规占位或失效死链文件</p>
+                <CheckCircle2 class="w-10 h-10 mx-auto" :class="batch.status === 'cleaned' ? 'text-purple-500' : 'text-emerald-500'" />
+                <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  {{ batch.status === 'cleaned' ? '此批次违规文件已处置完毕' : '云盘资产状态健康' }}
+                </h4>
+                <p class="text-xs text-slate-400">
+                  {{ batch.status === 'cleaned' ? '该批次检出的所有违规死链文件此前已成功移入隔离区或回收站，无残留未决项目' : '此轮巡检未发现任何违规占位或失效死链文件' }}
+                </p>
               </div>
             </div>
           </div>

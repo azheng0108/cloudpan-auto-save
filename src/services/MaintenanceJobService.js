@@ -119,6 +119,7 @@ class MaintenanceJobService {
     static async listJobs(options = {}) {
         try {
             await this.cleanupZombieJobs();
+            await this.reconcileCleanedBannedScanJobs();
             const repo = getMaintenanceJobRepository();
             const limit = Math.min(Math.max(parseInt(options.limit) || 30, 1), 100);
             const offset = Math.max(parseInt(options.offset) || 0, 0);
@@ -358,6 +359,105 @@ class MaintenanceJobService {
         } catch (err) {
             logger.error(`[维护作业审计] 删除作业 #${id} 失败: ${err.message}`);
             return false;
+        }
+    }
+
+    /**
+     * 当违规文件被处置（移至隔离区或移入回收站）后，同步更新关联的违规巡检作业 (banned_scan)
+     */
+    static async recordBannedFilesCleaned(options = {}) {
+        const cleanedIds = new Set((options.cleanedIds || []).map(id => String(id)));
+        if (cleanedIds.size === 0) return;
+        const action = options.action === 'quarantine' ? 'quarantine' : 'trash';
+        const actionText = action === 'quarantine' ? '移至隔离区' : '移入回收站';
+        const repo = getMaintenanceJobRepository();
+        
+        try {
+            // 获取所有包含违规检出的 banned_scan 作业
+            const scanJobs = await repo.find({
+                where: { type: 'banned_scan' }
+            });
+
+            for (const job of scanJobs) {
+                if (!job.findingsJson) continue;
+                let findings = [];
+                try {
+                    findings = JSON.parse(job.findingsJson);
+                } catch (_) {
+                    continue;
+                }
+                if (!Array.isArray(findings) || findings.length === 0) {
+                    if (job.status !== 'cleaned' && (job.bannedCount || 0) > 0) {
+                        job.status = 'cleaned';
+                        job.bannedCount = 0;
+                        await repo.save(job);
+                    }
+                    continue;
+                }
+
+                const originalCount = findings.length;
+                const remaining = findings.filter(f => !cleanedIds.has(String(f.id)));
+                const removedCount = originalCount - remaining.length;
+
+                if (removedCount > 0) {
+                    job.findingsJson = JSON.stringify(remaining);
+                    job.bannedCount = remaining.length;
+                    job.cleanedCount = (job.cleanedCount || 0) + removedCount;
+                    if (remaining.length === 0) {
+                        job.status = 'cleaned';
+                        job.summary = `${job.title || '违规巡检'}：检出的违规文件已全额处置（${actionText}）`;
+                    } else {
+                        job.summary = `${job.title || '违规巡检'}：已处置 ${job.cleanedCount} 项，剩余 ${remaining.length} 项违规待处理`;
+                    }
+                    await repo.save(job);
+                    logger.info(`[维护作业审计] 同步更新巡检作业 #${job.id}：已消除 ${removedCount} 项处置文件，剩余 ${remaining.length} 项 (status: ${job.status})`);
+                }
+            }
+        } catch (err) {
+            logger.error(`[维护作业审计] 同步违规处置状态到巡检作业失败: ${err.message}`);
+        }
+    }
+
+    /**
+     * 自动对账与自愈：排查历史上已处置成功的 clean 作业，若存在早期 scan 作业仍保留已处置文件，自动核销
+     */
+    static async reconcileCleanedBannedScanJobs() {
+        try {
+            const repo = getMaintenanceJobRepository();
+            // 查询所有状态仍为 completed 且 bannedCount > 0 的 banned_scan 作业
+            const uncleanedScanJobs = await repo.find({
+                where: { type: 'banned_scan', status: 'completed' }
+            });
+            if (!uncleanedScanJobs || uncleanedScanJobs.length === 0) return;
+
+            // 查询所有已完成的 banned_clean 作业
+            const cleanJobs = await repo.find({
+                where: { type: 'banned_clean', status: 'cleaned' }
+            });
+            if (!cleanJobs || cleanJobs.length === 0) return;
+
+            for (const scanJob of uncleanedScanJobs) {
+                if ((scanJob.bannedCount || 0) <= 0) {
+                    scanJob.status = 'cleaned';
+                    await repo.save(scanJob);
+                    continue;
+                }
+                // 查找在这个 scanJob 之后创建的 cleanJobs
+                const subsequentCleans = cleanJobs.filter(c => new Date(c.createdAt) >= new Date(scanJob.createdAt));
+                const totalCleanedSince = subsequentCleans.reduce((sum, c) => sum + (c.cleanedCount || 0), 0);
+
+                if (totalCleanedSince >= (scanJob.bannedCount || 0) && totalCleanedSince > 0) {
+                    scanJob.status = 'cleaned';
+                    scanJob.bannedCount = 0;
+                    scanJob.cleanedCount = Math.max(scanJob.cleanedCount || 0, totalCleanedSince);
+                    scanJob.findingsJson = '[]';
+                    scanJob.summary = `${scanJob.title || '违规巡检'}：检出的违规文件已处置完毕（移入隔离区或回收站）`;
+                    await repo.save(scanJob);
+                    logger.info(`[维护作业审计] 自动核销已处置历史巡检作业 #${scanJob.id} -> cleaned (已处置 ${totalCleanedSince} 项)`);
+                }
+            }
+        } catch (err) {
+            logger.warn(`[维护作业审计] 自动对账巡检记录失败: ${err.message}`);
         }
     }
 }

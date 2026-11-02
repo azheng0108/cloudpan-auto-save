@@ -233,6 +233,7 @@ export const maintenanceApi = {
   cleanBanned(data: {
     accountId?: number | string;
     bannedFiles: any[];
+    scanJobId?: number | string;
     action?: 'trash' | 'quarantine';
     quarantinePath?: string;
     cascadeCompanion?: boolean;
