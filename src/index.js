@@ -1,5 +1,6 @@
 require('dotenv').config();
 require('express-async-errors');
+const fs = require('fs');
 const express = require('express');
 const { AppDataSource } = require('./database');
 const { Account, Task, CommonFolder, TransferredFile, TaskError } = require('./entities');
@@ -15,7 +16,6 @@ const { initSSE, cleanupSSEConnections } = require('./utils/logUtils');
 const TelegramBotManager = require('./utils/TelegramBotManager');
 const { registerRoutes } = require('./routes');
 const path = require('path');
-const { setupCloudSaverRoutes } = require('./sdk/cloudsaver');
 const cors = require('cors');
 const logger = require('./utils/logger');
 
@@ -40,8 +40,11 @@ const corsOptionsDelegate = (req, callback) => {
     const allowAll = allowedSet.has('*');
 
     let originHost = '';
+    let originHostname = '';
     try {
-        originHost = new URL(origin).host.toLowerCase();
+        const parsed = new URL(origin);
+        originHost = parsed.host.toLowerCase();
+        originHostname = parsed.hostname.toLowerCase();
     } catch (_) {
         const error = new Error('CORS来源格式无效');
         error.status = 403;
@@ -49,10 +52,14 @@ const corsOptionsDelegate = (req, callback) => {
         return callback(error);
     }
 
+    const requestHostname = requestHostRaw.split(':')[0];
     const isSameHost = requestHostRaw && originHost === requestHostRaw;
-    const isInAllowList = allowedSet.has(origin.toLowerCase());
+    const isInAllowList = allowedSet.has(origin.toLowerCase()) || allowedSet.has(originHost);
+    const isLocalhost = originHostname === 'localhost' || originHostname === '127.0.0.1' || originHostname === '::1';
+    const isSameHostname = requestHostname && originHostname === requestHostname;
+    const isDev = process.env.NODE_ENV !== 'production';
 
-    if (allowAll || isSameHost || isInAllowList) {
+    if (allowAll || isSameHost || isInAllowList || isLocalhost || isSameHostname || isDev) {
         return callback(null, {
             origin: true,
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
@@ -68,7 +75,8 @@ const corsOptionsDelegate = (req, callback) => {
 };
 
 app.use(cors(corsOptionsDelegate));
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 const sessionSecret = ConfigService.getOrCreateSessionSecret();
 app.use(session({
@@ -140,6 +148,11 @@ AppDataSource.initialize().then(async () => {
     logger.info(`当前系统版本: ${currentVersion}`);
     logger.info('数据库连接成功');
 
+    try {
+        const { OrganizeProtectionService } = require('./services/OrganizeProtectionService');
+        await OrganizeProtectionService.initFromDatabase(AppDataSource);
+    } catch (_) {}
+
     const accountRepo = AppDataSource.getRepository(Account);
     const taskRepo = AppDataSource.getRepository(Task);
     const commonFolderRepo = AppDataSource.getRepository(CommonFolder);
@@ -161,7 +174,13 @@ AppDataSource.initialize().then(async () => {
     await SchedulerService.initTaskJobs(taskRepo, taskService);
 
     registerRoutes(app, {
-        publicDir: path.join(__dirname, 'public'),
+        publicDir: (() => {
+        const frontendDist = path.resolve(process.cwd(), 'frontend', 'dist');
+        const distPublic = path.resolve(process.cwd(), 'dist', 'public');
+        return fs.existsSync(frontendDist)
+            ? frontendDist
+            : (fs.existsSync(distPublic) ? distPublic : path.join(__dirname, 'public'));
+    })(),
         currentVersion,
         assetVersion,
         accountRepo,
@@ -175,9 +194,6 @@ AppDataSource.initialize().then(async () => {
         folderCache,
     });
     initSSE(app)
-
-    // 初始化cloudsaver
-    setupCloudSaverRoutes(app);
 
     // 全局错误处理中间件（必须在路由之后）
     app.use((err, req, res, next) => {

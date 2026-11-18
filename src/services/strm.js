@@ -3,14 +3,14 @@ const path = require('path');
 const ConfigService = require('./ConfigService');
 const { logTaskEvent } = require('../utils/logUtils');
 const CryptoUtils = require('../utils/cryptoUtils');
-const alistService = require('./alistService');
 const { MessageUtil } = require('./message');
 const logger = require('../utils/logger');
 
 class StrmService {
     constructor() {
         this.enable = ConfigService.getConfigValue('strm.enable');
-        this.baseDir = path.join(__dirname + '../../../strm');
+        const configuredDir = ConfigService.getConfigValue('strm.outputDir');
+        this.baseDir = configuredDir ? path.resolve(configuredDir) : path.resolve(process.cwd(), 'strm');
         // 从环境变量获取 PUID 和 PGID，默认值设为 0
         this.puid = process.env.PUID || 0;
         this.pgid = process.env.PGID || 0;
@@ -19,28 +19,21 @@ class StrmService {
 
     // 确保目录存在并设置权限和组，递归创建的所有目录都设置为 777 权限
     async _ensureDirectoryExists(dirPath) {
-        // 确保使用相对路径
-        const relativePath = dirPath.startsWith(this.baseDir) 
-            ? path.relative(this.baseDir, dirPath)
-            : dirPath;
-            
-        const parts = relativePath.split(path.sep);
-        let currentPath = this.baseDir;  // 从基础目录开始
-
-        for (const part of parts) {
-            if (part) {
-                currentPath = path.join(currentPath, part);
+        try {
+            await fs.mkdir(dirPath, { recursive: true });
+            if (process.getuid && process.getuid() === 0) {
                 try {
-                    await fs.mkdir(currentPath);
-                    if (process.getuid && process.getuid() === 0) {
-                        await fs.chown(currentPath, parseInt(this.puid), parseInt(this.pgid));
-                    }
-                    await fs.chmod(currentPath, 0o777);
-                } catch (error) {
-                    if (error.code !== 'EEXIST') {
-                        throw new Error(`创建目录失败: ${error.message}`);
-                    }
-                }
+                    await fs.chown(dirPath, parseInt(this.puid), parseInt(this.pgid));
+                } catch (_) {}
+            }
+            if (process.platform !== 'win32') {
+                try {
+                    await fs.chmod(dirPath, 0o777);
+                } catch (_) {}
+            }
+        } catch (error) {
+            if (error.code !== 'EEXIST') {
+                throw new Error(`创建目录失败: ${error.message}`);
             }
         }
     }
@@ -56,6 +49,15 @@ class StrmService {
         if (!this.enable){
             logTaskEvent(`STRM生成未启用, 请启用后执行`);
             return;
+        }
+
+        // 若传入的文件自带 targetFolderPath（如 TMDB 规范整理归档文件），无缝分流至工业级整理多目录生成
+        if (Array.isArray(files) && files.some(f => Boolean(f.targetFolderPath))) {
+            return this.generateForOrganizedFiles(files, {
+                overwrite,
+                accountId: task?.accountId || task?.account?.id,
+                defaultTargetFolderName: task?.realFolderName || ''
+            });
         }
         logTaskEvent(`${task.resourceName} 开始生成STRM文件, 总文件数: ${files.length}`);
         const results = [];
@@ -138,7 +140,7 @@ class StrmService {
             failed++
         }
         // 记录文件总数, 成功数, 失败数, 跳过数
-        const message = `🎉${task.resourceName} 生成STRM文件完成, 总文件数: ${files.length}, 成功数: ${success}, 失败数: ${failed}, 跳过数: ${skipped}`
+        const message = `[STRM] ${task.resourceName} 生成STRM文件完成, 总文件数: ${files.length}, 成功数: ${success}, 失败数: ${failed}, 跳过数: ${skipped}`
         logTaskEvent(message);
         return message;
     }
@@ -175,7 +177,7 @@ class StrmService {
                 await this._processDirectory(startPath, account, stats, mediaSuffixs, overwrite);
                 const userrname = account.username.replace(/(.{3}).*(.{4})/, '$1****$2');
                 // 生成最终统计信息
-                const message = `🎉账号: ${userrname}生成STRM文件完成\n` +
+                const message = `[STRM] 账号: ${userrname}生成STRM文件完成\n` +
                               `处理目录数: ${stats.processedDirs.size}\n` +
                               `总文件数: ${stats.totalFiles}\n` +
                               `成功数: ${stats.success}\n` +
@@ -299,6 +301,52 @@ class StrmService {
     }
 
     /**
+     * 递归列出 baseDir 下全部已生成的 .strm 文件绝对路径
+     * @param {string} dirPath
+     * @returns {Promise<string[]>}
+     */
+    async listAllStrmFilesRecursive(dirPath = this.baseDir) {
+        const results = [];
+        const scan = async (targetDir) => {
+            try {
+                const items = await fs.readdir(targetDir, { withFileTypes: true });
+                for (const item of items) {
+                    const fullPath = path.join(targetDir, item.name);
+                    if (item.isDirectory()) {
+                        await scan(fullPath);
+                    } else if (item.isFile() && path.extname(item.name).toLowerCase() === '.strm') {
+                        results.push(fullPath);
+                    }
+                }
+            } catch (_) {}
+        };
+        await scan(dirPath);
+        return results;
+    }
+
+    /**
+     * 递归修剪 STRM 根目录下的空目录
+     * @param {string} dirPath
+     */
+    async cleanEmptyDirs(dirPath = this.baseDir) {
+        try {
+            const items = await fs.readdir(dirPath, { withFileTypes: true });
+            for (const item of items) {
+                if (item.isDirectory()) {
+                    const sub = path.join(dirPath, item.name);
+                    await this.cleanEmptyDirs(sub);
+                }
+            }
+            if (dirPath !== this.baseDir) {
+                const remaining = await fs.readdir(dirPath);
+                if (remaining.length === 0) {
+                    await fs.rmdir(dirPath).catch(() => {});
+                }
+            }
+        } catch (_) {}
+    }
+
+    /**
      * 删除STRM文件
      * @param {string} fileName - 原始文件名
      * @returns {Promise<void>}
@@ -410,11 +458,12 @@ class StrmService {
             }
         }));
     }
+
     //检查文件是否是媒体文件
     _checkFileSuffix(file, mediaSuffixs) {
-         // 获取文件后缀
-         const fileExt = '.' + file.name.split('.').pop().toLowerCase();
-         return mediaSuffixs.includes(fileExt)
+        // 获取文件后缀
+        const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+        return mediaSuffixs.includes(fileExt);
     }
 
     _joinUrl(base, path) {
@@ -427,12 +476,10 @@ class StrmService {
 
     // 根据文件名获取STRM文件路径
     getStrmPath(task) {
-        // 使用完整 realFolderName（不裁剪目标目录前缀），normalize Windows 反斜杠
         let taskName = (task.realFolderName || '').replace(/\\/g, '/').replace(/^\/|\/$/g, '');
         const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || task.account?.localStrmPrefix || '';
         const cloudStrmPrefix = ConfigService.getConfigValue('strm.cloudStrmPrefix') || task.account?.cloudStrmPrefix || '';
         if (!this.enable){
-            // 如果cloudStrmPrefix存在 且不是url地址
             if (cloudStrmPrefix && !cloudStrmPrefix.startsWith('http')) {
                 return path.join(cloudStrmPrefix, taskName);
             }
@@ -441,6 +488,287 @@ class StrmService {
         }
         return '';
     }
-}
+                 /**
+     * 从 .strm 文件的文本内容中提取 139 云盘 fileId
+     * @param {string} content - .strm 文件内容
+     * @returns {string|null}
+     */
+    static extractFileIdFromStrmContent(content) {
+        if (!content || typeof content !== 'string') return null;
+        // 匹配 /api/strm/stream/{fileId} 或 /play/{fileId}
+        const match = content.match(/(?:\/api\/strm\/stream\/|\/play\/)([a-zA-Z0-9_\-]+)/i);
+        return match ? match[1] : null;
+    }
 
+    /**
+     * 默认视频扩展名列表 (TgtoDrive 标准对标)
+     */
+    static get DEFAULT_VIDEO_EXTS() {
+        return ['.mp4', '.mkv', '.avi', '.ts', '.iso', '.flv', '.mov', '.wmv', '.rmvb', '.m4v', '.strm', '.mpg', '.mpeg', '.vob', '.m2ts', '.webm', '.3gp'];
+    }
+
+    /**
+     * 为 TMDB 规范整理归档后的文件列表批量生成本地 .strm 文件
+     * 采用一致性直链封装技术：
+     * 1. 物理目录结构 100% 镜像媒体库层级（如：剧集/国漫/片名 (年份) {tmdb-id}/Season 01/）
+     * 2. 播放流支持两种模式：
+     *    - direct302 (默认推荐): 139 官方 CDN 302 原生直链（免中间件，零宿主机带宽消耗）
+     *    - custom: AList / OpenList / WebDAV 挂载前缀 URL
+     * 
+     * @param {Array<object>} files - 归档文件列表 [{ fileId, originalName, finalName, targetFolderPath, size, tmdbId, ... }]
+     * @param {object} [options] - 选项 { overwrite, accountId, defaultTargetFolderName, videoSuffixes, minSizeMB, strmBaseUrl, cleanEmptyDirs, cleanObsolete }
+     * @returns {Promise<{ success: boolean, total: number, successCount: number, skippedCount: number, failedCount: number, results: Array }>}
+     */
+    async generateForOrganizedFiles(files, options = {}) {
+        if (!Array.isArray(files) || files.length === 0) {
+            return { success: true, total: 0, successCount: 0, skippedCount: 0, failedCount: 0, results: [] };
+        }
+
+        const overwrite = options.overwrite ?? options.forceAll ?? false;
+
+        // 1. 视频扩展名规范化（支持从 options 或配置读取，对标 TgtoDrive 17 种格式）
+        const rawVideoSuffixes = options.videoSuffixes ?? ConfigService.getConfigValue('strm.videoSuffixes') ?? ConfigService.getConfigValue('task.mediaSuffix');
+        const mediaSuffixes = (Array.isArray(rawVideoSuffixes)
+            ? rawVideoSuffixes
+            : (typeof rawVideoSuffixes === 'string' ? rawVideoSuffixes.split(/[;,]/) : StrmService.DEFAULT_VIDEO_EXTS)
+        )
+            .map(s => String(s).trim().toLowerCase().replace(/^\./, ''))
+            .filter(Boolean)
+            .map(s => '.' + s);
+
+        // 2. 小视频跳过阈值 (MB, 0 为不限制)
+        const minSizeMB = Number(options.minSizeMB ?? ConfigService.getConfigValue('strm.minSizeMB') ?? 0);
+
+        // 3. 基础地址与模式
+        const localStrmPrefix = ConfigService.getConfigValue('strm.localStrmPrefix') || '';
+        const cloudStrmPrefix = ConfigService.getConfigValue('strm.cloudStrmPrefix') || '';
+        const stripRootTargetDir = ConfigService.getConfigValue('strm.stripRootTargetDir') !== false;
+        const defaultTargetFolderName = (options.defaultTargetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName') || '目标目录')
+            .replace(/^\/+|\/+$/g, '');
+
+        // 优先使用用户配置的 STRM 播放服务基础地址（如 http://192.168.1.100:3000）
+        const configuredStrmBaseUrl = options.strmBaseUrl || ConfigService.getConfigValue('system.baseUrl') || ConfigService.getConfigValue('strm.strmBaseUrl') || 'http://127.0.0.1:3000';
+        const strmBaseUrl = configuredStrmBaseUrl.replace(/\/+$/, '');
+        const accountId = options.accountId || '';
+
+        // 4. 清理空目录开关（开启清理失效 .strm 和空目录；关闭只清理 .strm）
+        const cleanEmptyDirs = options.cleanEmptyDirs ?? ConfigService.getConfigValue('strm.cleanEmptyDirs') !== false;
+
+        let successCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
+        const results = [];
+
+        const fullOutputDir = path.join(this.baseDir, localStrmPrefix);
+        const startWriteMsg = `[STRM生成] 开始为 ${files.length} 个媒体文件写入本地 STRM (保存路径: ${fullOutputDir}, 播放地址: ${strmBaseUrl}, 小视频阈值: ${minSizeMB > 0 ? minSizeMB + 'MB' : '不限制'})`;
+        logTaskEvent(startWriteMsg);
+        logger.info(startWriteMsg);
+
+        let cleanedObsoleteCount = 0;
+        if (options.cleanObsolete) {
+            try {
+                logTaskEvent(`[STRM生成] 启动失效旧映射比对 (本地路径: ${this.baseDir})...`);
+                const existingStrmFiles = await this.listAllStrmFilesRecursive(this.baseDir);
+                const currentExpectedStrmNames = new Set(files.map(f => {
+                    const n = f.finalName || f.name || f.originalName || '';
+                    return path.parse(n).name.toLowerCase();
+                }));
+                for (const existingFile of existingStrmFiles) {
+                    const parsed = path.parse(existingFile);
+                    if (!currentExpectedStrmNames.has(parsed.name.toLowerCase())) {
+                        await fs.unlink(existingFile).catch(() => {});
+                        cleanedObsoleteCount++;
+                        logger.info(`[STRM生成] 清理失效旧映射文件: ${existingFile}`);
+                    }
+                }
+                if (cleanEmptyDirs) {
+                    await this.cleanEmptyDirs(this.baseDir);
+                }
+                if (cleanedObsoleteCount > 0) {
+                    const cleanDoneMsg = `[STRM生成] 失效旧映射清理完成: 共清理 ${cleanedObsoleteCount} 个失效 STRM 文件${cleanEmptyDirs ? '及残留空目录' : ''}`;
+                    logTaskEvent(cleanDoneMsg);
+                    logger.info(cleanDoneMsg);
+                } else {
+                    const cleanNoneMsg = `[STRM生成] 本地旧映射比对完毕: 未发现失效 STRM 文件 (共比对本地 ${existingStrmFiles.length} 项)`;
+                    logTaskEvent(cleanNoneMsg);
+                    logger.info(cleanNoneMsg);
+                }
+            } catch (pruneErr) {
+                const pruneErrMsg = `[STRM生成] 清理失效映射失败: ${pruneErr.message}`;
+                logger.error(pruneErrMsg);
+                logTaskEvent(pruneErrMsg);
+            }
+        }
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const fileName = file.finalName || file.name || file.originalName;
+            if (!fileName) continue;
+
+            const parsedPath = path.parse(fileName);
+            const ext = parsedPath.ext.toLowerCase();
+
+            // 仅对视频媒体文件生成 .strm
+            if (!mediaSuffixes.includes(ext)) {
+                skippedCount++;
+                continue;
+            }
+
+            // 小视频跳过阈值校验
+            const fileSize = Number(file.size || 0);
+            if (minSizeMB > 0 && fileSize > 0 && fileSize < minSizeMB * 1024 * 1024) {
+                const sizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+                logger.info(`[STRM生成] 小视频跳过: ${fileName} (${sizeMB} MB < 阈值 ${minSizeMB} MB)`);
+                skippedCount++;
+                results.push({
+                    originalFile: fileName,
+                    status: 'skipped',
+                    reason: `小视频跳过 (${sizeMB} MB < ${minSizeMB} MB)`
+                });
+                continue;
+            }
+
+            try {
+                // 计算相对归档路径 (例如: 目标目录/剧集/国漫/片名 (2026) {tmdb-123}/Season 01)
+                let rawTargetFolder = (file.targetFolderPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+                
+                // 若开启了顶层目标目录剥离（且路径以默认目标目录开头），将其剥离，使根目录直接为 剧集/ 或 电影/
+                let relativePath = rawTargetFolder;
+                if (stripRootTargetDir && defaultTargetFolderName && (relativePath === defaultTargetFolderName || relativePath.startsWith(defaultTargetFolderName + '/'))) {
+                    relativePath = relativePath.slice(defaultTargetFolderName.length).replace(/^\/+/, '');
+                }
+
+                // 目标在宿主机上的 STRM 目录
+                const fileTargetDir = path.join(this.baseDir, localStrmPrefix, relativePath);
+                await this._ensureDirectoryExists(fileTargetDir);
+
+                const fileNameWithoutExt = parsedPath.name;
+                const strmFilePath = path.join(fileTargetDir, `${fileNameWithoutExt}.strm`);
+
+                // 检查是否已存在
+                let fileExists = false;
+                try {
+                    await fs.access(strmFilePath);
+                    fileExists = true;
+                } catch (_) {}
+
+                if (fileExists && !overwrite) {
+                    skippedCount++;
+                    results.push({
+                        originalFile: fileName,
+                        strmFile: `${fileNameWithoutExt}.strm`,
+                        path: strmFilePath,
+                        status: 'skipped'
+                    });
+                    continue;
+                }
+
+                // 生成 STRM 内容（单行 URL，写入 139 官方 CDN 原生 302 播放直链）
+                const content = StrmService.buildStrmUrl(file, {
+                    strmBaseUrl,
+                    accountId,
+                    relativePath,
+                    rawTargetFolder,
+                    defaultTargetFolderName,
+                    cloudStrmPrefix
+                });
+
+                await fs.writeFile(strmFilePath, content, 'utf8');
+
+                if (process.getuid && process.getuid() === 0) {
+                    try {
+                        await fs.chown(strmFilePath, parseInt(this.puid), parseInt(this.pgid));
+                    } catch (_) {}
+                }
+                if (process.platform !== 'win32') {
+                    try {
+                        await fs.chmod(strmFilePath, 0o777);
+                    } catch (_) {}
+                }
+
+                successCount++;
+                results.push({
+                    originalFile: fileName,
+                    strmFile: `${fileNameWithoutExt}.strm`,
+                    path: strmFilePath,
+                    content,
+                    status: 'success'
+                });
+                logger.info(`[STRM生成] 写入成功: ${strmFilePath} -> ${content}`);
+
+                // 每 50 个或第一项、最后一项在任务日志中广播进度
+                const processedSoFar = successCount + skippedCount + failedCount;
+                if (processedSoFar === 1 || processedSoFar % 50 === 0 || processedSoFar === files.length) {
+                    logTaskEvent(`[STRM生成] 正在写入 STRM: 进度 ${processedSoFar}/${files.length} (${fileNameWithoutExt}.strm)`);
+                }
+            } catch (err) {
+                failedCount++;
+                logger.error(`[STRM生成] 写入失败: ${fileName}`, { error: err.message });
+                logTaskEvent(`[STRM生成] 写入失败: ${fileName}, 错误: ${err.message}`);
+                results.push({
+                    originalFile: fileName,
+                    error: err.message,
+                    status: 'failed'
+                });
+            }
+        }
+
+        const summary = `[STRM生成] 文件写入完成: 成功 ${successCount} 个, 跳过 ${skippedCount} 个, 失败 ${failedCount} 个 (总数: ${files.length})，保存路径: ${fullOutputDir}`;
+        logTaskEvent(summary);
+        logger.info(summary);
+
+        return {
+            success: failedCount === 0,
+            total: files.length,
+            totalFiles: files.length,
+            successCount,
+            generatedStrm: successCount,
+            skippedCount,
+            skipped: skippedCount,
+            failedCount,
+            errors: failedCount,
+            outputDir: fullOutputDir,
+            cleanedObsoleteCount,
+            results
+        };
+    }
+
+    /**
+     * 构建单个媒体文件的 STRM 播放直链 URL (139 官方 CDN 原生 302 直链播放)
+     * 
+     * @param {object} file - 文件对象 { fileId, name, finalName, ... }
+     * @param {object} context - 上下文配置 { strmBaseUrl, accountId }
+     * @returns {string} 单行 STRM URL
+     */
+    static buildStrmUrl(file, context = {}) {
+        const fileId = file.fileId || file.id || '';
+        const fileName = file.finalName || file.name || file.originalName || '';
+        const accountId = context.accountId || file.accountId || '';
+
+        // 139 官方 CDN 原生 302 直链播放
+        const streamMode = ConfigService.getConfigValue('strm.streamMode') || 'direct302';
+        const cloudStrmPrefix = context.cloudStrmPrefix || ConfigService.getConfigValue('strm.cloudStrmPrefix') || '';
+        if (streamMode === 'custom' && cloudStrmPrefix) {
+            const defaultTargetFolderName = (context.defaultTargetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName') || '目标目录').replace(/^\/+|\/+$/g, '');
+            const joinFolder = cloudStrmPrefix.endsWith(defaultTargetFolderName) ? (context.relativePath || '') : (context.rawTargetFolder || '');
+            return StrmService._joinUrlStatic(StrmService._joinUrlStatic(cloudStrmPrefix, joinFolder), fileName);
+        }
+
+        // 139 官方 CDN 原生 302 直链播放
+        const configuredStrmBaseUrl = context.strmBaseUrl || ConfigService.getConfigValue('system.baseUrl') || ConfigService.getConfigValue('strm.strmBaseUrl') || 'http://127.0.0.1:3000';
+        const strmBaseUrl = configuredStrmBaseUrl.replace(/\/+$/, '');
+        const queryParams = [];
+        if (accountId) queryParams.push(`accountId=${accountId}`);
+        const queryStr = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+        return `${strmBaseUrl}/api/strm/stream/${fileId}/${encodeURIComponent(fileName)}${queryStr}`;
+    }
+
+    static _joinUrlStatic(base, p) {
+        base = (base || '').replace(/\/$/, '');
+        p = (p || '').replace(/^\//, '');
+        if (!base) return p;
+        if (!p) return base;
+        return `${base}/${p}`;
+    }
+}
 module.exports = { StrmService };
