@@ -741,17 +741,20 @@ onUnmounted(() => {
       <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 space-y-2 mb-4">
         <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
           <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-          <span>139 移动云盘多号绑定与 Cookie 获取指引</span>
+          <span>139 移动云盘多号绑定与 Authorization 凭据获取指引</span>
         </div>
         <ul class="space-y-1.5 pl-1 leading-relaxed text-slate-600 dark:text-slate-300">
           <li>
             • <strong>适用场景与多号轮询</strong>：系统转存追更影视时优先使用<strong class="text-slate-800 dark:text-slate-100">默认账号（带金星标记）</strong>；当默认账号容量耗尽时支持智能切换备选账号，实现平滑多号分流转存。
           </li>
           <li>
-            • <strong>Cookie 获取方法（电脑端快捷操作）</strong>：在电脑浏览器打开 <a href="https://yun.139.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-0.5">yun.139.com <ExternalLink class="w-3 h-3 inline" /></a> 并扫码登录，按键盘 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">F12</code> 打开开发者工具，切换至“网络 (Network)”面板，刷新网页后点击任意请求，在右侧“标头 (Headers)”中完整复制包含 <code class="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">authorization=</code> 的完整 Cookie 字符串即可。
+            • <strong>方式一：应用面板获取（推荐）</strong>：电脑打开 <a href="https://yun.139.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-0.5">yun.139.com <ExternalLink class="w-3 h-3 inline" /></a> 登录后按 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">F12</code> ➔「应用 (Application)」➔「存储」➔「Cookie」➔ 找到 <code class="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">authorization</code> 复制对应的值即可。
           </li>
           <li>
-            • <strong>保活与失效处理</strong>：本系统已内置全天候自动心跳保活；若遇运营商强制下线导致状态显示为 <span class="text-red-500 font-semibold">“认证失效”</span>，点击【更新凭据】粘贴新 Cookie 保存即可恢复，无需重新建任务。
+            • <strong>方式二：网络标头抓包</strong>：按 <code class="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">F12</code> ➔「网络 (Network)」➔ 点击网盘任意目录找到 <code class="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">list</code> 请求 ➔「标头 (Headers)」➔ 找到请求标头中的 <code class="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">Authorization</code>，复制后面的 Base64 字符串（不要携带 Basic 前缀）。
+          </li>
+          <li>
+            • <strong>保活与失效处理</strong>：本系统已内置全天候自动心跳保活；若遇运营商强制下线导致状态显示为 <span class="text-red-500 font-semibold">“认证失效”</span>，点击【更新凭据】粘贴新凭据保存即可恢复，无需重新建任务。
           </li>
         </ul>
       </div>
