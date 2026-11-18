@@ -105,14 +105,14 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e PUID=0 \
   -e PGID=0 \
-  azheng0108/cloudpan-auto-save:dev
+  azheng0108/cloudpan-auto-save:latest
 ```
 
 **参数说明**：
 - `-p 3000:3000`：WebUI 访问端口，可按需修改宿主机端口（例如 `-p 3001:3000`）。
 - `-v /your/local/data:/home/data`：**必需**。数据存储目录，存放系统数据库、登录凭据与配置文件。请将 `/your/local/data` 替换为你本机的实际路径。
 - `-v /your/local/strm:/home/strm`：**可选**。STRM 文件输出目录，若需生成 STRM 给 Emby 播放，请挂载此目录。
-- `azheng0108/cloudpan-auto-save:dev`：使用 dev 测试镜像（包含最新前端与 AI 功能）。如需稳定版可选用 `latest` 标签。
+- `azheng0108/cloudpan-auto-save:latest`：默认使用稳定正式版镜像。若需尝鲜最新功能，可替换为 `beta` 标签。
 
 ---
 
@@ -125,7 +125,7 @@ version: '3.8'
 
 services:
   cloudpan-auto-save:
-    image: azheng0108/cloudpan-auto-save:dev
+    image: azheng0108/cloudpan-auto-save:latest
     container_name: cloudpan-auto-save
     restart: unless-stopped
     ports:
