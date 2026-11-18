@@ -48,13 +48,9 @@
 | :---: | :---: |
 | ![频道监控](screenshots/03-channel-monitor.png) | ![影视整理](screenshots/04-scrape-organize.png) |
 
-| 139 多账号管理与快捷扫码 | 自动化追更任务调度 |
+| 自动化追更任务调度 | 系统运维与 SSE 实时日志流 |
 | :---: | :---: |
-| ![账号管理](screenshots/06-accounts.png) | ![追更任务](screenshots/07-tasks.png) |
-
-| 全局网络与通知设置 | 系统运维与 SSE 实时日志流 |
-| :---: | :---: |
-| ![全局设置](screenshots/08-settings.png) | ![系统维护](screenshots/05-maintenance.png) |
+| ![追更任务](screenshots/07-tasks.png) | ![系统维护](screenshots/05-maintenance.png) |
 
 ---
 
