@@ -1,322 +1,307 @@
-<div align="center">
-  <h1>cloudpan-auto-save</h1>
-  <p>移动云盘（139）自动追更系统 · WebUI 管理 · Telegram 机器人 · Emby / AList / STRM 联动</p>
-  <p>
-    <img src="https://img.shields.io/github/package-json/v/azheng0108/cloudpan-auto-save?color=2d7ef7" alt="version" />
-    <img src="https://img.shields.io/badge/node-18%2B-4caf50" alt="node" />
-    <img src="https://img.shields.io/badge/license-MIT-9e9e9e" alt="license" />
-    <img src="https://img.shields.io/badge/platform-Docker-0db7ed" alt="docker" />
-  </p>
-</div>
+# cloudpan-auto-save
 
-> [!IMPORTANT]
-> **🚀 新版本测试指路（dev 分支）：**
-> 本项目核心功能与界面正在进行大规模重构升级（包含全新 Vue 3 界面、TG 频道流式转存、移动云盘 302 直链 STRM 媒体库、智能影视刮削整理等特性）。目前新版本正在 **[`dev` 分支](https://github.com/139-auto-save/cloudpan-auto-save/tree/dev)** 进行测试与验证，待测试完善后将合并回主分支（`main`）。
-> 
-> **如需抢先体验新版测试特性，请前往并切换至 👉 [`dev` 分支](https://github.com/139-auto-save/cloudpan-auto-save/tree/dev)**。
+139 云盘自动化追更与影视媒体整理系统 · 现代 WebUI 管理 · Telegram 频道监控 · Emby / Jellyfin 302 直链播放
 
-> [!WARNING]
-> **⚠️ 使用风险提示与免责声明：**
-> 1. **测试性质声明**：本项目涉及对第三方网盘及相关服务协议接口的自动化调用，处于活跃重构测试阶段，可能存在未预期的边界异常或未知行为。
-> 2. **数据安全提醒**：自动转存、批量重命名及删除联动等功能会直接作用于云盘内文件，请勿直接对不可再生的核心重要资产执行不可逆操作；建议先使用测试账号或小规模非核心文件进行充分验证，并请务必做好重要数据的独立备份。
-> 3. **账号与凭据安全**：系统内配置的账号 Authorization、Cookie 与 Bot Token 具有极高操作权限，请务必在私有受保护的隔离环境中私有化部署，严禁将服务或敏感凭据暴露至公网环境。
-> 4. **免责条款**：本项目仅供技术学习交流与自动化脚本研究，请在遵守相关法律法规及平台使用协议的前提下合理使用；因个人使用不当或违反相关条款产生的任何账号受限、数据丢失或合规风险，均由使用者自行承担。
+> 本项目是一套专为 **139 云盘** 用户打造的影视自动追更、智能转存归档与媒体资产管理系统。
+> 前端采用 Vue 3 单页架构，后端内置 139 官方 302 直链 STRM 生成引擎、TMDB 影视智能识别归档、网盘死链巡检与多版本去重治理。
+
+---
 
 ## 目录
 
-- [项目状态](#项目状态)
-- [功能特点](#功能特点)
-- [快速开始](#快速开始)
-- [使用说明](#使用说明)
-- [Telegram 机器人命令](#telegram-机器人命令)
-- [环境变量](#环境变量)
-- [注意事项](#注意事项)
-- [安全警告](#安全警告)
-- [界面预览](#界面预览)
-- [特别声明](#特别声明)
-- [License](#license)
+- [这是什么系统？](#这是什么系统)
+- [系统界面预览](#系统界面预览)
+- [核心功能说明](#核心功能说明)
+- [安装部署方式](#安装部署方式)
+  - [方式一：Docker 命令行运行（推荐）](#方式一docker-命令行运行推荐)
+  - [方式二：Docker Compose 部署（推荐）](#方式二docker-compose-部署推荐)
+  - [方式三：源码本地运行（开发者）](#方式三源码本地运行开发者)
+- [新手五步快速上手](#新手五步快速上手)
+- [139 凭据与目录 ID 获取教程（手动抓包）](#139-凭据与目录-id-获取教程手动抓包)
+- [常用环境变量](#常用环境变量)
+- [安全提示与使用原则](#安全提示与使用原则)
+- [开源协议](#开源协议)
 
-## 项目状态
+---
 
-项目目前处于 Beta 阶段，核心流程可用，但仍可能在边界场景出现问题。
+## 这是什么系统？
 
-- 可能存在边界 Bug（超大文件、特殊字符文件名、网络抖动等）
-- 建议先用非核心数据小规模验证后再正式投入使用
-- 欢迎提交 [Issue](../../issues) 或 [Pull Request](../../pulls)
+平时用 139 云盘看剧看电影，通常会遇到这些麻烦事：
+1. **追更太繁琐**：每周更新都要手动去点分享链接转存，容易遗漏；
+2. **文件名杂乱无章**：转存回来的视频文件名带满推广字眼、压制组代号、乱码字符，放到 Emby / Jellyfin / Plex 里根本无法正确刮削出海报和演员信息；
+3. **本地磁盘不够用**：动辄几十 GB 的 4K 电影或长篇电视剧，全下载到本地硬盘很快爆盘，而且费时耗电。
 
-## 功能特点
+本项目就是为了解决这些痛点而开发的自动化工具：
+只需填入追更链接或关注的 Telegram 频道，系统便会自动检测更新并转存到网盘。随后自动结合真实视频文件名与 TMDB 权威影视库进行比对，规范重命名并归档分季。最后在本地自动生成 `.strm` 文件，播放器直接通过 139 官方 CDN 高速串流播放，**本地 0 硬盘占用、0 服务器带宽消耗**。
 
-### 自动化任务
+---
 
-- 定时自动检查分享链接更新
-- 支持 Cron 定时规则
-- 失败任务自动重试（可配置次数和间隔）
-- 任务过期自动完成
-- 支持目标目录缺失时自动创建（139）
+## 系统界面预览
 
-### 文件与命名
+系统前端基于 Vue 3 单页响应式架构打造，提供现代美观的操作界面与实时的任务反馈：
 
-- 支持目录树选择保存路径
-- 支持常用目录管理
-- 支持批量重命名：正则、Jinja2 模板、顺序重命名
+| 现代化登录界面 | 版本更新与新手安全引导 |
+| :---: | :---: |
+| ![登录界面](screenshots/01-login.png) | ![版本公告与引导](screenshots/02-notice-modal.png) |
 
-### 媒体联动
+| Telegram 频道自动监控 | TMDB 影视智能整理与归档 |
+| :---: | :---: |
+| ![频道监控](screenshots/03-channel-monitor.png) | ![影视整理](screenshots/04-scrape-organize.png) |
 
-- STRM 文件自动生成
-- Emby 自动通知刷新，支持路径替换和逐级回退
-- AList /
- OpenList 路径刷新
-- CloudSaver 资源搜索与一键建任务
+| 139 多账号管理与快捷扫码 | 自动化追更任务调度 |
+| :---: | :---: |
+| ![账号管理](screenshots/06-accounts.png) | ![追更任务](screenshots/07-tasks.png) |
 
-### 通知与集成
+| 全局网络与通知设置 | 系统运维与 SSE 实时日志流 |
+| :---: | :---: |
+| ![全局设置](screenshots/08-settings.png) | ![系统维护](screenshots/05-maintenance.png) |
 
-- Telegram 机器人远程管理任务
-- 企业微信 / Telegram / Bark / WxPusher 推送
-- WebUI 可视化管理（含暗黑模式）
-- API Key 保护的 REST API
+---
 
-## 快速开始
+## 核心功能说明
 
-### 方式一：Docker Run（推荐）
+### 1. 自动化追更与频道监控转存
+- **单链定时追更**：添加分享链接后，系统按设定频率（如每 2 小时、每天）自动检查分享目录是否有新集数发布，有新文件自动转存。
+- **Telegram 频道自动转存**：支持监听 Telegram 公开频道推文，自动嗅探推文中的 139 云盘分享链接与提取码并自动转存，无需自行申请 TG API Key。
+- **多账号支持与自动保活**：支持添加多个云盘账号，手机 App 扫码即可快捷绑定，系统会自动定期保活刷新登录凭据，免去繁琐抓包。
+
+### 2. TMDB 智能影视识别与规范归档
+- **真实文件名提纯**：识别时不仅看推文标题，还会自动下探读取转存文件夹内的真实视频文件名（如 S01E01、第1集），有效避免因推文标题简短而识别错误。
+- **防拒答与去外部链接**：彻底剥离推文中的外部网络链接，明确限定纯文本语义清洗，杜绝大模型因尝试联网而报错拒答。
+- **长篇年番年份解耦**：针对连载上百集的动漫年番（如《沧元图》《一念永恒》等），自动剥离推文中的当季年份（如 2026），准确以首播年份检索 TMDB，不再搜错剧集。
+- **番外与特别篇自动识别**：支持网盘文件夹中的特别篇（SP）、番外篇、点映礼与加更篇，自动识别并分流归档，不再遗漏或乱放。
+- **非原盘自动规范 WEB-DL 标签**：探测并重命名非 REMUX 文件时，自动补齐大写的 WEB-DL 标签，方便媒体库精准区分原盘与流媒体压制版。
+
+### 3. 139 官方 302 直链播放（STRM）
+- **本地零体积镜像**：根据归档后的媒体库目录结构，在本地生成体积仅几百字节的 `.strm` 文件，挂载给 Emby、Jellyfin 或 Infuse 使用。
+- **官方 CDN 高速串流**：客户端播放时，系统实时解析 139 官方高速 CDN 直链并通过 302 重定向播放，本地服务器仅做指令中转，不消耗宿主机存储与播放带宽。
+
+### 4. 网盘资产与存储健康治理
+- **违规死链巡检与清理**：自动探测因审核拦截或失效的死链文件，支持批量清理。
+- **自底向上空目录修剪**：文件整理转移后，自动递归修剪各级空文件夹并清理系统残留垃圾文件。
+- **多版本画质智能去重**：同一部剧集存在多个版本时，按画质策略（如 4K 优于 1080p）智能标记最佳版本与待淘汰版本，支持一键清理冗余文件。
+- **绝对安全红线**：所有清理删除操作默认全部移入 139 云盘回收站，绝不执行物理硬删除，任何时候都可在网盘官方回收站中手动一键还原。
+
+### 5. 消息通知推送
+- 支持在转存成功、整理完成或巡检异常时，自动推送通知至 Telegram 机器人、企业微信、Bark、WxPusher 等多个平台。
+
+---
+
+## 安装部署方式
+
+系统提供了多种部署方式，建议优先使用 Docker 部署，开箱即用。
+
+### 方式一：Docker 命令行运行（推荐）
+
+打开终端，直接运行以下命令启动容器：
 
 ```bash
 docker run -d \
-  -v $(pwd)/data:/home/data \
-  -v $(pwd)/strm:/home/strm \
-  -p 3001:3000 \
-  --restart unless-stopped \
   --name cloudpan-auto-save \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v /your/local/data:/home/data \
+  -v /your/local/strm:/home/strm \
   -e TZ=Asia/Shanghai \
-  azheng0108/cloudpan-auto-save:latest
+  -e PUID=0 \
+  -e PGID=0 \
+  azheng0108/cloudpan-auto-save:dev
 ```
 
-> `data` 和 `strm` 目录会自动创建在执行命令的当前目录下。
+**参数说明**：
+- `-p 3000:3000`：WebUI 访问端口，可按需修改宿主机端口（例如 `-p 3001:3000`）。
+- `-v /your/local/data:/home/data`：**必需**。数据存储目录，存放系统数据库、登录凭据与配置文件。请将 `/your/local/data` 替换为你本机的实际路径。
+- `-v /your/local/strm:/home/strm`：**可选**。STRM 文件输出目录，若需生成 STRM 给 Emby 播放，请挂载此目录。
+- `azheng0108/cloudpan-auto-save:dev`：使用 dev 测试镜像（包含最新前端与 AI 功能）。如需稳定版可选用 `latest` 标签。
 
-### 方式二：Docker Compose
+---
+
+### 方式二：Docker Compose 部署（推荐）
+
+在你的服务器或 NAS 上创建一个项目文件夹，并在其中新建 `docker-compose.yml` 文件：
 
 ```yaml
 version: '3.8'
 
 services:
   cloudpan-auto-save:
-    image: azheng0108/cloudpan-auto-save:latest
+    image: azheng0108/cloudpan-auto-save:dev
     container_name: cloudpan-auto-save
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "3000:3000"
     volumes:
       - ./data:/home/data
       - ./strm:/home/strm
     environment:
+      - NODE_ENV=production
       - TZ=Asia/Shanghai
+      - PUID=0
+      - PGID=0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 ```
 
-启动命令：
+在包含该文件的目录下执行以下命令启动服务：
 
 ```bash
+# 启动容器
 docker compose up -d
+
+# 查看运行日志
+docker compose logs -f
+
+# 后续更新镜像
+docker compose pull && docker compose up -d
 ```
 
-访问地址：`http://localhost:3001`
+---
 
-默认账号密码：`admin / admin`（首次登录后请立即修改）
+### 方式三：源码本地运行（开发者）
 
-## 使用说明
+如果你想在本地开发、修改代码或直接在 Node.js 环境中运行：
 
-### 1. 账号配置（139）
+**环境要求**：
+- Node.js 20.x 或更高版本
+- Git
+- Yarn 与 npm
 
-- 支持账号密码登录与 Authorization 登录
-- 当前主流程聚焦移动云盘（139）
+**步骤说明**：
 
-Authorization 获取步骤：
-
-1. 打开 [yun.139.com](https://yun.139.com) 并登录
-2. 按 `F12` 打开开发者工具，进入 `Network`
-3. 过滤 `Fetch/XHR`，刷新页面
-4. 找到任一 `yun.139.com` 请求，复制请求头 `Authorization` 值（通常为 `Basic xxxxx`）
-5. 在系统中新增账号时填入 Cookie 输入框
-
-<img src="doc/new_personal.png" alt="找到请求头中的 Authorization" style="max-width:600px;" />
-
-<img src="doc/139_new_au.png" alt="填入 Authorization" style="max-width:600px;" />
-
-提示：Authorization 模式通常更稳定，Cookie 失效后需重新抓取。
-
-### 2. 任务管理
-
-创建任务时可配置：
-
-- 账号
-- 分享链接（含访问码）
-- 保存目录
-- 总集数（可选）
-- 文件名匹配规则（可选）
-
-支持能力：
-
-- 批量任务创建（自动识别目录结构）
-- 手动执行任务
-- 删除任务（可选同步删除云盘文件）
-- 任务失败重试与定时检查
-
-### 3. 批量重命名
-
-支持三种模式：
-
-- 正则重命名（可持续用于后续更新）
-- Jinja2 模板重命名（自动识别标题、年份、集号）
-- 顺序重命名（一次性处理）
-
-### 4. 媒体设置（STRM / Emby / AList）
-
-- STRM：自动生成媒体条目对应的 STRM 文件
-- Emby：自动通知刷新媒体库
-- AList：自动触发目录刷新
-
-Emby 路径替换示例：
-
-- 云盘路径：`/影视剧/电视剧/北上/Season 01/S01E01.mkv`
-- Emby 根路径：`/cloud/移动云盘/电视剧`
-- 替换规则：`/影视剧:/cloud/移动云盘`
-
-执行逻辑：
-
-1. 优先尝试完整路径
-2. 失败则逐级向上回退
-3. 仍未命中则触发全库刷新
-
-### 5. CloudSaver 搜索
-
-- 支持 Web 页面与 Telegram 搜索
-- 结果按链接分组并去重
-- 可一键创建转存任务
-
-部署说明：
-
-1. 自行部署 [CloudSaver](https://github.com/jiangrui1994/CloudSaver)
-2. 在系统设置中填写服务地址、账号、密码
-3. 保存后即可启用搜索
-
-## Telegram 机器人命令
-
-基础命令：
-
-- `/help`：显示帮助
-- `/accounts`：账号列表
-- `/tasks`：任务列表
-- `/execute_all`：执行所有任务
-- `/fl`：常用目录列表
-- `/fs`：添加常用目录
-- `/search_cs`：CloudSaver 搜索
-- `/cancel`：取消当前操作
-
-任务命令：
-
-- `/execute_[ID]`：执行任务
-- `/strm_[ID]`：生成 STRM
-- `/emby_[ID]`：通知 Emby 刷新
-- `/dt_[ID]`：删除任务
-
-目录命令：
-
-- `/df_[ID]`：删除常用目录
-
-## 环境变量
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `NODE_ENV` | `production` | 运行环境 |
-| `PORT` | `3000` | 容器内监听端口 |
-| `TZ` | `Asia/Shanghai` | 时区 |
-| `DEBUG` | `false` | 是否开启调试日志 |
-| `ALLOWED_ORIGINS` | 空 | CORS 白名单，逗号分隔 |
-
-示例：
-
+1. 克隆代码仓库：
 ```bash
-ALLOWED_ORIGINS=http://localhost:3001,https://your-domain.com
+git clone -b dev https://github.com/azheng0108/cloudpan-auto-save.git
+cd cloudpan-auto-save
 ```
 
-## 注意事项
+2. 安装后端与前端依赖：
+```bash
+yarn install
+npm --prefix frontend install
+```
 
-- 更新目录可移动但不建议删除，否则任务可能失败
-- 数据库存储在挂载目录 `data` 下，请做好备份
-- 媒体后缀配置会影响文件过滤和计数
-- STRM 生成依赖正确的访问前缀
-- Emby / AList 功能依赖正确的服务地址与密钥配置
-- 旧版本升级后若 TG 常用目录异常，建议清空后重新添加
+3. 编译构建前端静态资源：
+```bash
+npm --prefix frontend run build
+```
 
-## 安全警告
+4. 启动后端主程序：
+```bash
+node src/index.js
+```
 
-本项目涉及账号凭据与敏感数据，请严格遵守以下原则：
+服务默认在 `http://localhost:3000` 启动运行。
 
-- 务必私有化部署，不要直接暴露公网
-- 不要使用第三方搭建实例
-- 不要向他人泄露账号、Cookie、Token
-- 建议使用反向代理并启用 HTTPS
+---
 
-## 界面预览
+## 新手五步快速上手
 
-<details>
-<summary>点击展开截图预览</summary>
+部署完成后，按照以下步骤即可快速跑通整套自动化流程：
 
-### Web 界面
+### 第一步：访问控制台并修改初始密码
+1. 在浏览器中打开 `http://你的服务器IP:3000`；
+2. 输入默认管理员账号密码登录：
+   - 默认用户名：`admin`
+   - 默认密码：`admin`
+3. 登录后系统会弹出当前版本的使用指南与安全提示，阅读后确认进入；
+4. 进入系统后，请第一时间在「基础与全局设置」中修改初始密码。
 
-<div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: flex-start;">
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>任务管理</h4>
-    <img src="img/task-1.png" alt="任务管理" style="max-width: 100%; height: auto;" />
-  </div>
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>资源搜索</h4>
-    <img src="img/cloudsaver.png" alt="资源搜索" style="max-width: 100%; height: auto;" />
-  </div>
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>媒体库</h4>
-    <img src="img/media.png" alt="媒体库" style="max-width: 100%; height: auto;" />
-  </div>
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>系统日志</h4>
-    <img src="img/logs.png" alt="系统日志" style="max-width: 100%; height: auto;" />
-  </div>
-</div>
+### 第二步：添加 139 云盘账号
+1. 点击左侧导航栏的「139 云盘」➔「账号管理」；
+2. 点击「新增账号」，系统支持两种添加方式：
+   - **方式 A（强烈推荐）：扫码快捷登录**
+     选择扫码模式，打开手机端「中国移动云盘」App 或微信扫描屏幕上的二维码完成授权，凭据自动绑定并全天候自动保活，无需手动抓包；
+   - **方式 B：手动录入 Authorization 凭据**
+     如需无手机手动登录或批量导入，可选择手动模式填入凭据，具体抓包步骤参见下文 [139 凭据与目录 ID 获取教程（手动抓包）](#139-凭据与目录-id-获取教程手动抓包)。
+3. 账号绑定成功后，设置为「主力账号」作为默认转存主体。
 
-### Telegram 机器人界面
+### 第三步：配置媒体整理路径
+1. 点击左侧导航栏的「媒体整理」➔「整理配置」；
+2. 设置两个核心目录：
+   - **待整理目录（源目录）**：例如网盘中的 `/临时转存` 或 `/Downloads`；
+   - **影视媒体库（目标目录）**：例如网盘中的 `/媒体库`；
+   > 提示：直接在页面中输入网盘文件夹路径即可；如需通过底层目录 ID 定位，可参考 [获取目录ID教程](#139-凭据与目录-id-获取教程手动抓包)。
+3. 开启「自动整理」开关，并设定扫描整理时间间隔（例如每 30 分钟一次）。
 
-<div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: flex-start;">
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>帮助信息</h4>
-    <img src="img/bot/1.jpg" alt="帮助命令" style="max-width: 100%; height: auto;" />
-    <p>通过 /help 查看所有可用命令。</p>
-  </div>
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>资源搜索</h4>
-    <img src="img/bot/2.jpg" alt="资源搜索" style="max-width: 100%; height: auto;" />
-    <p>使用 /search_cs 搜索资源。</p>
-  </div>
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>创建任务</h4>
-    <img src="img/bot/3.jpg" alt="创建任务" style="max-width: 100%; height: auto;" />
-    <p>发送分享链接或编号可直接创建任务。</p>
-  </div>
-  <div style="flex: 0 0 calc(50% - 10px);">
-    <h4>任务列表</h4>
-    <img src="img/bot/5.jpg" alt="任务列表" style="max-width: 100%; height: auto;" />
-    <p>使用 /tasks 查看当前任务列表。</p>
-  </div>
-</div>
+### 第四步：添加追更任务或开启频道监控
+- **添加单个追更任务**：点击「追更任务」➔「新建任务」，填入网盘分享链接与访问码，系统会自动创建定时任务并按周期跟进更新。
+- **开启 Telegram 频道监控**：点击「频道监控」，添加目标公开频道链接，系统会自动抓取推文并嗅探最新影视链接转存入库。
 
-</details>
+### 第五步：挂载 STRM 目录到 Emby / Jellyfin
+1. 在「媒体整理」中开启「整理入库后自动生成 STRM」；
+2. 将宿主机挂载的 `strm` 目录路径添加为 Emby 或 Jellyfin 的媒体库文件夹；
+3. 媒体服务器扫库后即可看到标准的海报、演职员与分季信息，点击播放即可享受官方直链秒开播放。
 
-## 特别声明
+---
 
+## 139 凭据与目录 ID 获取教程（手动抓包）
 
-1. 本项目仅供学习交流，请勿用于非法用途。
-2. 本项目当前版本提供移动云盘（139）转存能力，接口来自各平台官方接口。
-3. 由使用本项目产生的风险与后果由用户自行承担。
+在添加云盘账号或配置媒体目录时，除了系统自带的「手机 App 扫码一键登录」和「目录树直接选择」之外，如果你需要手动录入凭据或确认网盘文件夹的真实 ID，可通过浏览器开发者工具（F12）快速获取。
 
-## License
+系统支持以下两种方式获取凭据与目录 ID：
 
-MIT
+---
 
+### 方法一：通过「应用 (Application)」存储面板获取（推荐，最省事）
 
+用电脑浏览器（Chrome / Edge 等）打开并登录 [139 移动云盘网页版](https://yun.139.com)，按键盘 `F12` 打开开发者工具，切换到顶部的 **「应用」(Application)** 选项卡：
+
+1. **获取 Authorization（登录凭据）**：
+   - 在左侧菜单展开 **存储 ➔ Cookie**，点击 `https://yun.139.com/`；
+   - 在右侧列表中找到名称为 `authorization` 的条目；
+   - 点击该条目，在下方完整复制其值（Value）。
+2. **获取 目录ID（Folder ID）**：
+   - 在网盘页面点击进入你要查看的目标文件夹；
+   - 在左侧菜单展开 **存储 ➔ 本地存储空间 (Local Storage)**，点击 `https://yun.139.com/`；
+   - 在右侧键值列表中找到 `currentCatalogID`，其对应的值即为当前文件夹的唯一目录 ID（根目录通常为 `/`）。
+
+| 存储面板获取 Authorization 与 目录ID |
+| :---: |
+| ![通过应用面板获取凭据与目录ID](screenshots/09-auth-and-folder-storage.png) |
+
+---
+
+### 方法二：通过「网络 (Network)」请求面板获取（标准抓包）
+
+在 [139 移动云盘网页版](https://yun.139.com) 中按 `F12` 打开开发者工具，切换到 **「网络」(Network)** 选项卡：
+
+1. 刷新一下页面，或在网盘中随意点击一个文件夹；
+2. 在网络请求列表中找到名为 `list` 的请求（URL 形如 `/hcy/file/list`）：
+   - **获取 Authorization**：点击 `list` 请求 ➔ 切换到 **「标头」(Headers)** ➔ 展开「请求标头 (Request Headers)」➔ 找到 `Authorization` 字段。
+     > **注意：** 复制时**不要携带 `Basic ` 前缀**，只需复制后面的 Base64 字符串即可（系统也已内置兼容自动过滤）。
+   - **获取 目录ID（Folder ID）**：在同一个 `list` 请求中 ➔ 切换到 **「载荷」(Payload)** ➔ 查看请求载荷中的 `parentFileId`，其字符串即为当前目录在移动云盘后台的真实目录 ID。
+
+| 网络面板获取 Authorization 与 目录ID |
+| :---: |
+| ![通过网络面板获取凭据与目录ID](screenshots/10-auth-and-folder-network.png) |
+
+---
+
+## 常用环境变量
+
+| 环境变量名 | 默认值 | 作用说明 |
+| :--- | :--- | :--- |
+| `PORT` | `3000` | 后端服务监听端口 |
+| `NODE_ENV` | `production` | 运行环境（`production` / `development`） |
+| `TZ` | `Asia/Shanghai` | 系统时区，保证定时任务时间准确 |
+| `PUID` | `0` | 容器内运行用户的 UID（用于适配 NAS 文件权限） |
+| `PGID` | `0` | 容器内运行用户的 GID（用于适配 NAS 文件权限） |
+| `ALLOWED_ORIGINS` | 空 | CORS 跨域白名单，多个域名用英文逗号分隔 |
+
+---
+
+## 安全提示与使用原则
+
+1. **私有化独立部署**：本系统涉及个人网盘账号凭据，请务必在家庭局域网、NAS 或个人独享 VPS 上部署，**严禁使用任何第三方公开搭建的实例**。
+2. **公网访问保护**：若需在公网环境下远程访问，强烈建议配置反向代理（如 Nginx / NPM）并开启 HTTPS 证书加密，避免明文传输密码。
+3. **资产防误删保护**：系统在网盘清理、去重与整理时严格遵循「0 物理硬删」原则，所有移除操作仅移入网盘回收站，如遇异常可随时在官方回收站中还原。
+4. **合理设置频率**：建议保持适度的监控与巡检间隔（通常 15~60 分钟），避免短时间内发起高频突发请求引起网盘服务端风控。
+
+---
+
+## 开源协议
+
+本项目基于 MIT License 开源，仅供个人技术研究、网络学习及私人数据归档使用。

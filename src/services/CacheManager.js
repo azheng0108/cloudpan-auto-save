@@ -16,7 +16,7 @@ class CacheManager {
 
     get(key) {
         const data = this.cache.get(key);
-        if (!data) return null;
+        if (!data) return undefined;
         
         // if (Date.now() - data.timestamp > this.ttl) {
         //     this.cache.delete(key);
@@ -27,7 +27,7 @@ class CacheManager {
     }
 
     has(key) {
-        return this.get(key) !== null;
+        return this.get(key) !== undefined;
     }
 
     cleanup() {
@@ -37,6 +37,9 @@ class CacheManager {
                 this.cache.delete(key);
             }
         }
+    }
+    clear() {
+        this.cache.clear();
     }
     clearPrefix(prefix) {
         for (const key of this.cache.keys()) {

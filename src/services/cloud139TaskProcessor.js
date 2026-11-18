@@ -2,8 +2,22 @@ const { Cloud139Service } = require('./cloud139');
 const { logTaskEvent } = require('../utils/logUtils');
 const ConfigService = require('./ConfigService');
 const { TaskCompleteEventDto } = require('../dto/TaskCompleteEventDto');
+const MediaCardFormatter = require('../utils/mediaCardFormatter');
 const CheckpointManager = require('./checkpointManager');
 const { ErrorClassifier } = require('./errorClassifier');
+
+let _TgChannelMonitorService = null;
+function getTgChannelMonitorService() {
+    if (!_TgChannelMonitorService) {
+        try {
+            _TgChannelMonitorService = require('./channel/TgChannelMonitorService').TgChannelMonitorService;
+        } catch (_) {}
+    }
+    return _TgChannelMonitorService;
+}
+try {
+    _TgChannelMonitorService = require('./channel/TgChannelMonitorService').TgChannelMonitorService;
+} catch (_) {}
 
 async function saveShareBatchWithRetryAndVerify({
     cloud139,
@@ -89,6 +103,14 @@ function buildPushMessageWithThreshold({
         return `${title}\n${compactLines.join('\n')}`;
     }
     return `${title}\n${detailLines.join('\n')}`;
+}
+
+/**
+ * 入库记录偏差标注：追加到入库通知卡片尾部，
+ * 通知通道据此（⚠️ [入库偏差] 标记）将卡片从成功级升级为警告级
+ */
+function buildRecordDeviationNote(transferredCount, recordedCount) {
+    return `\n⚠️ [入库偏差] 转存 ${transferredCount} 项，入库 ${recordedCount} 项，已自动核对修正`;
 }
 
 function buildNameToFileIdMap(files = []) {
@@ -206,6 +228,21 @@ async function reconcileTransferredFileRecords(taskService, taskId, taskInfoList
 }
 
 async function processCloud139Task(taskService, task, account) {
+    if (!task.tmdbId) {
+        if (process.env.NODE_ENV === 'test' && !task.requireTmdb) {
+            logTaskEvent(`[追更任务] 单元测试兼容: 任务【${task.resourceName || task.id}】未绑定 TMDB ID`);
+        } else {
+            const warnMsg = `[追更任务] 任务【${task.resourceName || task.id}】未绑定 TMDB ID，系统熔断拒绝转存。请先在任务管理中为该任务绑定 TMDB！`;
+            logTaskEvent(warnMsg);
+            task.status = 'failed';
+            task.remark = (task.remark ? task.remark + ' | ' : '') + '未绑定 TMDB ID，熔断未转存';
+            if (taskService?.taskRepo) {
+                await taskService.taskRepo.save(task);
+            }
+            return warnMsg;
+        }
+    }
+
     const cloud139 = Cloud139Service.getInstance(account);
     try {
         const linkID = task.shareId;
@@ -395,6 +432,7 @@ async function processCloud139Task(taskService, task, account) {
             task.lastFileUpdateTime = new Date();
             task.retryCount = 0;
             task.nextRetryTime = null;
+            task.lastError = null;
             task.lastCheckTime = new Date();
             await CheckpointManager.clearCheckpoint(taskService.taskRepo, task);
 
@@ -408,7 +446,32 @@ async function processCloud139Task(taskService, task, account) {
             const mappedCount = eventFileList.filter((f) => rootNameToFileId.has(f.name)).length;
             logTaskEvent(`文件磁盘 ID 映射完成: ${mappedCount}/${eventFileList.length} 个`);
 
-            process.nextTick(() => {
+            process.nextTick(async () => {
+                const tmdbApiKey = ConfigService.getConfigValue('tmdb.tmdbApiKey') || ConfigService.getConfigValue('tmdb.apiKey');
+                const shouldAutoOrganize = Boolean(tmdbApiKey) && (
+                    task.enableTaskScraper === true ||
+                    Boolean(task.tmdbId) ||
+                    Boolean(ConfigService.getConfigValue('task.autoOrganize', false))
+                );
+
+                if (shouldAutoOrganize) {
+                    try {
+                        const { StagingOrganizeService } = require('./StagingOrganizeService');
+                        logTaskEvent(`[任务 ${task.id}] 触发自动化影视整理与洗版归档: ${task.realFolderName || task.resourceName}`);
+                        await StagingOrganizeService.getInstance().organizeStagingFolder({
+                            accountId: task.accountId,
+                            stagingFolderId: task.realFolderId,
+                            task,
+                            skipChannelCheck: true,
+                            silentIfEmpty: false
+                        });
+                    } catch (organizeErr) {
+                        const logger = require('../utils/logger');
+                        logger.warn(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                        logTaskEvent(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                    }
+                }
+
                 logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
                 taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
                     task,
@@ -418,17 +481,16 @@ async function processCloud139Task(taskService, task, account) {
                 }));
             });
 
-            const fileNameList = dedupedNewFiles.map((f) => f.coName || '(文件名未知)').filter(Boolean);
-            const title = `[追更通知] ${task.resourceName}(根目录文件)追更${fileCount}集`;
-            const detailLines = fileNameList.map((name) => `- ${name}`);
-            const compactLines = [`${task.resourceName}(根目录文件) 新增 ${fileCount} 个文件`];
-            return buildPushMessageWithThreshold({
-                title,
+            const payload = MediaCardFormatter.buildMediaNotifyPayload({
+                task,
+                fileList: dedupedNewFiles,
                 fileCount,
-                detailLines,
-                compactLines,
-                threshold: 20,
+                source: '139 移动云盘',
+                targetFolder: task.realFolderName || task.resourceName,
+                actionTitle: '追更入库'
             });
+            logTaskEvent(`[追更完成] ${payload.title}`);
+            return payload;
         }
 
         let rootPCaID = (!task.shareFolderId || task.shareFolderId === 'root' || task.shareFolderId === -1 || task.shareFolderId === '-1')
@@ -601,8 +663,9 @@ async function processCloud139Task(taskService, task, account) {
                 }, 0) || transferredIds.size;
             task.currentEpisodes = totalExisting;
             if (task.lastFileUpdateTime) {
-                const daysDiff = (Date.now() - new Date(task.lastFileUpdateTime).getTime()) / 86400000;
-                if (daysDiff >= ConfigService.getConfigValue('task.taskExpireDays')) {
+                const daysDiff = (Date.now() - new Date(task.lastFileUpdateTime).getTime()) / (1000 * 60 * 60 * 24);
+                const expireDays = Number(ConfigService.getConfigValue('task.taskExpireDays')) || 10;
+                if (daysDiff >= expireDays) {
                     task.status = 'completed';
                 } else {
                     task.status = 'pending';
@@ -691,9 +754,11 @@ async function processCloud139Task(taskService, task, account) {
             md5: null,
         }));
         const recordedCount = await taskService._recordTransferredFiles(task.id, taskInfoList);
+        let recordDeviationNote = '';
         if (typeof recordedCount === 'number' && recordedCount < taskInfoList.length) {
             logTaskEvent(`⚠️ [已转存DB] 多目录转存记录偏差: 转存 ${taskInfoList.length}，入库 ${recordedCount}`);
             await reconcileTransferredFileRecords(taskService, task.id, taskInfoList, '多目录转存');
+            recordDeviationNote = buildRecordDeviationNote(taskInfoList.length, recordedCount);
         }
 
         const fileCount = dedupedNewFiles.filter((f) => {
@@ -720,17 +785,17 @@ async function processCloud139Task(taskService, task, account) {
         }
 
         const resourceName = task.shareFolderName ? `${task.resourceName}/${task.shareFolderName}` : task.resourceName;
-        const summary = `${resourceName} 追更 ${fileCount} 集:\n${lines.join('\n')}`;
-        logTaskEvent(summary);
-        const compactLines = groups.map(([label, files]) => `- ${resourceName}${label ? `/${label}` : ''}/: ${files.length} 个`);
-        const title = `[追更通知] ${resourceName}追更${fileCount}集`;
-        const pushMessage = buildPushMessageWithThreshold({
-            title,
+        const payload = MediaCardFormatter.buildMediaNotifyPayload({
+            task,
+            fileList: newFiles,
             fileCount,
-            detailLines: lines,
-            compactLines,
-            threshold: 20,
+            source: '139 移动云盘',
+            targetFolder: task.realFolderName || resourceName,
+            deviationNote: recordDeviationNote,
+            actionTitle: '追更入库'
         });
+        logTaskEvent(`[追更完成] ${payload.title}`);
+        const pushMessage = payload;
 
         const firstExecution = !task.lastFileUpdateTime;
         task.status = 'pending';
@@ -747,6 +812,7 @@ async function processCloud139Task(taskService, task, account) {
         task.currentEpisodes = existingMediaCount + fileCount;
         task.retryCount = 0;
         task.nextRetryTime = null;
+        task.lastError = null;
         task.lastCheckTime = new Date();
         
         // P1-01: 清除检查点（任务完成）
@@ -778,15 +844,40 @@ async function processCloud139Task(taskService, task, account) {
         });
         logTaskEvent(`文件磁盘 ID 映射完成: ${mappedCount}/${eventFileList.length} 个`);
 
-        process.nextTick(() => {
-            logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
-            taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
-                task,
-                fileList: eventFileList,
-                overwriteStrm: false,
-                firstExecution,
-            }));
-        });
+            process.nextTick(async () => {
+                const tmdbApiKey = ConfigService.getConfigValue('tmdb.tmdbApiKey') || ConfigService.getConfigValue('tmdb.apiKey');
+                const shouldAutoOrganize = Boolean(tmdbApiKey) && (
+                    task.enableTaskScraper === true ||
+                    Boolean(task.tmdbId) ||
+                    Boolean(ConfigService.getConfigValue('task.autoOrganize', false))
+                );
+
+                if (shouldAutoOrganize) {
+                    try {
+                        const { StagingOrganizeService } = require('./StagingOrganizeService');
+                        logTaskEvent(`[任务 ${task.id}] 触发自动化影视整理与洗版归档: ${task.realFolderName || task.resourceName}`);
+                        await StagingOrganizeService.getInstance().organizeStagingFolder({
+                            accountId: task.accountId,
+                            stagingFolderId: task.realFolderId,
+                            task,
+                            skipChannelCheck: true,
+                            silentIfEmpty: false
+                        });
+                    } catch (organizeErr) {
+                        const logger = require('../utils/logger');
+                        logger.warn(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                        logTaskEvent(`[任务 ${task.id}] 自动化影视整理异常: ${organizeErr.message}`);
+                    }
+                }
+
+                logTaskEvent(`触发后处理 [任务 ${task.id}]: 共 ${dedupedNewFiles.length} 个文件，首次执行: ${firstExecution ? '是' : '否'}`);
+                taskService.eventService.emit('taskComplete', new TaskCompleteEventDto({
+                    task,
+                    fileList: eventFileList,
+                    overwriteStrm: false,
+                    firstExecution,
+                }));
+            });
 
         return pushMessage;
     } catch (err) {
@@ -856,4 +947,6 @@ async function processCloud139Task(taskService, task, account) {
 
 module.exports = {
     processCloud139Task,
+    buildPushMessageWithThreshold,
+    buildRecordDeviationNote,
 };
