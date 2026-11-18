@@ -99,7 +99,7 @@ class Cloud139QrLoginService {
     /**
      * 将扫码捕获到的鉴权数据持久化写入数据库
      */
-    async _saveAccountToDatabase(phone, authValue, deps = {}) {
+    async _saveAccountToDatabase(phone, authValue, deps = {}, targetAccountId = null) {
         try {
             const { accountRepo, folderCache } = deps;
             if (!accountRepo) {
@@ -118,7 +118,13 @@ class Cloud139QrLoginService {
                 basicAuthStr = Buffer.from(`pc:${phone}:${authValue}`).toString('base64');
             }
 
-            let acc = await accountRepo.findOne({ where: { username: String(phone) } });
+            let acc = null;
+            if (targetAccountId) {
+                acc = await accountRepo.findOne({ where: { id: targetAccountId } });
+            }
+            if (!acc) {
+                acc = await accountRepo.findOne({ where: { username: String(phone) } });
+            }
             if (acc) {
                 acc.cookies = basicAuthStr;
                 acc.authorization = `Basic ${basicAuthStr}`;
@@ -129,6 +135,16 @@ class Cloud139QrLoginService {
                 await accountRepo.save(acc);
                 Cloud139Service.clearInstance(acc);
                 logger.info(`[扫码登录] 已成功刷新已有账号凭据与激活: ${phone} (ID: ${acc.id})`);
+
+                // 扫码登录成功后自动自愈补转此前因凭证失效失败的历史频道转存项
+                setTimeout(() => {
+                    try {
+                        const { TgChannelMonitorService } = require('./channel/TgChannelMonitorService');
+                        TgChannelMonitorService.getInstance().autoRetryFailedAuthItems(acc.id).catch(err => {
+                            logger.warn(`[扫码自愈] 自动重试历史转存异常: ${err.message}`);
+                        });
+                    } catch (_) {}
+                }, 500);
             } else {
                 const total = await accountRepo.count();
                 const hasDefault = (await accountRepo.count({ where: { isDefault: true } })) > 0;
@@ -180,6 +196,7 @@ class Cloud139QrLoginService {
 
         const now = Date.now();
         const expireAt = now + QR_EXPIRE_SECONDS * 1000;
+        const targetAccountId = deps.targetAccountId ? Number(deps.targetAccountId) : null;
 
         const session = {
             sID,
@@ -189,7 +206,8 @@ class Cloud139QrLoginService {
             createdAt: now,
             expireAt,
             status: 'waiting',
-            accountInfo: null
+            accountInfo: null,
+            targetAccountId
         };
 
         this.sessions.set(sID, session);
@@ -199,7 +217,8 @@ class Cloud139QrLoginService {
             dID,
             qrUrl,
             qrDataUrl,
-            expiresIn: QR_EXPIRE_SECONDS
+            expiresIn: QR_EXPIRE_SECONDS,
+            targetAccountId
         };
     }
 
@@ -228,7 +247,9 @@ class Cloud139QrLoginService {
             return {
                 status: 'confirmed',
                 account: session.accountInfo.account,
-                message: `🎉 账号 [${session.accountInfo.account}] 扫码登录成功并已自动同步入库！`
+                message: session.targetAccountId
+                    ? `扫码授权成功！已成功更新账号 [${session.accountInfo.account}] 的凭据并恢复激活。`
+                    : `扫码登录成功！账号 [${session.accountInfo.account}] 凭证已就绪并已自动保存。`
             };
         }
 
@@ -305,13 +326,13 @@ class Cloud139QrLoginService {
 
                     if (!authToken || !accountPhone) {
                         logger.warn('扫码响应成功但未提取到有效账号或 token', { authData, rawData: body.data });
-                        return { status: 'waiting', message: '📱 手机端已扫描，等待确认授权中...' };
+                        return { status: 'waiting', message: '手机端已扫描，等待确认授权中...' };
                     }
 
                     const authorization = `Basic ${Buffer.from(`pc:${accountPhone}:${authToken}`).toString('base64')}`;
 
                     // 自动存库并刷新
-                    await this._saveAccountToDatabase(accountPhone, authorization, deps);
+                    await this._saveAccountToDatabase(accountPhone, authorization, deps, session.targetAccountId);
 
                     session.status = 'confirmed';
                     session.accountInfo = { account: accountPhone, authorization };
@@ -319,7 +340,9 @@ class Cloud139QrLoginService {
                     return {
                         status: 'confirmed',
                         account: accountPhone,
-                        message: `🎉 扫码登录成功！账号 [${accountPhone}] 凭证已就绪并已自动保存。`
+                        message: session.targetAccountId
+                            ? `扫码授权成功！已成功更新账号 [${accountPhone}] 的凭据并恢复激活。`
+                            : `扫码登录成功！账号 [${accountPhone}] 凭证已就绪并已自动保存。`
                     };
                 }
 
@@ -327,7 +350,7 @@ class Cloud139QrLoginService {
                 if (code === '200059548') {
                     return {
                         status: 'waiting',
-                        message: '📱 手机端已扫描，请在手机上点击【确认登录】授权...'
+                        message: '手机端已扫描，请在手机上点击【确认登录】授权...'
                     };
                 }
 

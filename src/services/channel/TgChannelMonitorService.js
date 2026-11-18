@@ -451,20 +451,22 @@ class TgChannelMonitorService {
      * @param {object} shareDir 分享根目录结构 { folderList, fileList, linkName }
      * @returns {{ folderNames: string[], fileNames: string[], linkName: string }}
      */
-    static buildAiContext(shareDir) {
+    static buildAiContext(shareDir, sampleFiles = null) {
         const folderList = Array.isArray(shareDir?.folderList) ? shareDir.folderList : [];
-        const fileList = Array.isArray(shareDir?.fileList) ? shareDir.fileList : [];
+        const fileList = Array.isArray(sampleFiles) && sampleFiles.length > 0
+            ? sampleFiles
+            : (Array.isArray(shareDir?.fileList) ? shareDir.fileList : []);
         const folderNames = folderList
             .map(f => f.catalogName || f.caName || f.name)
             .filter(Boolean)
             .slice(0, 3);
-        // 视频文件名取容量最大的 1~2 个（含 SxxExx/集数信号最强）
+        // 视频文件名取容量最大的 1~3 个（含 SxxExx/集数信号最强）
         const fileNames = fileList
             .slice()
-            .sort((a, b) => (Number(b.contentSize) || 0) - (Number(a.contentSize) || 0))
-            .map(f => f.contentName || f.coName || f.name)
+            .sort((a, b) => (Number(b.contentSize || b.size) || 0) - (Number(a.contentSize || a.size) || 0))
+            .map(f => f.contentName || f.coName || f.name || (typeof f === 'string' ? f : ''))
             .filter(Boolean)
-            .slice(0, 2);
+            .slice(0, 3);
         const linkName = String(shareDir?.linkName || '').trim();
         // folderList/fileList 均为空时自动退化为"推文 + linkName"（buildHumanDialogue 内处理）
         return { folderNames, fileNames, linkName };
@@ -862,47 +864,20 @@ class TgChannelMonitorService {
         const tmdbService = this._tmdbService || new TMDBService();
         const aiService = require('../ai');
         const aiConfig = ConfigService.getConfigValue('channelMonitor.ai') || ConfigService.getConfigValue('ai') || {};
-        const isAiEnabled = aiService.isEnabled(aiConfig);
+        const mainAiEnabled = Boolean(aiConfig.enable);
+        const isAiEnabled = mainAiEnabled && aiService.isEnabled(aiConfig);
         const aiMode = aiConfig.mode || 'fallback';
         // 移动 AI 兜底通道（灵犀）：总开关开启且存在可用 139 凭证时，主 AI 未配置也开箱即用（方案 §5）
         const MobileAiClient = require('../MobileAiClient');
-        const mobileFallbackEnabled = await MobileAiClient.isEnabled();
+        const mobileFallbackEnabled = mainAiEnabled && (await MobileAiClient.isEnabled());
         const anyAiEnabled = isAiEnabled || mobileFallbackEnabled;
-        // 多源信息拼接上下文（M2b：三处 AI 调用共用，context 变化会重算缓存 key）
-        const aiContext = { ...TgChannelMonitorService.buildAiContext(shareDir), accountId };
-
-        if (!tmdbService.apiKey && !tmdbService.credential) {
-            if (anyAiEnabled && post?.text) {
-                try {
-                    const aiRes = await aiService.parseMediaInfo(post.text, aiContext, aiConfig);
-                    if (aiRes.success && aiRes.data && aiRes.data.title) {
-                        const aiTitle = TgChannelMonitorService.cleanInterferenceChars(aiRes.data.title);
-                        const aiYear = String(aiRes.data.year || '');
-                        logTaskEvent(`[前置门禁-AI免TMDB] AI 成功结构化识别推文: 《${aiTitle}》 (${aiYear || '未知年份'})`);
-                        return {
-                            matched: true,
-                            title: aiTitle,
-                            year: aiYear,
-                            mediaType: aiRes.data.mediaType || 'tv',
-                            source: 'ai_direct_no_tmdb'
-                        };
-                    }
-                } catch (aiErr) {
-                    logger.warn(`[前置门禁] 未配 TMDB 时 AI 解析异常: ${aiErr.message}`);
-                }
-            }
-            const postMedia = post?.text ? TgChannelMonitorService.extractMediaInfoFromPost(post.text) : null;
-            const fallbackTitle = (postMedia?.title ? TgChannelMonitorService.cleanInterferenceChars(postMedia.title) : '') || shareDir.linkName || '未命名影视';
-            return { matched: true, title: fallbackTitle, year: postMedia?.year || '', mediaType: 'tv', reason: '未配置 TMDB API 凭证，使用推文/分享名放行', source: 'bypass_no_key' };
-        }
-
         let sampleFiles = Array.isArray(shareDir.fileList) ? [...shareDir.fileList] : [];
         const folderList = Array.isArray(shareDir.folderList) ? shareDir.folderList : [];
         const folderNames = folderList.map(f => f.catalogName || f.caName || f.name).filter(Boolean);
         const linkName = shareDir.linkName || '';
 
         // 若根层无文件且存在子目录，轻量下探一层读取首个子目录的文件列表，确保拿到实际媒体文件名
-        if (sampleFiles.length === 0 && folderList.length > 0) {
+        if (sampleFiles.length === 0 && folderList.length > 0 && cloud139 && typeof cloud139.listShareDir === 'function') {
             try {
                 const firstFolder = folderList[0];
                 const subId = firstFolder.catalogID || firstFolder.caID;
@@ -918,6 +893,41 @@ class TgChannelMonitorService {
         const fileNames = sampleFiles.map(f => f.contentName || f.coName || f.name).filter(Boolean);
         const allNames = [...fileNames, ...folderNames, linkName].filter(Boolean);
 
+        // 多源信息拼接上下文（包含真实下探拿到的文件名样本）
+        const postMediaEarly = post?.text ? TgChannelMonitorService.extractMediaInfoFromPost(post.text) : null;
+        let targetSeason = postMediaEarly?.season || null;
+        const isLaterSeasonOrOngoing = Boolean(postMediaEarly?.isLaterSeasonOrOngoing);
+        const aiContext = {
+            ...TgChannelMonitorService.buildAiContext(shareDir, sampleFiles),
+            accountId,
+            isLaterSeasonOrOngoing
+        };
+
+        if (!tmdbService.apiKey && !tmdbService.credential) {
+            if (anyAiEnabled && post?.text) {
+                try {
+                    const aiRes = await aiService.parseMediaInfo(post.text, aiContext, aiConfig);
+                    if (aiRes.success && aiRes.data && aiRes.data.title) {
+                        const aiTitle = TgChannelMonitorService.cleanInterferenceChars(aiRes.data.title);
+                        const aiYear = String(aiRes.data.year || '');
+                        logTaskEvent(`[前置门禁-AI免TMDB] AI 成功结构化识别推文: 《${aiTitle}》 (${aiYear || '未知年份'})`);
+                        return {
+                            matched: true,
+                            title: aiTitle,
+                            year: aiYear,
+                            season: targetSeason || aiRes.data.season || null,
+                            mediaType: aiRes.data.mediaType || 'tv',
+                            source: 'ai_direct_no_tmdb'
+                        };
+                    }
+                } catch (aiErr) {
+                    logger.warn(`[前置门禁] 未配 TMDB 时 AI 解析异常: ${aiErr.message}`);
+                }
+            }
+            const fallbackTitle = (postMediaEarly?.title ? TgChannelMonitorService.cleanInterferenceChars(postMediaEarly.title) : '') || shareDir.linkName || '未命名影视';
+            return { matched: true, title: fallbackTitle, year: postMediaEarly?.year || '', season: targetSeason, mediaType: 'tv', reason: '未配置 TMDB API 凭证，使用推文/分享名放行', source: 'bypass_no_key' };
+        }
+
         // 1. 优先检查显式 {tmdb-XXXX} 标签 (最高权威)
         for (const name of allNames) {
             const m = name.match(/[\{\[](?:tmdb|tmdbid)[-:= ]?(\d+)[\}\]]/i);
@@ -931,6 +941,7 @@ class TgChannelMonitorService {
                             tmdbId: String(detail.id),
                             title: detail.title || detail.name,
                             year: String(detail.year || (detail.first_air_date || detail.release_date || '').slice(0, 4) || ''),
+                            season: cq.season || targetSeason,
                             mediaType: detail.media_type || (detail.first_air_date ? 'tv' : 'movie'),
                             posterPath: detail.poster_path || '',
                             source: 'tmdb_tag'
@@ -941,10 +952,9 @@ class TgChannelMonitorService {
         }
 
         // 2. 提取推文特征 (Source A)
-        const postMedia = post?.text ? TgChannelMonitorService.extractMediaInfoFromPost(post.text) : null;
+        const postMedia = postMediaEarly;
         const postTitle = postMedia?.title ? TgChannelMonitorService.cleanInterferenceChars(postMedia.title) : '';
         const postYear = postMedia?.year ? String(postMedia.year) : '';
-        const isLaterSeasonOrOngoing = Boolean(postMedia?.isLaterSeasonOrOngoing);
 
         // 3. 提取目录名特征 (Source B)
         const cleanFolderNames = [linkName, ...folderNames]
@@ -984,10 +994,17 @@ class TgChannelMonitorService {
                 if (aiRes.success && aiRes.data && aiRes.data.title) {
                     const aiTitle = TgChannelMonitorService.cleanInterferenceChars(aiRes.data.title);
                     const aiYear = String(aiRes.data.year || '');
-                    logTaskEvent(`[前置门禁-AI优先] AI 成功结构化识别推文: 《${aiTitle}》 (${aiYear || '未知年份'})`);
-                    candidateQueries.push({ title: aiTitle, year: aiYear, source: 'ai_always' });
+                    const aiSeason = (aiRes.data.season !== undefined && aiRes.data.season !== null && !isNaN(aiRes.data.season)) ? Number(aiRes.data.season) : null;
+                    if (aiSeason) {
+                        targetSeason = aiSeason;
+                    }
+                    logTaskEvent(`[前置门禁-AI优先] AI 成功结构化识别推文: 《${aiTitle}》 (${aiYear || '未知年份'})${aiRes.data.tmdbId ? ` [TMDB #${aiRes.data.tmdbId}]` : ''}`);
+                    if (aiRes.data.tmdbId) {
+                        candidateQueries.push({ title: aiTitle, year: aiYear, tmdbId: String(aiRes.data.tmdbId), source: 'ai_grounded', season: targetSeason });
+                    }
+                    candidateQueries.push({ title: aiTitle, year: aiYear, source: 'ai_always', season: targetSeason });
                     if (aiYear) {
-                        candidateQueries.push({ title: aiTitle, year: '', source: 'ai_always_pure' });
+                        candidateQueries.push({ title: aiTitle, year: '', source: 'ai_always_pure', season: targetSeason });
                     }
                 }
             } catch (aiErr) {
@@ -1016,7 +1033,7 @@ class TgChannelMonitorService {
 
         const seenQueries = new Set();
         const uniqueQueries = candidateQueries.filter(q => {
-            const key = `${q.title}___${q.year}`;
+            const key = `${q.tmdbId || ''}___${q.title}___${q.year}`;
             if (seenQueries.has(key)) return false;
             seenQueries.add(key);
             return true;
@@ -1025,6 +1042,21 @@ class TgChannelMonitorService {
         // 6. 执行 TMDB 检索与多维消歧裁决
         for (const cq of uniqueQueries) {
             try {
+                if (cq.tmdbId) {
+                    const detail = await tmdbService.details('tv', cq.tmdbId) || await tmdbService.details('movie', cq.tmdbId);
+                    if (detail && detail.id) {
+                        return {
+                            matched: true,
+                            tmdbId: String(detail.id),
+                            title: detail.title || detail.name,
+                            year: String(detail.year || (detail.first_air_date || detail.release_date || '').slice(0, 4) || ''),
+                            season: cq.season || targetSeason,
+                            mediaType: detail.media_type || (detail.first_air_date ? 'tv' : 'movie'),
+                            posterPath: detail.poster_path || '',
+                            source: cq.source
+                        };
+                    }
+                }
                 const candidates = await tmdbService.searchCandidates(cq.title, cq.year, 'auto');
                 if (candidates && candidates.length > 0) {
                     let best = candidates[0];
@@ -1102,12 +1134,19 @@ class TgChannelMonitorService {
                         if (scored.length > 0) {
                             best = scored[0].candidate;
                             bestScore = scored[0].score;
+                            const topCandidatesSummary = scored.slice(0, 3).map((item, idx) => {
+                                const c = item.candidate;
+                                const y = c.year || (c.first_air_date || c.release_date || '').slice(0, 4) || '未知';
+                                return `[#${idx + 1} 《${c.title || c.name}》 (ID: ${c.id}, 年份: ${y}, 得分: ${item.score})]`;
+                            }).join(' ');
+                            logTaskEvent(`[前置门禁-TMDB比对] 查询《${cq.title}》(${cq.year || '无年份'}) 返回 ${candidates.length} 条记录，打分排序: ${topCandidatesSummary}`);
                         }
                     }
 
                     // L2 熔断未命中（M2b 修正）：最高分 ≤ -200 时不再强制命中，继续触发后续 AI 兜底
                     if (bestScore <= -200) {
-                        logger.debug(`[前置门禁-TMDB裁决] 候选 "${cq.title}" 全部熔断 (score=${bestScore})，视为未命中`);
+                        const meltMsg = `[前置门禁-TMDB裁决] 候选 "${cq.title}" 全部熔断 (最高得分: ${bestScore})，视为未命中，转入深度判定`;
+                        logTaskEvent(meltMsg);
                         continue;
                     }
 
@@ -1117,7 +1156,8 @@ class TgChannelMonitorService {
                     const normQuery = RecognitionEngine.normalizeTitleKey(cq.title);
                     const yearMatch = Boolean(cq.year && best.year && String(cq.year) === String(best.year));
                     if (anyAiEnabled && post?.text && bestScore < 60 && normBest !== normQuery && !yearMatch) {
-                        const cross = await this._aiCrossVerifyTmdbCandidate(tmdbService, aiService, aiConfig, aiContext, post, best);
+                        logTaskEvent(`[前置门禁-TMDB比对] 候选《${bestTitleRaw}》置信度偏低 (得分: ${bestScore})，启动 AI 交叉验证...`);
+                        const cross = await this._aiCrossVerifyTmdbCandidate(tmdbService, aiService, aiConfig, aiContext, post, best, targetSeason);
                         if (cross.verdict === 'match') {
                             return cross.payload;
                         }
@@ -1127,11 +1167,13 @@ class TgChannelMonitorService {
                         // verdict=keep（AI 不可用）→ 保留低置信候选，按原逻辑返回
                     }
 
+                    logTaskEvent(`[前置门禁-TMDB裁决] 成功锁定权威条目: 《${best.title || best.name}》 [TMDB #${best.id}] (首播: ${best.year || '未知'}, 最终得分: ${bestScore})`);
                     return {
                         matched: true,
                         tmdbId: String(best.id),
                         title: best.title || best.name || cq.title,
                         year: String(best.year || cq.year || ''),
+                        season: cq.season || targetSeason,
                         mediaType: best.mediaType || (best.first_air_date ? 'tv' : 'movie'),
                         posterPath: best.posterPath || '',
                         source: cq.source
@@ -1153,6 +1195,25 @@ class TgChannelMonitorService {
                     const aiMediaType = aiRes.data.mediaType || 'auto';
                     logTaskEvent(`[前置门禁-AI兜底] AI 成功推导出影视标题: 《${aiTitle}》 (${aiYear || '无年份'}) [${aiMediaType}]`);
 
+                    // 优先使用 AI 消歧绑定的 TMDB ID
+                    if (aiRes.data.tmdbId) {
+                        try {
+                            const detail = await tmdbService.details('tv', aiRes.data.tmdbId) || await tmdbService.details('movie', aiRes.data.tmdbId);
+                            if (detail && detail.id) {
+                                return {
+                                    matched: true,
+                                    tmdbId: String(detail.id),
+                                    title: detail.title || detail.name,
+                                    year: String(detail.year || aiYear || ''),
+                                    season: targetSeason || aiRes.data.season || null,
+                                    mediaType: detail.media_type || (detail.first_air_date ? 'tv' : 'movie'),
+                                    posterPath: detail.poster_path || '',
+                                    source: 'ai_grounded_fallback'
+                                };
+                            }
+                        } catch (_) {}
+                    }
+
                     // 检索 TMDB 验证
                     const aiCandidates = await tmdbService.searchCandidates(aiTitle, aiYear, aiMediaType);
                     if (aiCandidates && aiCandidates.length > 0) {
@@ -1162,6 +1223,7 @@ class TgChannelMonitorService {
                             tmdbId: String(best.id),
                             title: best.title || best.name || aiTitle,
                             year: String(best.year || aiYear || ''),
+                            season: targetSeason || aiRes.data.season || null,
                             mediaType: best.mediaType || (best.first_air_date ? 'tv' : (best.release_date ? 'movie' : aiMediaType)),
                             posterPath: best.posterPath || '',
                             source: 'ai_fallback'
@@ -1172,6 +1234,7 @@ class TgChannelMonitorService {
                             matched: true,
                             title: aiTitle,
                             year: aiYear,
+                            season: targetSeason || aiRes.data.season || null,
                             mediaType: aiMediaType === 'auto' ? 'tv' : aiMediaType,
                             source: 'ai_direct_no_tmdb'
                         };
@@ -1195,7 +1258,7 @@ class TgChannelMonitorService {
      *   - reject: AI 给出不同片名且重查搜空，弃用该低置信候选
      *   - keep: AI 不可用/调用失败，保留原候选（现状行为）
      */
-    async _aiCrossVerifyTmdbCandidate(tmdbService, aiService, aiConfig, aiContext, post, candidate) {
+    async _aiCrossVerifyTmdbCandidate(tmdbService, aiService, aiConfig, aiContext, post, candidate, targetSeason = null) {
         try {
             const aiRes = await aiService.parseMediaInfo(post.text, aiContext, aiConfig);
             if (!aiRes.success || !aiRes.data || !aiRes.data.title) {
@@ -1205,6 +1268,7 @@ class TgChannelMonitorService {
             const aiYear = String(aiRes.data.year || '');
             const aiNorm = RecognitionEngine.normalizeTitleKey(aiTitle);
             const candNorm = RecognitionEngine.normalizeTitleKey(candidate.title || candidate.name || '');
+            const effSeason = targetSeason || aiRes.data.season || null;
             if (aiNorm && candNorm && aiNorm === candNorm) {
                 logTaskEvent(`[前置门禁-AI交叉验证] AI 认可低置信候选 《${aiTitle}》`);
                 return {
@@ -1214,6 +1278,7 @@ class TgChannelMonitorService {
                         tmdbId: String(candidate.id),
                         title: candidate.title || candidate.name || aiTitle,
                         year: String(candidate.year || aiYear || ''),
+                        season: effSeason,
                         mediaType: candidate.mediaType || (candidate.first_air_date ? 'tv' : 'movie'),
                         posterPath: candidate.posterPath || '',
                         source: 'tmdb_ai_verified'
@@ -1232,6 +1297,7 @@ class TgChannelMonitorService {
                         tmdbId: String(reBest.id),
                         title: reBest.title || reBest.name || aiTitle,
                         year: String(reBest.year || aiYear || ''),
+                        season: effSeason,
                         mediaType: reBest.mediaType || (reBest.first_air_date ? 'tv' : 'movie'),
                         posterPath: reBest.posterPath || '',
                         source: 'ai_verified_requery'
@@ -1269,7 +1335,6 @@ class TgChannelMonitorService {
         // 1. 解析目标暂存区
         const { stagingFolderId, stagingFolderName } = await this.resolveStagingFolder(cloud139, monitor);
         const stageMsg = `[频道监控-暂存区] 转存目标暂存区: ${stagingFolderName} (${stagingFolderId})`;
-        logger.info(stageMsg);
         logTaskEvent(stageMsg);
 
         // 2. 检查分享内容
@@ -1286,7 +1351,6 @@ class TgChannelMonitorService {
             const audioShareCheck = this.isAudioBookOrNonVideoShare(shareDir);
             if (audioShareCheck.isAudioBook) {
                 const blockMsg = `[频道监控-内容拦截] 分享外链识别为有声书/纯音频 (${audioShareCheck.reason})，取消转存`;
-                logger.info(blockMsg);
                 logTaskEvent(blockMsg);
                 return {
                     status: 'skipped_filter',
@@ -1303,7 +1367,6 @@ class TgChannelMonitorService {
         const preFlight = await this.probeAndValidateTmdbPreFlight(cloud139, linkID, passwd, shareDir, post, monitor.accountId);
         if (!preFlight.matched) {
             const blockMsg = `[频道监控-前置门禁] 拦截未识别资源: 推文/目录/文件名均未通过 TMDB 影视实体验证 (${preFlight.reason})，取消转存以防污染网盘暂存区 (linkID=${linkID})`;
-            logger.warn(blockMsg);
             logTaskEvent(blockMsg);
             return {
                 status: 'skipped_unmatched_tmdb',
@@ -1328,6 +1391,18 @@ class TgChannelMonitorService {
                 effectiveStagingFolderName = `${stagingFolderName}/${canonicalBatchFolderName}`;
                 isBatchIsolated = true;
                 logTaskEvent(`[频道监控-隔离暂存] 已就绪批次隔离目录: ${canonicalBatchFolderName} (${batchFolderId})`);
+
+                // 如果是剧集且识别出了具体季号（例如第三季 Season 03），在批次隔离目录下创建对应的 Season XX 子目录
+                // 确保内层只有 01.mp4 纯数字文件名或拼音代号目录时，物理路径上自带 Season 标识，绝对不会退化为 Season 01！
+                if (preFlight.mediaType === 'tv' && preFlight.season && Number(preFlight.season) > 0) {
+                    const seasonSubName = `Season ${String(preFlight.season).padStart(2, '0')}`;
+                    const seasonFolderId = await this.ensureChildFolder(cloud139, batchFolderId, seasonSubName);
+                    if (seasonFolderId) {
+                        effectiveStagingFolderId = seasonFolderId;
+                        effectiveStagingFolderName = `${stagingFolderName}/${canonicalBatchFolderName}/${seasonSubName}`;
+                        logTaskEvent(`[频道监控-季隔离] 已就绪季批次隔离目录: ${canonicalBatchFolderName}/${seasonSubName} (${seasonFolderId})`);
+                    }
+                }
             }
         } catch (batchErr) {
             if (Cloud139Service.isAuthFailure(batchErr)) {
@@ -1638,7 +1713,6 @@ class TgChannelMonitorService {
             const postFirstLine = (post.text || '').split('\n')[0].trim();
             const postPreview = post.text ? post.text.slice(0, 300).replace(/\n+/g, ' | ') : '';
             const hitMsg = `[频道监控-命中推文] 频道: [${monitor.name}], 消息ID: ${post.messageId}, 链接: ${post.postUrl}\n[推文标题] "${postFirstLine}"\n[推文原文] ${postPreview}`;
-            logger.info(hitMsg);
             logTaskEvent(hitMsg);
             try {
                 const result = await this.executeChannelIngestion(monitor, post, linkInfo);
@@ -1663,9 +1737,8 @@ class TgChannelMonitorService {
                 }
             } catch (ingestErr) {
                 const isAuth = Cloud139Service.isAuthFailure(ingestErr);
-                const authNotice = isAuth ? ' (⚠️ 关联账号凭据已过期失效，请在【云盘账号】页面重新扫码登录绑定)' : '';
+                const authNotice = isAuth ? ' (关联账号凭据已过期失效，请在【云盘账号】页面重新扫码登录绑定)' : '';
                 const failMsg = `[频道监控] 频道【${monitor.name}】推文《${postFirstLine}》(消息ID: ${post.messageId}) 转存失败: ${ingestErr.message}${authNotice}`;
-                logger.error(failMsg);
                 logTaskEvent(failMsg);
                 await historyRepo.save({
                     ...(existingHistory ? { id: existingHistory.id } : {}),
@@ -1758,6 +1831,106 @@ class TgChannelMonitorService {
             history.reason = err.message;
             await historyRepo.save(history);
             throw err;
+        }
+    }
+
+    /**
+     * 批量重试频道监控历史记录
+     * @param {object} options { ids?: number[], accountId?: number, allFailed?: boolean, limit?: number }
+     * @returns {Promise<{ total: number, successCount: number, failedCount: number, results: Array }>}
+     */
+    async retryBatchHistoryItems(options = {}) {
+        const historyRepo = getChannelMonitorHistoryRepository();
+        let itemsToRetry = [];
+
+        if (Array.isArray(options.ids) && options.ids.length > 0) {
+            itemsToRetry = await historyRepo.createQueryBuilder('history')
+                .where('history.id IN (:...ids)', { ids: options.ids })
+                .orderBy('history.id', 'ASC')
+                .getMany();
+        } else {
+            const query = historyRepo.createQueryBuilder('history')
+                .where('history.status = :status', { status: 'failed' });
+
+            if (options.accountId) {
+                const monitorRepo = getChannelMonitorRepository();
+                const monitors = await monitorRepo.find({ where: { accountId: Number(options.accountId) } });
+                const channelIds = monitors.map(m => m.id);
+                if (channelIds.length > 0) {
+                    query.andWhere('history.channelId IN (:...channelIds)', { channelIds });
+                } else {
+                    return { total: 0, successCount: 0, failedCount: 0, results: [] };
+                }
+            }
+
+            const limit = Math.min(Number(options.limit || 50), 100);
+            itemsToRetry = await query.orderBy('history.id', 'DESC').take(limit).getMany();
+        }
+
+        const results = [];
+        let successCount = 0;
+        let failedCount = 0;
+
+        for (const item of itemsToRetry) {
+            try {
+                const res = await this.retryHistoryItem(item.id);
+                results.push({ id: item.id, success: true, reason: res.reason });
+                successCount++;
+            } catch (err) {
+                results.push({ id: item.id, success: false, reason: err.message });
+                failedCount++;
+            }
+        }
+
+        return {
+            total: itemsToRetry.length,
+            successCount,
+            failedCount,
+            results
+        };
+    }
+
+    /**
+     * 账号认证恢复后，自动自愈重试此前因凭证失效失败的历史转存项
+     * @param {number} accountId
+     */
+    async autoRetryFailedAuthItems(accountId) {
+        if (!accountId) return;
+        try {
+            const historyRepo = getChannelMonitorHistoryRepository();
+            const monitorRepo = getChannelMonitorRepository();
+            const monitors = await monitorRepo.find({ where: { accountId: Number(accountId) } });
+            const channelIds = monitors.map(m => m.id);
+            if (channelIds.length === 0) return;
+
+            const failedItems = await historyRepo.createQueryBuilder('history')
+                .where('history.channelId IN (:...channelIds)', { channelIds })
+                .andWhere('history.status = :status', { status: 'failed' })
+                .andWhere('(history.reason LIKE :r1 OR history.reason LIKE :r2 OR history.reason LIKE :r3 OR history.reason LIKE :r4 OR history.reason LIKE :r5)', {
+                    r1: '%登录凭证已失效%',
+                    r2: '%认证失败%',
+                    r3: '%04000005%',
+                    r4: '%05050006%',
+                    r5: '%Token/Cookie已失效%'
+                })
+                .orderBy('history.id', 'ASC')
+                .take(30)
+                .getMany();
+
+            if (failedItems.length === 0) return;
+
+            logger.info(`[账号自愈] 检测到账号 (ID: ${accountId}) 存在 ${failedItems.length} 条因凭证失效未完成的历史转存，开始自动重试补转...`);
+
+            for (const item of failedItems) {
+                try {
+                    await this.retryHistoryItem(item.id);
+                    logger.info(`[账号自愈-重试成功] 历史转存项 ID: ${item.id} (推文 #${item.messageId}) 已自动补转成功`);
+                } catch (e) {
+                    logger.warn(`[账号自愈-重试失败] 历史转存项 ID: ${item.id} 补转失败: ${e.message}`);
+                }
+            }
+        } catch (error) {
+            logger.error(`[账号自愈] 自动重试历史失败转存项时出错: ${error.message}`);
         }
     }
 

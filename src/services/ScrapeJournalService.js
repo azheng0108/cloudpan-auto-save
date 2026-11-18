@@ -89,7 +89,7 @@ class ScrapeJournalService {
 
             const rec = this.recordRepo.create({
                 batchId,
-                driveType: op.driveType,
+                driveType: op.driveType || 'cloud139',
                 accountId: Number(op.accountId || 0),
                 kind: op.kind || 'video',
                 mainRecordId: op.mainRecordId || null,
@@ -156,7 +156,7 @@ class ScrapeJournalService {
 
     /**
      * 单条记录逆向原子撤回 (LIFO Rollback)
-     * 将文件从 newParentRef 移回 oldParentRef，并恢复名称为 oldName
+     * 将文件移回 oldParentPath / oldParentRef，并恢复名称为 oldName
      * @param {number} recordId
      * @param {MediaDriveAdapter} adapter
      */
@@ -164,27 +164,77 @@ class ScrapeJournalService {
         if (!this.recordRepo) throw new Error('数据库未初始化');
         const record = await this.recordRepo.findOne({ where: { id: recordId } });
         if (!record) throw new Error(`未找到刮削记录: id=${recordId}`);
-        if (record.status !== 'applied') {
-            throw new Error(`记录当前状态为 [${record.status}]，不可执行撤回操作`);
+
+        // 幂等防御：若记录此前已成功撤回，直接返回，避免重复撤回抛出 500
+        if (record.status === 'reverted') {
+            logger.info(`[刮削撤回] 记录 #${record.id} 当前已处于 [reverted] 撤回状态，幂等放行`);
+            return record;
         }
 
         const activeRef = record.newRef || record.fileRef;
-        logger.info(`[刮削撤回] 开始撤回记录 #${record.id}: 将 "${record.newName || record.oldName}" 搬回原位置 "${record.oldParentPath || record.oldParentRef}" 并还原为 "${record.oldName}"`);
+        if (!activeRef) {
+            throw new Error(`记录 #${recordId} 缺少文件唯一引用 (fileRef)`);
+        }
+
+        logger.info(`[刮削撤回] 开始撤回记录 #${record.id}: 将 "${record.newName || record.oldName}" 搬回原位置 "${record.oldParentPath || record.oldParentRef || '/'}" 并还原为 "${record.oldName}"`);
 
         // 1. 若曾改名，先将名称恢复为原名
-        if (record.newName && record.newName !== record.oldName) {
-            await adapter.rename(activeRef, record.oldName);
+        if (record.oldName) {
+            try {
+                await adapter.rename(activeRef, record.oldName);
+                logger.info(`[刮削撤回] 文件 #${activeRef} 已重命名恢复为 "${record.oldName}"`);
+            } catch (renameErr) {
+                logger.warn(`[刮削撤回] 重命名恢复原名提示 (非致命): ${renameErr.message}`);
+            }
         }
 
-        // 2. 若曾跨目录移动，将文件搬回源目录
-        if (record.newParentRef && record.newParentRef !== record.oldParentRef) {
-            await adapter.batchMove([activeRef], record.oldParentRef);
+        // 2. 将文件搬回源目录
+        // 目标目录获取策略：优先通过 oldParentPath 保证目录存在性（若源空目录被清理则重新幂等创建）；若无则降级用 oldParentRef
+        let targetFolderId = null;
+        if (record.oldParentPath && typeof adapter.ensureDirPath === 'function') {
+            try {
+                targetFolderId = await adapter.ensureDirPath(record.oldParentPath);
+            } catch (dirErr) {
+                logger.warn(`[刮削撤回] 通过 oldParentPath 确保源目录失败: ${dirErr.message}，尝试使用 oldParentRef`);
+            }
+        }
+        if (!targetFolderId && record.oldParentRef) {
+            targetFolderId = record.oldParentRef;
         }
 
-        // 3. 更新日志状态为 reverted
+        if (targetFolderId) {
+            try {
+                await adapter.batchMove([activeRef], targetFolderId);
+                logger.info(`[刮削撤回] 文件 #${activeRef} 已成功移回源目录 (${targetFolderId})`);
+            } catch (moveErr) {
+                if (moveErr.message && (
+                    moveErr.message.includes('无法移动到自身') ||
+                    moveErr.message.includes('自身所在目录') ||
+                    moveErr.message.includes('同一目录')
+                )) {
+                    logger.info(`[刮削撤回] 文件已在源目录中，无需重复移动: ${moveErr.message}`);
+                } else {
+                    throw new Error(`移动回原目录失败: ${moveErr.message}`);
+                }
+            }
+        } else {
+            logger.warn(`[刮削撤回] 记录 #${record.id} 未提供有效源目录 (oldParentPath 或 oldParentRef 为空)，仅完成重命名`);
+        }
+
+        // 3. 回收站旧版救援：若该记录曾置换淘汰了旧版且记录了 replacedFileId，尝试从回收站找回
+        if (record.replacedFileId && typeof adapter.restoreFromRecycleBin === 'function') {
+            try {
+                await adapter.restoreFromRecycleBin(record.replacedFileId);
+                logger.info(`[刮削撤回] 已成功从回收站救回被淘汰的旧版文件 (${record.replacedFileId})`);
+            } catch (resErr) {
+                logger.warn(`[刮削撤回] 尝试从回收站救回旧版文件 (${record.replacedFileId}) 失败: ${resErr.message}`);
+            }
+        }
+
+        // 4. 更新日志状态为 reverted
         record.status = 'reverted';
         record.revertedAt = new Date();
-        record.reason = '已通过后悔药原路撤回至原目录与原文件名';
+        record.reason = '已通过原路撤回恢复至原目录与原文件名';
         await this.recordRepo.save(record);
         logger.info(`[刮削撤回] 记录 #${record.id} 逆向撤回成功`);
         return record;
@@ -200,9 +250,14 @@ class ScrapeJournalService {
         const batch = await this.batchRepo.findOne({ where: { id: batchId } });
         if (!batch) throw new Error(`未找到刮削批次: id=${batchId}`);
 
-        // 倒序拉取所有 applied 记录
+        // 倒序拉取所有非 reverted 的记录进行回滚
         const records = await this.recordRepo.find({
-            where: { batchId, status: 'applied' },
+            where: [
+                { batchId, status: 'applied' },
+                { batchId, status: 'MOVED' },
+                { batchId, status: 'quarantined' },
+                { batchId, status: 'fallback' }
+            ],
             order: { id: 'DESC' }
         });
 

@@ -7,6 +7,83 @@ const { IsoProbeService } = require('./IsoProbeService');
 const { RecognitionEngine } = require('./RecognitionEngine');
 
 /**
+ * 媒体探针单实例异步互斥队列 (ProbeMutexQueue)
+ * 彻底规避 mediainfo.js WASM 引擎单例跨任务并发分析导致的
+ * "cannot start a new analysis while another is in progress" 异常。
+ * 绑定 AbortController，超时强行物理切断网络 Range 下载流，彻底消除僵尸任务污染。
+ */
+class ProbeMutexQueue {
+    static _queue = [];
+    static _isProcessing = false;
+
+    /**
+     * 安全入队执行单文件媒体探针
+     * @param {Function} taskGenerator - (abortSignal) => Promise<any>
+     * @param {number} timeoutMs - 超时时间，默认 6000ms
+     */
+    static async enqueue(taskGenerator, timeoutMs = 6000) {
+        return new Promise((resolve, reject) => {
+            const abortController = new AbortController();
+            this._queue.push({
+                taskGenerator,
+                abortController,
+                timeoutMs,
+                resolve,
+                reject
+            });
+            this._processNext();
+        });
+    }
+
+    static async _processNext() {
+        if (this._isProcessing || this._queue.length === 0) return;
+        this._isProcessing = true;
+
+        const current = this._queue.shift();
+        const { taskGenerator, abortController, timeoutMs, resolve, reject } = current;
+        let isSettled = false;
+
+        // 强力防僵尸超时熔断机制
+        const timer = setTimeout(() => {
+            if (!isSettled) {
+                isSettled = true;
+                logger.warn(`[媒体探针-防僵尸熔断] 嗅探任务超过 ${timeoutMs}ms，立即中断下载流并销毁当前 WASM 实例`);
+                try {
+                    abortController.abort();
+                } catch (_) {}
+                MediaProbeService._resetMediaInfo();
+                this._isProcessing = false;
+                resolve(null);
+                this._processNext();
+            }
+        }, timeoutMs);
+
+        try {
+            const result = await taskGenerator(abortController.signal);
+            if (!isSettled) {
+                isSettled = true;
+                clearTimeout(timer);
+                resolve(result);
+            }
+        } catch (err) {
+            if (!isSettled) {
+                isSettled = true;
+                clearTimeout(timer);
+                if (err.name === 'AbortError' || /cannot start a new analysis/i.test(err.message)) {
+                    MediaProbeService._resetMediaInfo();
+                }
+                resolve(null);
+            }
+        } finally {
+            if (isSettled) {
+                this._isProcessing = false;
+                this._processNext();
+            }
+        }
+    }
+}
+
+/**
  * 媒体探针服务 (MediaProbeService)
  * 
  * 基于 139 移动云盘直链的原生 HTTP Range 二进制视频流探针引擎 (零外部工具依赖，开箱即用)
@@ -18,30 +95,78 @@ class MediaProbeService {
     // 内存元数据 LRU 缓存，键为 `${fileId}:${fileSize}`
     static _cache = new Map();
 
-    // mediainfo.js WASM 单例实例
-    static _mediaInfoInstance = null;
+    // mediainfo.js WASM 实例池（支持并发隔离，防止 cannot start a new analysis 冲突）
+    static _mediaInfoPool = [];
+    static _mediaInfoActiveCount = 0;
+    static _mediaInfoMaxPoolSize = 4;
+    static _mediaInfoWaitQueue = [];
 
     /**
-     * 获取或初始化 MediaInfo WASM 单例实例
+     * 从实例池借出一个独占的 MediaInfo WASM 实例
      */
-    static async _getMediaInfo() {
-        if (!this._mediaInfoInstance) {
-            const { mediaInfoFactory } = require('mediainfo.js');
-            this._mediaInfoInstance = await mediaInfoFactory({ format: 'object' });
+    static async _acquireMediaInfo() {
+        if (this._mediaInfoPool.length > 0) {
+            return this._mediaInfoPool.pop();
         }
-        return this._mediaInfoInstance;
+        if (this._mediaInfoActiveCount < this._mediaInfoMaxPoolSize) {
+            this._mediaInfoActiveCount++;
+            try {
+                const { mediaInfoFactory } = require('mediainfo.js');
+                return await mediaInfoFactory({ format: 'object' });
+            } catch (err) {
+                this._mediaInfoActiveCount = Math.max(0, this._mediaInfoActiveCount - 1);
+                throw err;
+            }
+        }
+        return new Promise((resolve) => {
+            this._mediaInfoWaitQueue.push(resolve);
+        });
     }
 
     /**
-     * 重置 MediaInfo WASM 实例（当解析抛错或内存异常时安全销毁并释放，防止实例污染）
+     * 归还 MediaInfo WASM 实例回池，若发生异常则安全销毁，避免污染后续任务
+     */
+    static _releaseMediaInfo(instance, hasError = false) {
+        if (!instance) return;
+
+        if (hasError) {
+            try {
+                instance.close();
+            } catch (_) {}
+            this._mediaInfoActiveCount = Math.max(0, this._mediaInfoActiveCount - 1);
+            if (this._mediaInfoWaitQueue.length > 0) {
+                const next = this._mediaInfoWaitQueue.shift();
+                this._acquireMediaInfo().then(next).catch(() => {});
+            }
+            return;
+        }
+
+        if (this._mediaInfoWaitQueue.length > 0) {
+            const next = this._mediaInfoWaitQueue.shift();
+            next(instance);
+        } else {
+            this._mediaInfoPool.push(instance);
+        }
+    }
+
+    /**
+     * 兼容性保留（单例获取转为池借出）
+     */
+    static async _getMediaInfo() {
+        return this._acquireMediaInfo();
+    }
+
+    /**
+     * 清理并销毁池中所有空闲实例
      */
     static _resetMediaInfo() {
-        if (this._mediaInfoInstance) {
+        while (this._mediaInfoPool.length > 0) {
+            const inst = this._mediaInfoPool.pop();
             try {
-                this._mediaInfoInstance.close();
+                inst.close();
             } catch (_) {}
-            this._mediaInfoInstance = null;
         }
+        this._mediaInfoActiveCount = 0;
     }
 
     // ==========================================
@@ -196,6 +321,7 @@ class MediaProbeService {
                             Accept: '*/*',
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                         },
+                        signal: options.signal,
                         responseType: 'buffer',
                         timeout: { request: options.timeout || ConfigService.getConfigValue('mediaProbe.timeoutMs', 15000) },
                         retry: { limit: 1 }
@@ -206,7 +332,9 @@ class MediaProbeService {
                     cache.set(start, rec);
                     return rec;
                 } catch (e) {
-                    logger.debug(`[Range读取] 窗口 #${requestCount} 失败: ${e.message}`);
+                    if (e.name !== 'AbortError') {
+                        logger.debug(`[Range读取] 窗口 #${requestCount} 失败: ${e.message}`);
+                    }
                     return null;
                 }
             })().finally(() => inFlight.delete(start));
@@ -254,83 +382,93 @@ class MediaProbeService {
      * 4. 严禁依据文件名篡改物理参数，仅继承非物理属性（来源/发布组）
      */
     static async probeWithNativeRange(directUrl, fileSize, fileName = '', options = {}) {
-        const reader = this.createRangeReader(directUrl, fileSize, options);
-        try {
-            // 1. 容器定位与假 ISO 识别 (定位底层多媒体流真实偏移量与大小)
-            const streamMeta = await IsoProbeService.detectAndLocateMediaStream(reader, fileSize, fileName);
-            const effectiveOffset = Number(streamMeta?.offset || 0);
-            const effectiveSize = Number(streamMeta?.size || fileSize);
-
-            // 2. 优先驱动 mediainfo.js (WASM) 进行权威媒体流物理嗅探
-            let probedRaw = null;
+        return ProbeMutexQueue.enqueue(async (abortSignal) => {
+            const mergedOptions = Object.assign({}, options, { signal: abortSignal });
+            const reader = this.createRangeReader(directUrl, fileSize, mergedOptions);
             try {
-                const mediaInfo = await this._getMediaInfo();
-                const result = await mediaInfo.analyzeData(
-                    () => effectiveSize,
-                    async (chunkSize, offset) => {
-                        const buf = await reader(chunkSize, effectiveOffset + offset);
-                        if (!buf || buf.length === 0) return new Uint8Array(0);
-                        return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+                // 1. 容器定位与假 ISO 识别 (定位底层多媒体流真实偏移量与大小)
+                const streamMeta = await IsoProbeService.detectAndLocateMediaStream(reader, fileSize, fileName);
+                const effectiveOffset = Number(streamMeta?.offset || 0);
+                const effectiveSize = Number(streamMeta?.size || fileSize);
+
+                // 2. 优先驱动 mediainfo.js (WASM) 进行权威媒体流物理嗅探
+                let probedRaw = null;
+                let mediaInfoInstance = null;
+                let hasWasmError = false;
+                try {
+                    mediaInfoInstance = await this._acquireMediaInfo();
+                    const result = await mediaInfoInstance.analyzeData(
+                        () => effectiveSize,
+                        async (chunkSize, offset) => {
+                            if (abortSignal.aborted) throw new Error('Probe aborted by controller');
+                            const buf = await reader(chunkSize, effectiveOffset + offset);
+                            if (!buf || buf.length === 0) return new Uint8Array(0);
+                            return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+                        }
+                    );
+
+                    const tracks = result?.media?.track || [];
+                    const videoTrack = tracks.find(t => t['@type'] === 'Video') || {};
+                    const audioTrack = tracks.find(t => t['@type'] === 'Audio') || {};
+
+                    if (videoTrack.Format || videoTrack.Width || videoTrack.Height || videoTrack.CodecID) {
+                        const videoFormat = this.normalizeResolution(videoTrack.Width, videoTrack.Height, videoTrack.ScanType);
+                        const videoCodec = this.normalizeVideoCodec(videoTrack.Format || videoTrack.CodecID);
+                        const dynamicRange = this.normalizeDynamicRange(videoTrack);
+                        const rawFps = parseFloat(videoTrack.FrameRate || 0);
+                        const frameRate = rawFps >= 48 ? `${Math.round(rawFps)}fps` : '';
+                        const rawBitDepth = parseInt(videoTrack.BitDepth || 0, 10);
+                        const colorDepth = rawBitDepth >= 10 ? `${rawBitDepth}bit` : '';
+                        const audioCodec = this.normalizeAudioCodec(audioTrack);
+                        const isDolby = dynamicRange === 'DV';
+
+                        probedRaw = {
+                            videoFormat,
+                            videoCodec,
+                            dynamicRange,
+                            frameRate,
+                            colorDepth,
+                            audioCodec,
+                            isDolby,
+                            width: parseInt(videoTrack.Width || 0, 10),
+                            height: parseInt(videoTrack.Height || 0, 10),
+                            container: streamMeta?.container || (tracks.find(t => t['@type'] === 'General')?.Format || ''),
+                            isFakeIso: Boolean(streamMeta?.isFakeIso),
+                            isBluRay: Boolean(streamMeta?.isBluRay),
+                            isDvd: Boolean(streamMeta?.isDvd),
+                            realExt: streamMeta?.realExt || ''
+                        };
                     }
-                );
-
-                const tracks = result?.media?.track || [];
-                const videoTrack = tracks.find(t => t['@type'] === 'Video') || {};
-                const audioTrack = tracks.find(t => t['@type'] === 'Audio') || {};
-
-                if (videoTrack.Format || videoTrack.Width || videoTrack.Height || videoTrack.CodecID) {
-                    const videoFormat = this.normalizeResolution(videoTrack.Width, videoTrack.Height, videoTrack.ScanType);
-                    const videoCodec = this.normalizeVideoCodec(videoTrack.Format || videoTrack.CodecID);
-                    const dynamicRange = this.normalizeDynamicRange(videoTrack);
-                    const rawFps = parseFloat(videoTrack.FrameRate || 0);
-                    const frameRate = rawFps >= 48 ? `${Math.round(rawFps)}fps` : '';
-                    const rawBitDepth = parseInt(videoTrack.BitDepth || 0, 10);
-                    const colorDepth = rawBitDepth >= 10 ? `${rawBitDepth}bit` : '';
-                    const audioCodec = this.normalizeAudioCodec(audioTrack);
-                    const isDolby = dynamicRange === 'DV';
-
-                    probedRaw = {
-                        videoFormat,
-                        videoCodec,
-                        dynamicRange,
-                        frameRate,
-                        colorDepth,
-                        audioCodec,
-                        isDolby,
-                        width: parseInt(videoTrack.Width || 0, 10),
-                        height: parseInt(videoTrack.Height || 0, 10),
-                        container: streamMeta?.container || (tracks.find(t => t['@type'] === 'General')?.Format || ''),
-                        isFakeIso: Boolean(streamMeta?.isFakeIso),
-                        isBluRay: Boolean(streamMeta?.isBluRay),
-                        isDvd: Boolean(streamMeta?.isDvd),
-                        realExt: streamMeta?.realExt || ''
-                    };
+                } catch (wasmErr) {
+                    hasWasmError = true;
+                    logger.debug(`[媒体探针] MediaInfo WASM 嗅探异常 (${fileName}): ${wasmErr.message}，释放故障实例`);
+                } finally {
+                    if (mediaInfoInstance) {
+                        this._releaseMediaInfo(mediaInfoInstance, hasWasmError);
+                    }
                 }
-            } catch (wasmErr) {
-                logger.debug(`[媒体探针] MediaInfo WASM 嗅探异常 (${fileName}): ${wasmErr.message}，重置实例`);
-                this._resetMediaInfo();
-            }
 
-            // 3. 若 MediaInfo 遇特殊封装未解析出视频轨，使用轻量 Buffer 解析作为兜底
-            if (!probedRaw || !probedRaw.videoFormat) {
-                const headBuf = await reader(Math.min(effectiveSize, 4 * 1024 * 1024), effectiveOffset);
-                if (headBuf && headBuf.length >= 16) {
-                    const parsed = IsoProbeService.parseVideoStreamMetaFromBuffer(headBuf) || {};
-                    probedRaw = Object.assign({}, streamMeta, parsed, probedRaw || {});
+                // 3. 若 MediaInfo 遇特殊封装未解析出视频轨，使用轻量 Buffer 解析作为兜底
+                if (!probedRaw || !probedRaw.videoFormat) {
+                    const headBuf = await reader(Math.min(effectiveSize, 4 * 1024 * 1024), effectiveOffset);
+                    if (headBuf && headBuf.length >= 16) {
+                        const parsed = IsoProbeService.parseVideoStreamMetaFromBuffer(headBuf) || {};
+                        probedRaw = Object.assign({}, streamMeta, parsed, probedRaw || {});
+                    }
                 }
-            }
 
-            if (!probedRaw) {
-                return streamMeta ? this._normalizeStreamMeta(streamMeta, fileName, fileSize) : null;
-            }
+                if (!probedRaw) {
+                    return streamMeta ? this._normalizeStreamMeta(streamMeta, fileName, fileSize) : null;
+                }
 
-            return this._normalizeStreamMeta(probedRaw, fileName, fileSize);
-        } catch (err) {
-            logger.debug(`[媒体探针-原生Range] 嗅探流异常 (${fileName}): ${err.message}`);
-            return null;
-        } finally {
-            reader.cleanup?.();
-        }
+                return this._normalizeStreamMeta(probedRaw, fileName, fileSize);
+            } catch (err) {
+                logger.debug(`[媒体探针-原生Range] 嗅探流异常 (${fileName}): ${err.message}`);
+                return null;
+            } finally {
+                reader.cleanup?.();
+            }
+        }, options.timeout || ConfigService.getConfigValue('mediaProbe.timeoutMs', 6000));
     }
 
     /**
@@ -355,8 +493,22 @@ class MediaProbeService {
         let cd = raw.colorDepth || '';
         let fr = raw.frameRate || '';
 
-        // 非物理属性：发布来源与光盘类型
-        let mediaSource = raw.mediaSource || (raw.isBluRay ? 'BluRay' : (raw.isDvd ? 'DVD' : (nameTags.mediaSource || '')));
+        // 非物理属性：发布来源与光盘类型（非 REMUX 视频一律标上全大写 WEB-DL）
+        const isRemux = Boolean(
+            raw.isRemux ||
+            nameTags.isRemux ||
+            /REMUX/i.test(fileName || '') ||
+            /REMUX/i.test(raw.resourceType || '') ||
+            /REMUX/i.test(raw.mediaSource || '')
+        );
+
+        let resourceType = isRemux ? 'REMUX' : '';
+        let mediaSource = isRemux
+            ? (raw.mediaSource || (raw.isBluRay || nameTags.isBluRay ? 'BluRay' : (nameTags.mediaSource || '')))
+            : 'WEB-DL';
+        if (isRemux && /WEB[- .]?DL/i.test(mediaSource)) {
+            mediaSource = '';
+        }
 
         const res = {
             videoFormat: vf,
@@ -366,6 +518,8 @@ class MediaProbeService {
             audioCodec: ac,
             frameRate: fr,
             mediaSource,
+            resourceType,
+            isRemux,
             isDolby,
             width: raw.width || 0,
             height: raw.height || 0,

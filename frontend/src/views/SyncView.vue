@@ -1759,7 +1759,7 @@ onUnmounted(() => {
                 <select v-model="selectedPan123DirId" class="input-base text-xs bg-white dark:bg-gray-900 font-mono">
                   <option :value="0">/ (123 网盘根目录)</option>
                   <option v-for="folder in pan123Folders" :key="folder.id" :value="folder.id">
-                    📁 {{ folder.name }} (ID: {{ folder.id }})
+                     {{ folder.name }} (ID: {{ folder.id }})
                   </option>
                 </select>
                 <p class="text-[11px] text-gray-400 mt-1">离线任务下载完成后将自动存放于该 123 目录中</p>

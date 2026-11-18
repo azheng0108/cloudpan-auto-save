@@ -50,8 +50,8 @@ export const accountApi = {
   cancelDefault(id: number | string): Promise<any> {
     return http.delete(`/api/accounts/${id}/default`);
   },
-  createQrCode(): Promise<{ sID: string; dID: string; qrUrl: string; qrDataUrl: string; expiresIn: number }> {
-    return http.get('/api/accounts/qrcode/create');
+  createQrCode(targetAccountId?: number | string): Promise<{ sID: string; dID: string; qrUrl: string; qrDataUrl: string; expiresIn: number }> {
+    return http.get('/api/accounts/qrcode/create', { params: targetAccountId ? { targetAccountId } : {} });
   },
   checkQrStatus(sID: string): Promise<{ status: 'waiting' | 'confirmed' | 'expired'; account?: string; message?: string }> {
     return http.get('/api/accounts/qrcode/status', { params: { sID } });

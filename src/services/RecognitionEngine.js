@@ -187,11 +187,14 @@ class RecognitionEngine {
     static DISCARD_EXTENSIONS = new Set(['nfo', 'txt', 'url', 'exe', 'torrent', 'jpg', 'jpeg', 'png', 'webp', 'gif']);
     static GENERIC_FOLDERS = /^(?:Transfer|Downloads?|Media|Videos?|Movies?|TV|Series|Anime|Bangumi|Default|Root|新建文件夹|待整理|未分类|夸克|阿里云盘|百度网盘|115网盘|123云盘|139云盘|移动云盘|天翼云盘|迅雷云盘|暂存区|临时存放|Share|Download)$/i;
     static DEFAULT_SPECIAL_KEYWORD_MAPPINGS = [
-        ['special', '特别篇', ['特别篇', 'Special', 'SP', '特典', '花絮', '预热', '先行', '番外']],
-        ['ova', 'OVA', ['OVA', 'OAD', 'ONA']],
-        ['preview', '预告', ['预告', 'Trailer', 'Teaser', '先导']],
-        ['opening', '片头曲', ['NCED', 'NCOP', 'OP', 'ED']],
-        ['movie', '剧场版', ['剧场版', '劇場版', 'Movie']]
+        ['pilot', '先导片', ['先导', '导赏', '导览', '先行', '序篇', '序章', '预热', '尝鲜', '抢先', '抢鲜', '预告', '片花', 'Trailer', 'Teaser', 'Preview', 'Sneak Peek', 'Promo', 'PV']],
+        ['sideStory', '番外衍生', ['番外', '衍生', 'Side Story', 'Spin Off', 'Spinoff']],
+        ['extra', '加更', ['加更', '加料', '独家加更', '还有加更', 'Plus', 'Extra']],
+        ['bonus', '彩蛋福利', ['福利局', '惊喜局', '彩蛋', '会员 彩蛋', 'VIP Bonus', 'Bonus']],
+        ['member', '会员专享', ['会员版', '会员加长', '会员专享']],
+        ['ova', 'OVA/OAD', ['OVA', 'OAD', 'ONA', 'OAV']],
+        ['special', '特别篇', ['SP', 'Special', 'NCED', 'NCOP', '特典', '映像特典', '特辑', '回顾特辑', '名场面特辑', '特别加更']],
+        ['live', '直播花絮', ['直播', '空降直播', '空降', '云连线', 'Live']]
     ];
 
         static normalizeChineseNumeral(s) {
@@ -292,6 +295,59 @@ class RecognitionEngine {
             if (/^(?:Specials?|SP\d*|Extras?|Bonus|Featurettes?|Behind the Scenes|番外|特别篇)$/i.test(clean)) return true;
             if (/^(?:cd\s*\d+|disc\s*\d+|part\s*\d+|subs?|subtitles?)$/i.test(clean)) return true;
             return false;
+        }
+
+        /**
+         * 判定目录是否为纯技术规格、画质、分辨率或总集数子目录（如 "4K HQ 杜比视界 高码率（66集全）", "1080p 高码率", "4K REMUX", "全66集 4K"）
+         * 此类目录绝无独立剧名，必须向上穿透至父级影视目录
+         * @param {string} name 
+         * @returns {boolean}
+         */
+        static isPureVersionOrSpecFolder(name) {
+            if (!name || typeof name !== 'string') return false;
+            let s = name.trim();
+            s = s.replace(/^[\[\(（【{]+|[\]\)）】}]+$/g, '').trim();
+            // 剥离总集数如 （66集全） (全66集) (共66集) (66集完) (全集)
+            s = s.replace(/(?:共|全)?\s*\d{1,4}\s*(?:集全|集完|集|话全|话完|话)|(?:全集|完结)/gi, '');
+            // 剥离西文画质/技术规格
+            s = s.replace(/\b(?:4k|2160p|1080p|720p|uhd|fhd|hd|remux|bluray|blu-ray|bdrip|web-?dl|web-?rip|hdr\d*|hdr10\+?|dv|dovi|dolby\s*vision|dolby|atmos|sdr|hq|hevc|avc|h\.?26[45]|x26[45]|10bit|8bit|60fps|120fps|dts(?:-hd)?|truehd|aac|ac3|flac|mp4|mkv)\b/gi, '');
+            // 剥离中文画质与规格词汇
+            s = s.replace(/(?:杜比视界|杜比音效|杜比全景声|杜比|高码率|低码率|超高清|超清|高清|标清|蓝光原盘|蓝光|原盘|正片|纯净版|典藏版|重置版|修复版|无损|中文字幕|官方中字|双语字幕|特效字幕|双语|国粤双语|国语|粤语|普通话|简日|繁日)/g, '');
+            s = s.replace(/[\s\.\-_+~·\/\\()（）\[\]【】{}#@!！:：]/g, '');
+            return s.length === 0;
+        }
+
+        /**
+         * 提取篇章/番外/副标题（如 "东宁府番外篇（2024）" -> { arcName: "东宁府", fullArcTitle: "东宁府番外篇" }）
+         * 若属于纯季目录（如 "第一季"）或纯特别篇（如 "特别篇"），返回 null
+         * @param {string} folderName 
+         * @returns {{ arcName: string, fullArcTitle: string } | null}
+         */
+        static extractArcSubtitle(folderName) {
+            if (!folderName || typeof folderName !== 'string') return null;
+            let s = folderName.trim();
+            s = s.replace(/[\(（](?:19|20)\d{2}[)）]/g, ' ');
+            s = s.replace(/[\{\[](?:tmdb|tmdbid)[-:= ]?\d+[\}\]]/gi, ' ');
+            s = s.replace(/^[\[\(（【{]+|[\]\)）】}]+$/g, '').trim();
+
+            if (/^(?:Season\s*\d{1,3}|S\d{1,3}|第?\s*[0-9零〇一二两兩三四五六七八九十百\d]+\s*[季期部卷])$/i.test(s)) {
+                return null;
+            }
+
+            if (!/(?:番外|特别篇|前传|后传|外传|剧场版|[篇章])\b|番外篇|[篇章]$/i.test(s)) {
+                return null;
+            }
+
+            let clean = s.replace(/\b(?:4k|2160p|1080p|720p|remux|web-?dl|hdr|dv|h\.?26[45]|hevc)\b/gi, '').trim();
+            const stripped = clean.replace(/(?:番外篇|特别篇|番外|前传|后传|外传|剧场版|电影版|网络版|第?\s*[0-9零〇一二两兩三四五六七八九十百\d]+\s*[季期部卷篇章]|S\d+|Season\s*\d+|[篇章]$)/gi, '').trim();
+
+            if (stripped && stripped.length >= 2 && !/^\d+$/.test(stripped)) {
+                return {
+                    arcName: stripped,
+                    fullArcTitle: clean
+                };
+            }
+            return null;
         }
 
         // ★【跨号秒传/还原清单专属】智能识别剧集作品与任务范围全名 (穿透 Season 1，对齐导出特征命名)
@@ -593,6 +649,7 @@ class RecognitionEngine {
             if (/^\d+\s*(?:G|GB|T|TB)/i.test(clean) || /\b\d{3,4}[pi]\b/i.test(clean) || /(?:演唱会|音乐会|Concert|Live)/i.test(clean)) return null;
             // 普适通用分类容器（如 "iso动漫", "4K动漫", "电影", "剧集" 等）直接跳过，严禁提取季数
             if (/^(?:iso|4k|8k|bd|dvd|remux|web-?dl|hdr|1080[pi]|720p)?[_\-\s.]*(?:欧美|日韩|华语|港台|大陆|海外|英美|国产|日|美|台|国配)?(?:电影|剧集|电视剧|连续剧|动漫|动画|新番|纪录片|综艺|演唱会|影视|视频|资源|原盘)$/i.test(clean) || this.GENERIC_FOLDERS.test(clean)) return null;
+
             // 识别 第(2), 第2季, 第2部, 第2期, 第2, [2], (2), S2, Season 2, 食戟之靈3叁之皿, 钻石王牌02, 灵能百分百2
             const cnMatch = clean.match(/(?:第\s*[\(\[（【]?\s*([0-9零〇一二两兩三四五六七八九十百\d]+)\s*[\)\]）】]?\s*[季期部卷篇皿]?)|(?:Season\s*(\d{1,3}))|\bS(\d{1,3})\b/i);
             if (cnMatch) {
@@ -905,43 +962,62 @@ class RecognitionEngine {
          */
         static sanitizeMediaTitle(raw) {
             if (!raw) return '';
-            let s = String(raw).trim().replace(/.(?:mkv|mp4|iso|avi|rmvb|flv|ts|webm|m4v)$/i, '').trim();
+            let s = String(raw).trim().replace(/\.(?:mkv|mp4|iso|avi|rmvb|flv|ts|webm|m4v)$/i, '').trim();
+
+            // 0. 先行剥离 {tmdb-xxxx} / [tmdbid-xxxx] 标签与残留花括号 (防止污染片名，如 "八仙！ {tmdb-1633056")
+            s = s.replace(/[\{\[](?:tmdb|tmdbid)[-:= ]?\d+[\}\]]?/gi, ' ');
+            s = s.replace(/[\{\}]/g, ' ');
+
+            // 0.5. 优先提取书名号《...》中的真实片名
+            const bookMatch = s.match(/《([^》]+)》/);
+            if (bookMatch && bookMatch[1].trim()) {
+                s = bookMatch[1].trim();
+            }
 
             // 1. 如果整体被外层括号包裹，如【遮天】，先解构
-            s = s.replace(/^[【\[（\(]([^【】\[\]（）()]+)[】\]）\)]$/, '$1').trim();
+            s = s.replace(/^[【\[（\(《]([^【】\[\]（）()《》]+)[】\]）\)》]$/, '$1').trim();
 
             // 2. 剥离前缀宣传标签，如【4K国漫】、【最新更新】、[1080P]、[国漫] 等
-            while (/^[【\[（\(][^】\]）\)]+[】\]）\)]\s*/.test(s)) {
-                const next = s.replace(/^[【\[（\(][^】\]）\)]+[】\]）\)]\s*/, '').trim();
+            while (/^[【\[（\(《][^】\]）\)》]+[】\]）\)》]\s*/.test(s)) {
+                const next = s.replace(/^[【\[（\(《][^】\]）\)》]+[】\]）\)》]\s*/, '').trim();
                 if (next) s = next;
                 else break;
             }
 
-            // 3. 剥离括号包裹的年份 (如 "(2023)", "（2023）", "[2024]")
-            s = s.replace(/[\(\[（【]\s*(?:19\d\d|20[0-3]\d)\s*[\)\]）】]/g, ' ');
+            // 3. 剥离季号副标题，如 "：第01季", ": 第1季", " 第01季", " Season 1"
+            s = s.replace(/[:：]\s*(?:第\s*\d+\s*[季部]|Season\s*\d+)/gi, ' ');
+            s = s.replace(/(?:第\s*\d+\s*[季部]|Season\s*\d+)/gi, ' ');
 
-            // 4. 剥离更新状态、集数后缀与引流宣传 (如 "更新到166集", "更至18集", "全36集", "完结", "持续更新", "139网盘" 等)
+            // 4. 剥离文件大小标签，如 "11.6G", "10.4GB", "500MB"
+            s = s.replace(/\b\d+(?:\.\d+)?\s*(?:GB|MB|KB|G|M|K)\b/gi, ' ');
+
+            // 5. 剥离括号包裹的年份 (如 "(2023)", "（2023）", "[2024]")
+            s = s.replace(/[\(\[（【《]\s*(?:19\d\d|20[0-3]\d)\s*[\)\]）】》]/g, ' ');
+
+            // 6. 剥离更新状态、集数后缀与引流宣传 (如 "100集", "更新到166集", "更至18集", "全36集", "完结", "持续更新", "139网盘" 等)
+            s = s.replace(/\b\d+\s*[集话期]\b/g, ' ');
             s = s.replace(/(?:[._\-\s/]+)?(?:更新[到至中]|更[到至]|连载[到至中]|完结|已完结|全\s*\d+\s*[集话期全]|第\s*\d+\s*[集话期全]|每周[一二三四五六日天周]?\s*更[新]?|持续更新|139网盘|移动云盘|夸克网盘|夸克|百度网盘|百度云|阿里网盘|阿里云盘|天翼云盘|迅雷网盘|关注[^\s._\-]+|防封[^\s._\-]*|未删减[^\s._\-]*|内封字幕|官方原盘|4K超清|HDR版本).*/i, '');
 
-            // 5. 剥离技术规格词与画质
+            // 7. 剥离技术规格词与画质
             s = s.replace(/\b(?:4K|2160[pi]?|1080[pi]?|720[pi]?|480[pi]?|HD|BD|UHD|HDR\d*|DV|WEB-?DL|WEBRip|BDRip|Remux|HEVC|H\.?26[45]|x26[45]|60fps|120fps|60帧|120帧|高码率|无损|自压|S\d+(?:E\d+)?|EP?\d+)\b/gi, ' ');
             s = s.replace(/(?:[._\-\s]+)?(?:4K超清|超清4K|1080P超清|蓝光|高码率|60帧|120帧|国漫|动漫|连续剧|电影)[\s._\-]*/gi, ' ');
 
-            // 6. 提取并清理点号/空格分隔的年份 (如 "白夜破晓.2024" -> "白夜破晓", 但保留纯片名如 "1917")
+            // 8. 提取并清理点号/空格分隔的年份 (如 "白夜破晓.2024" -> "白夜破晓", 但保留纯片名如 "1917")
             s = s.replace(/(?<=[\u4e00-\u9fffA-Za-z])[._\-\s]+(19\d\d|20[0-3]\d)(?=[._\-\s]|$)/g, ' ');
 
-            // 7. 剥离末尾残留的括号标签，如 [1080P/60帧]
-            s = s.replace(/[\(\[（【][^）\]）】]*[）\]）】]$/g, ' ');
+            // 9. 剥离末尾残留的括号标签，如 [1080P/60帧], （1080P）
+            s = s.replace(/[\(\[（【《][^）\]）】》]*[）\]）】》]$/g, ' ');
 
-            // 8. 汉字间防封混淆字符处理
+            // 10. 汉字间防封混淆字符处理
             s = s.replace(/([\u4e00-\u9fff])\s*[丨|｜/\\丿丶•·~～]\s*([\u4e00-\u9fff])/g, '$1$2');
             s = s.replace(/([\u4e00-\u9fff])\s*[丨|｜/\\丿丶•·~～]\s*([\u4e00-\u9fff])/g, '$1$2');
             s = s.replace(/[丨|｜丶]/g, '');
 
-            // 9. 首尾符号清理与空格压缩
+            // 11. 首尾符号清理与空格压缩
+            s = s.replace(/^[《【\[（\(]+|[》】\]）\)]+$/g, ' ');
             s = s.replace(/^[^a-zA-Z0-9\u4e00-\u9fff]+|[^a-zA-Z0-9\u4e00-\u9fff]+$/g, '').replace(/\s+/g, ' ').trim();
 
-            // 10. 停用词校验 (若纯为画质、修饰词或格式水印则返回空)
+            // 12. 停用词校验 (若纯为画质、修饰词或格式水印则返回空)
             if (/^(?:4k|1080p|720p|hd|bd|web-?dl|hdr|全集|合集|短剧|电影|动漫|国漫|原盘|自压|修复|重制|精选|典藏|无损|更新|连载|高清|超清|标清|蓝光|原画|高码|高码率|抢先版|国语|粤语|台配|英语|日语|中字|中文字幕|双语字幕|简繁双字)+$/i.test(s)) {
                 return '';
             }
@@ -1001,11 +1077,17 @@ class RecognitionEngine {
                 if (!/^[\-_–—]/.test(rawName.trim())) englishTitle = rawName;
             }
 
-            // 0. 优先保留包含年份/数字的纯净原名 (如 "警察故事2013"、"花田喜事2010")
+            // 0. 优先保留包含年份/数字的纯净中文原名 (如 "警察故事2013"、"花田喜事2010")
+            let fallbackRawStem = null;
             if (rawName) {
                 const cleanRawStem = this.cleanAnimeFolderName(this.splitExtension(rawName)[0]);
                 if (cleanRawStem && cleanRawStem.length >= 2 && !this.isGenericFolder(cleanRawStem)) {
-                    addIfValid(cleanRawStem);
+                    if (/[\u4e00-\u9fff]/.test(cleanRawStem) && /(?:19|20)\d{2}|\d+$/.test(cleanRawStem)) {
+                        addIfValid(cleanRawStem);
+                    } else if (cleanRawStem !== normalized) {
+                        // 纯西文/拼音代号 (如 GUYU, DALI) 留置为末位降级候选，严禁凌驾于中文主标题之上
+                        fallbackRawStem = cleanRawStem;
+                    }
                 }
             }
 
@@ -1176,6 +1258,10 @@ class RecognitionEngine {
                 }
             }
 
+            if (fallbackRawStem) {
+                addIfValid(fallbackRawStem);
+            }
+
             return output;
         }
 
@@ -1264,14 +1350,14 @@ class RecognitionEngine {
                 return { season, episode, endEpisode, disc: 0, isSpecial: season === 0, hasEpisode: true };
             }
 
-            // ★ 2. 特殊集数侦测 (先导片、花絮、番外、OVA、OAD、SP、特辑、剧场版 -> Season 0 / 特别篇)
+            // ★ 2. 特殊集数侦测 (先导片、花絮、番外、OVA、OAD、SP、特辑 -> Season 0 / 特别篇；剧场版为独立电影不属特别篇)
             const specialHint = this.isSpecialEpisodeHint(clean);
             if (specialHint) {
                 const periodMatch = clean.match(/第\s*(\d{1,3})\s*期\s*(上|下|中)?/i);
                 const periodNum = periodMatch ? parseInt(periodMatch[1], 10) : undefined;
                 const periodPart = (periodMatch && periodMatch[2]) ? periodMatch[2] : (partIndicator ? partIndicator.canonical : undefined);
 
-                const taggedMatch = clean.match(/(?:OVA|OAD|ONA|SP|特别篇|番外|加更|彩蛋|剧场版|EP?)\s*(\d{1,4})/i)
+                const taggedMatch = clean.match(/(?:OVA|OAD|ONA|SP|特别篇|番外|加更|彩蛋|EP?)\s*(\d{1,4})/i)
                     || clean.match(/[\[【(]\s*(\d{1,3})\s*[\]】)]/);
                 let ep = 0;
                 if (taggedMatch) {
@@ -1303,12 +1389,27 @@ class RecognitionEngine {
 
             // ★ 3. 纯日期型（非特殊篇）：同时提取综艺期号上下期信息（第X期 上/下）
             if (airDate) {
-                const periodMatch = clean.match(/第\s*(\d{1,3})\s*期\s*(上|下|中)/i);
-                if (periodMatch) {
-                    const periodNum = parseInt(periodMatch[1], 10);
-                    const periodPart = periodMatch[2];
+                // 1. 周播期号上/下/中 (第4期上 -> (4-1)*2+1 = 7, 第4期下 -> 8)
+                const periodPartMatch = clean.match(/第\s*(\d{1,3})\s*期\s*(上|下|中)/i);
+                if (periodPartMatch) {
+                    const periodNum = parseInt(periodPartMatch[1], 10);
+                    const periodPart = periodPartMatch[2];
                     const episode = (periodNum - 1) * 2 + (periodPart === '下' ? 2 : (periodPart === '中' ? 2 : 1));
                     return { season: defaultSeason, episode, endEpisode: 0, airDate, isDate: true, isSpecial: false, hasEpisode: true, periodNum, periodPart, partIndicator };
+                }
+                // 2. 单期号 (第1期 -> 1, 第2期 -> 2, 第12期 -> 12)
+                const singlePeriodMatch = clean.match(/第\s*(\d{1,3})\s*期/i);
+                if (singlePeriodMatch) {
+                    const periodNum = parseInt(singlePeriodMatch[1], 10);
+                    return { season: defaultSeason, episode: periodNum, endEpisode: 0, airDate, isDate: true, isSpecial: false, hasEpisode: true, periodNum, partIndicator };
+                }
+                // 3. 显式集号 (如 EP04, 第4集)
+                const epMatch = clean.match(/(?:EP?|第)\s*(\d{1,4})(?:\s*[集话話])?/i);
+                if (epMatch) {
+                    const ep = parseInt(epMatch[1], 10);
+                    if (ep > 0 && ep !== 480 && ep !== 720 && ep !== 1080 && ep !== 2160) {
+                        return { season: defaultSeason, episode: ep, endEpisode: 0, airDate, isDate: true, isSpecial: false, hasEpisode: true, partIndicator };
+                    }
                 }
                 const effPart = partIndicator ? partIndicator.canonical : undefined;
                 return { season: defaultSeason, episode: 1, endEpisode: 0, airDate, isDate: true, isSpecial: false, hasEpisode: true, periodPart: effPart, partIndicator };
@@ -1498,13 +1599,22 @@ class RecognitionEngine {
                 }
             }
 
-            // 年份严重冲突检测：若原文件或待整理分组具备明确年份，而候选条目年份与目标年份相差超过 1 年，一票熔断拒绝采纳！
-            const targetYear = group?.year || RecognitionEngine.extractYear(fileItem?.name) || RecognitionEngine.extractYear(group?.title);
-            const candYear = candidate?.year ? String(candidate.year) : '';
+            // 年份严重冲突检测：优先采纳原视频文件本身的明确年份，防范父目录/旧系列目录的年份污染文件自身真实年份
+            const fileYear = RecognitionEngine.extractYear(fileItem?.name);
+            const targetYear = fileYear || group?.year || RecognitionEngine.extractYear(group?.title);
+            const candYear = candidate?.year ? String(candidate.year) : (candidate?.release_date ? candidate.release_date.substring(0, 4) : (candidate?.first_air_date ? candidate.first_air_date.substring(0, 4) : ''));
             if (targetYear && candYear) {
-                const diff = Math.abs(parseInt(targetYear, 10) - parseInt(candYear, 10));
-                if (diff > 1) {
-                    return true; // 跨年份严重冲突，直接熔断！
+                const targetY = parseInt(targetYear, 10);
+                const candY = parseInt(candYear, 10);
+                const isAirDateFile = /\b(?:19\d\d|20\d\d)[-._](?:0?[1-9]|1[0-2])[-._](?:0?[1-9]|[12]\d|3[01])\b/.test(fileItem?.name || '');
+                const isTvCandidate = candidate.media_type === 'tv' || Boolean(candidate.first_air_date);
+                // 若为剧集/综艺，且文件名中含有单集播映播出日期（如 2026-10-22），播映年份晚于首播年份属正常现象，不判定为冲突
+                const isTvAirDateLater = isTvCandidate && isAirDateFile && targetY >= candY;
+                if (!isTvAirDateLater) {
+                    const diff = Math.abs(targetY - candY);
+                    if (diff > 1) {
+                        return true; // 跨年份严重冲突，直接熔断！
+                    }
                 }
             }
 
@@ -1667,6 +1777,50 @@ class RecognitionEngine {
                             break;
                         }
 
+                        // 1.5 纯技术规格/画质/版本/总集数子目录（如 "4K HQ 杜比视界 高码率（66集全）", "1080p 高码率", "4K REMUX"）穿透
+                        if (RecognitionEngine.isPureVersionOrSpecFolder(seg) && p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
+                            continue;
+                        }
+
+                        // 1.6 独立篇章/番外篇子目录（如 "东宁府番外篇（2024）", "星海飞驰篇"）
+                        const arcObj = RecognitionEngine.extractArcSubtitle(seg);
+                        if (arcObj && p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
+                            const parentClean = RecognitionEngine.cleanAnimeFolderName(parts[p - 1]);
+                            effectiveFolderName = `${parentClean} ${arcObj.arcName}`;
+                            effectiveFolderPath = '/' + parts.slice(0, p + 1).join('/');
+                            break;
+                        }
+
+                        // 2. 唯有自身无独立片名的纯分季/分卷/特别篇子目录（如 "Season 1", "S02", "第1季", "特别篇", "SP", "BDMV" 等），
+                        //    且父级存在有效非通用目录时，才允许向上溯源至父级剧集目录
+                        const isCollectionFolder = RecognitionEngine.isCollectionFolder(seg);
+                        const folderSeasonVal = RecognitionEngine.targetSeasonFromFolder(seg);
+                        const isSubSeasonFolder = folderSeasonVal !== null ||
+                            /(?:Season|S|第)\s*\d+|第?\s*[0-9零〇一二两兩三四五六七八九十百\d]+\s*[季期部卷篇]|OVA|OAD|SP|特别篇/i.test(seg) ||
+                            /[篇章]\s*$/i.test(seg);
+
+                        if (isSubSeasonFolder && !isCollectionFolder && p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
+                            continue;
+                        }
+
+                        // 3. 核心穿透治理：如果当前目录只是拼音缩写/技术标签/压制组/纯英文短代号（如 ZOUMA, GUYU, TAIYANG, CHONGSHENG, DALI, MEIGUI, DOUPO, XIANZAI, 1080p, BDMV 等）
+                        // 且父级目录存在非通用的权威影视名称（包含中文、或者明确包含年份、或者包含 TMDB 标签）
+                        // 坚决允许向上穿透，严禁把子层拼音代号锁定为影视片名！
+                        if (p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
+                            const parentSeg = parts[p - 1];
+                            const parentHasChinese = /[\u4e00-\u9fa5]/.test(parentSeg);
+                            const currentHasChinese = /[\u4e00-\u9fa5]/.test(seg);
+                            const parentHasYearOrTmdb = /[\{\[](?:tmdb|tmdbid)[-:= ]?\d+[\}\]]/i.test(parentSeg) || /\b(19\d{2}|20\d{2})\b/.test(parentSeg);
+                            const isTechnicalOrPinyinSlug = !currentHasChinese && (
+                                /^(?:[a-zA-Z]{1,15}|\d{3,4}[pP]|4[kK]|bdrip|remux|web-?dl|bluray|iso|bdmv|h\.?26[45]|hevc|x26[45]|aac|dts|atmos|sdr|hdr\d*|dv)$/i.test(seg.trim()) ||
+                                /^[A-Z0-9_\-\. ]{1,16}$/.test(seg.trim())
+                            );
+
+                            if ((!currentHasChinese && (parentHasChinese || parentHasYearOrTmdb)) || isTechnicalOrPinyinSlug) {
+                                continue;
+                            }
+                        }
+
                         // ★ 核心防越界门禁 (阻断跨剧污染至顶级分类目录)：
                         // 1. 先用 cleanAnimeFolderName(seg) 检查当前目录是否具备独立有效影视剧名
                         const cleanedSeg = RecognitionEngine.cleanAnimeFolderName(seg);
@@ -1684,18 +1838,6 @@ class RecognitionEngine {
                             effectiveFolderName = seg;
                             effectiveFolderPath = '/' + parts.slice(0, p + 1).join('/');
                             break;
-                        }
-
-                        // 2. 唯有自身无独立片名的纯分季/分卷/特别篇子目录（如 "Season 1", "S02", "第1季", "特别篇", "SP", "BDMV" 等），
-                        //    且父级存在有效非通用目录时，才允许向上溯源至父级剧集目录
-                        const isCollectionFolder = RecognitionEngine.isCollectionFolder(seg);
-                        const folderSeasonVal = RecognitionEngine.targetSeasonFromFolder(seg);
-                        const isSubSeasonFolder = folderSeasonVal !== null ||
-                            /(?:Season|S|第)\s*\d+|第?\s*[0-9零〇一二两兩三四五六七八九十百\d]+\s*[季期部卷篇]|OVA|OAD|SP|特别篇|剧场版|劇場版/i.test(seg) ||
-                            /[篇章]\s*$/i.test(seg);
-
-                        if (isSubSeasonFolder && !isCollectionFolder && p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
-                            continue;
                         }
 
                         effectiveFolderName = seg;
@@ -1735,17 +1877,16 @@ class RecognitionEngine {
                     /^\d{1,4}\s*(?:国语|粤语|中配|日配|台配|國語|日語|粵語|雙語|國配|台語|国配|日语|双语|多语|生肉|熟肉)?$/i.test(fileTitle);
                 const hasStrongFolderTitle = Boolean(cleanFolder && cleanFolder.length >= 2 && !isGenericFolder);
 
-                // 季推导：优先检查直接父目录，再检查整条路径中的季标记，最后回退到 effectiveFolderName (严禁从通用容器目录提取季度)
-                let folderSeason = (!RecognitionEngine.isGenericFolder(file.parentFolderName)) ? RecognitionEngine.targetSeasonFromFolder(file.parentFolderName) : null;
-                if (!folderSeason && file.relativePath) {
+                // 季推导：优先检查直接父目录，再检查整条路径中的季标记，最后回退到 effectiveFolderName
+                let folderSeason = RecognitionEngine.targetSeasonFromFolder(file.parentFolderName);
+                if (folderSeason === null && file.relativePath) {
                     const parts = file.relativePath.split('/').filter(Boolean);
                     for (let p = parts.length - 2; p >= 0; p--) {
-                        if (RecognitionEngine.isGenericFolder(parts[p])) continue;
                         const s = RecognitionEngine.targetSeasonFromFolder(parts[p]);
                         if (s !== null) { folderSeason = s; break; }
                     }
                 }
-                if (!folderSeason && effectiveFolderName && !RecognitionEngine.isGenericFolder(effectiveFolderName)) {
+                if (folderSeason === null && effectiveFolderName) {
                     folderSeason = RecognitionEngine.targetSeasonFromFolder(effectiveFolderName);
                 }
                 file._folderSeason = folderSeason !== null && folderSeason !== undefined ? String(folderSeason) : '';
@@ -1757,7 +1898,8 @@ class RecognitionEngine {
                     )
                 );
 
-                const se = RecognitionEngine.parseSeasonEpisode(pureFileName, Number(folderSeason || 1));
+                const initialSeasonHint = (folderSeason !== null && folderSeason !== undefined && folderSeason !== '') ? Number(folderSeason) : 1;
+                const se = RecognitionEngine.parseSeasonEpisode(pureFileName, initialSeasonHint);
 
                 // 通用演唱会 / 音乐会判定：演唱会属于 Movie，分类属于演唱会
                 const isConcert = Boolean(
@@ -1781,17 +1923,32 @@ class RecognitionEngine {
                     hasDiscIndicator
                 );
 
+                // 通用剧场版 / 独立电影判定：若文件名或目录名带有剧场版/Movie标识且无明确 TV 连载分集标记，确立为独立电影
+                const isTheatricalMovie = Boolean(
+                    pureFileName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i) ||
+                    (file.parentFolderName && file.parentFolderName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i) && !RecognitionEngine.isGenericFolder(file.parentFolderName)) ||
+                    (effectiveFolderName && effectiveFolderName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i) && !RecognitionEngine.isGenericFolder(effectiveFolderName))
+                ) && !hasExplicitTvEp && !hasEpisodeRangeInFolder;
+
+                if (isTheatricalMovie && pathTmdbId) {
+                    const directFolderHasTmdb = Boolean((file.parentFolderName || '').match(/[\{\[](?:tmdb|tmdbid)[-:= ]?(\d+)[\}\]]/i));
+                    const fileHasTmdb = Boolean((file.name || '').match(/[\{\[](?:tmdb|tmdbid)[-:= ]?(\d+)[\}\]]/i));
+                    if (!directFolderHasTmdb && !fileHasTmdb) {
+                        pathTmdbId = '';
+                    }
+                }
+
                 // 具备硬性剧集证据 (显式SxxExx/第X集/季目录/集数范围/Disc光盘分卷) 时 100% 确立为 TV
-                const hasHardTvEvidence = Boolean(hasExplicitTvEp || folderSeason || hasEpisodeRangeInFolder);
+                const hasHardTvEvidence = !isTheatricalMovie && Boolean(hasExplicitTvEp || folderSeason || hasEpisodeRangeInFolder);
                 // 弱剧集判定：当单文件带有明确单片独立上映年份且无显式剧集标记时，坚决保护为电影，杜绝篡改
-                const hasWeakTvEvidence = (!/\.iso$/i.test(pureFileName) || hasDiscIndicator) && (
+                const hasWeakTvEvidence = !isTheatricalMovie && (!/\.iso$/i.test(pureFileName) || hasDiscIndicator) && (
                     se.isSpecial ||
                     se.isDate ||
                     se.hasEpisode ||
                     (animeFile.episode !== null && animeFile.episode > 0)
                 );
 
-                const isTv = !isConcert && (hasHardTvEvidence || (hasWeakTvEvidence && !fileYear));
+                const isTv = !isConcert && !isTheatricalMovie && (hasHardTvEvidence || (hasWeakTvEvidence && !fileYear));
 
                 // ★ 电影合集独立单片判定：同一目录下有多个电影视频，且无 CD/Part 分卷标记时，判定为独立电影单片合集
                 const dirPath = file.relativePath ? file.relativePath.slice(0, file.relativePath.lastIndexOf('/')) : (file.parentFolderName || 'root');
@@ -1802,7 +1959,14 @@ class RecognitionEngine {
                 let inferredTitle = '';
                 let year = fileYear || folderYear;
 
-                if (isMultiVideoCollection) {
+                if (isTheatricalMovie) {
+                    const fileStem = pureFileName.replace(/\.[a-z0-9]+$/i, '').trim();
+                    const cleanStem = RecognitionEngine.inferTitle(fileStem) || fileStem.replace(/[\[【][^\]】]*[\]】]/g, ' ').replace(/\s+/g, ' ').trim();
+                    const folderStem = (effectiveFolderName && !RecognitionEngine.isGenericFolder(effectiveFolderName) && effectiveFolderName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i))
+                        ? RecognitionEngine.cleanAnimeFolderName(effectiveFolderName)
+                        : '';
+                    inferredTitle = folderStem || cleanStem;
+                } else if (isMultiVideoCollection) {
                     const fileStem = pureFileName.replace(/\.[a-z0-9]+$/i, '').trim();
                     const cleanStem = RecognitionEngine.inferTitle(fileStem) || fileStem.replace(/[\[【][^\]】]*[\]】]/g, ' ').replace(/\s+/g, ' ').trim();
                     const isFolderCategorical = isGenericFolder || RecognitionEngine.isGenericFolder(cleanFolder) || RecognitionEngine.isCollectionFolder(cleanFolder) || RecognitionEngine.isCollectionFolder(effectiveFolderName);
@@ -1878,6 +2042,8 @@ class RecognitionEngine {
                     // 无论文件处于独立媒体目录还是平铺目录，不同季度（S01, S02, S03... 特别篇/OVA S00）一律按季独立建组
                     // 确保每季独立校准、独立显示、集号不串组、下拉候选精准匹配
                     groupKey = `tv:${normTitle}:s${effInitialSeason || '1'}`;
+                } else if (isTheatricalMovie) {
+                    groupKey = `movie:${normTitle}${year ? ':' + year : ''}${dateSuffix}`;
                 } else if (isMultiVideoCollection) {
                     groupKey = `movie:${normTitle}${year ? ':' + year : ''}${dateSuffix}`;
                 } else if (hasStrongFolderTitle || (inferredTitle && !isWeakFileTitle && normTitle.length >= 2 && !RecognitionEngine.isGenericFolder(inferredTitle))) {
@@ -1904,9 +2070,9 @@ class RecognitionEngine {
                         countryCode: fileCountryInfo.countryCode || '',
                         tmdbId: pathTmdbId || animeFile.tmdbId || '',
                         mediaType: isTv ? 'tv' : 'movie',
-                        category: isConcert ? '演唱会' : (isAnime ? '动漫' : (isTv ? '剧集' : '电影')),
-                        season: effInitialSeason || '1',
-                        targetSeason: (se.isSpecial || se.season === 0 || effInitialSeason === '0') ? '0' : (effInitialSeason || '1'),
+                        category: isConcert ? '演唱会' : (isAnime ? (isTv ? '动漫' : '动画电影') : (isTv ? '剧集' : '电影')),
+                        season: isTv ? (effInitialSeason || '1') : '',
+                        targetSeason: isTv ? ((se.isSpecial || se.season === 0 || effInitialSeason === '0') ? '0' : (effInitialSeason || '1')) : '',
                         startEp: '',
                         seasonOffset: 0,
                         epOffset: 0,
@@ -2536,11 +2702,12 @@ class RecognitionEngine {
         if (!title) return '';
         const raw = String(title).trim();
         if (this.CANONICAL_TITLE_MAP[raw]) return this.CANONICAL_TITLE_MAP[raw];
+        const normRaw = this.normalizeTitleKey(raw);
         for (const [key, val] of Object.entries(this.CANONICAL_TITLE_MAP)) {
-            if (raw.includes(key)) return val;
+            if (this.normalizeTitleKey(key) === normRaw) return val;
         }
         for (const group of this.ANIME_ALIAS_GROUPS) {
-            if (group.some(alias => raw.toLowerCase().includes(alias.toLowerCase()))) {
+            if (group.some(alias => this.normalizeTitleKey(alias) === normRaw)) {
                 return group[0];
             }
         }
@@ -2556,10 +2723,14 @@ class RecognitionEngine {
         const GENERIC_FOLDERS = new Set([
             'root', 'home', 'download', 'downloads', 'movie', 'movies', 'tv', 'tvs', 'series', 'anime',
             'video', 'videos', 'film', 'films', 'media', 'share', 'shares', 'pan', 'disk', 'cloud',
+            'temp', 'tmp', 'staging',
             '新建文件夹', '未命名', '电影', '电视剧', '剧集', '动漫', '动画', '欧美剧', '日韩剧', '国产剧',
-            '华语剧', '新番', '外语电影', '华语电影', '综艺', '纪录片', '儿童', '演唱会'
+            '华语剧', '新番', '外语电影', '华语电影', '综艺', '纪录片', '儿童', '演唱会',
+            '临时存放', '暂存区', '频繁转存', '待整理', '转存', '我的资源', '频道转存'
         ]);
         if (GENERIC_FOLDERS.has(s.toLowerCase())) return true;
+        if (/.*(?:的分享|群分享|链接分享)$/i.test(s)) return true;
+        if (/^(?:临时存放|暂存区|频繁转存|待整理|转存|频道转存)/i.test(s)) return true;
         if (/^(?:Season\s*\d{1,3}|第?\s*[0-9零〇一二两兩三四五六七八九十百\d]+\s*[季期部卷])$/i.test(s)) return true;
         return false;
     }
@@ -2755,10 +2926,16 @@ class RecognitionEngine {
         if (/BLU[- .]?RAY|\bBD\b|原盘/.test(clean)) {
             tags.mediaSource = 'BluRay';
             tags.isBluRay = true;
-        } else if (/WEB[- .]?DL/.test(clean)) tags.mediaSource = 'WEB-DL';
+        } else if (/WEB[- .]?DL|WEBDL/.test(clean)) tags.mediaSource = 'WEB-DL';
         else if (/WEBRIP/.test(clean)) tags.mediaSource = 'WEBRip';
         else if (/HDTV/.test(clean)) tags.mediaSource = 'HDTV';
         else if (/DVD/.test(clean)) tags.mediaSource = 'DVD';
+
+        // 统一规范：非 REMUX 文件一律打上全大写 WEB-DL 标签
+        if (!tags.isRemux) {
+            tags.mediaSource = 'WEB-DL';
+            if (tags.resourceType === 'REMUX') tags.resourceType = '';
+        }
 
         // 5. 动态范围与杜比 / IMAX
         if (/\bIMAX\b|IMAX[\s._-]?(?:ENHANCED)?/i.test(clean)) {
@@ -2890,6 +3067,14 @@ class RecognitionEngine {
             if (streamMeta.mediaSource && !tags.mediaSource) {
                 tags.mediaSource = streamMeta.mediaSource;
             }
+            if (streamMeta.isRemux || /REMUX/i.test(streamMeta.resourceType || streamMeta.mediaSource || '')) {
+                tags.isRemux = true;
+                tags.resourceType = 'REMUX';
+                if (tags.mediaSource === 'WEB-DL') tags.mediaSource = streamMeta.isBluRay ? 'BluRay' : '';
+            } else if (!tags.isRemux) {
+                tags.mediaSource = 'WEB-DL';
+                if (tags.resourceType === 'REMUX') tags.resourceType = '';
+            }
         }
 
         // 10. 当分辨率仍为空时，基于视频物理体积与码率基线推导 (防止裸名遗漏规格)
@@ -2912,6 +3097,8 @@ class RecognitionEngine {
         // 统一前后端与画质仲裁对齐兼容字段
         tags.resolution = tags.videoFormat;
         tags.resRank = tags.resolutionRank;
+        tags.codec = tags.videoCodec;
+        tags.audio = tags.audioCodec;
         tags.hdr = tags.dynamicRange;
         tags.drRank = (function(dr) {
             const s = String(dr || '').toUpperCase();
@@ -3116,10 +3303,13 @@ class RecognitionEngine {
             return nt && (nt === normTarget || (normTarget.length >= 2 && nt.includes(normTarget)));
         }));
 
-        if (hasExactHit || hasAliasHit || hasTransHit) {
+        if (hasExactHit) {
+            score += 280; // 绝对原名完全一致，最高置信度首选
+        } else if (hasAliasHit || hasTransHit) {
             score += 220;
         } else if (normTarget.length >= 2 && (normCand.includes(normTarget) || normTarget.includes(normCand) || normOrig.includes(normTarget))) {
-            score += 180;
+            const extraLen = Math.abs(normCand.length - normTarget.length);
+            score += Math.max(90, 180 - extraLen * 20);
         } else {
             return -500; // 无直接关联一票否决
         }
@@ -3344,11 +3534,12 @@ class RecognitionEngine {
         const defaultOrder = [
             'videoFormat',
             'dynamicRange',
+            'videoCodec',
             'resourceType',
             'releaseGroup',
-            'frameRate',
             'colorDepth',
             'audioCodec',
+            'frameRate',
             'fileSize'
         ];
         const rawOrder = Array.isArray(policy.washPriorityOrder) && policy.washPriorityOrder.length > 0
@@ -3358,6 +3549,15 @@ class RecognitionEngine {
         const priorityOrder = Array.from(new Set([...rawOrder, ...defaultOrder]));
 
         // 辅助映射与可读文本提取
+        const getVideoCodecInfo = (cand) => {
+            const vc = String(cand.videoCodec || cand.codec || '').toUpperCase();
+            if (vc.includes('AV1')) return { score: 4, label: 'AV1' };
+            if (vc.includes('H.265') || vc.includes('H265') || vc.includes('HEVC') || vc.includes('X265')) return { score: 3, label: 'H.265' };
+            if (vc.includes('H.264') || vc.includes('H264') || vc.includes('AVC') || vc.includes('X264')) return { score: 2, label: 'H.264' };
+            if (vc.includes('VC-1') || vc.includes('VC1')) return { score: 2, label: 'VC-1' };
+            if (vc.includes('MPEG-2') || vc.includes('MPEG-4')) return { score: 1, label: 'MPEG' };
+            return { score: 0, label: '未知编码' };
+        };
         const getResourceTypeInfo = (cand) => {
             if (cand.isRemux || /REMUX/i.test(cand.resourceType || '')) return { score: 7, label: 'Remux' };
             if (cand.isBluRay || /BLU[- .]?RAY|原盘/i.test(cand.resourceType || cand.mediaSource || '')) return { score: 6, label: 'Blu-ray' };
@@ -3442,6 +3642,21 @@ class RecognitionEngine {
                     }
                     break;
                 }
+                case 'videoCodec': {
+                    const infoA = getVideoCodecInfo(a);
+                    const infoB = getVideoCodecInfo(b);
+                    if (infoA.score > 0 && infoB.score > 0 && infoA.score !== infoB.score) {
+                        const aBetter = infoA.score > infoB.score;
+                        return {
+                            cmp: aBetter ? -1 : 1,
+                            winner: aBetter ? 'a' : 'b',
+                            decisiveCriterion: 'videoCodec',
+                            decisiveLabel: '视频编码',
+                            decisiveDetail: aBetter ? `${infoA.label} 优于 ${infoB.label}` : `${infoB.label} 优于 ${infoA.label}`
+                        };
+                    }
+                    break;
+                }
                 case 'resourceType': {
                     if (policy.preferRemux !== false) {
                         const infoA = getResourceTypeInfo(a);
@@ -3518,7 +3733,7 @@ class RecognitionEngine {
                 case 'audioCodec': {
                     const infoA = getAudioCodecInfo(a);
                     const infoB = getAudioCodecInfo(b);
-                    if (Math.max(infoA.score, infoB.score) >= 3 && infoA.score !== infoB.score) {
+                    if (infoA.score !== infoB.score) {
                         const aBetter = infoA.score > infoB.score;
                         return {
                             cmp: aBetter ? -1 : 1,
@@ -3533,17 +3748,21 @@ class RecognitionEngine {
                 case 'fileSize': {
                     const sizeA = Number(a.size || 0);
                     const sizeB = Number(b.size || 0);
-                    const threshold = Math.max(sizeA, sizeB) > 100 * 1024 * 1024 ? 50 * 1024 * 1024 : 0;
-                    if (sizeA > 0 && sizeB > 0 && Math.abs(sizeA - sizeB) > threshold) {
+                    if (sizeA > 0 && sizeB > 0 && sizeA !== sizeB) {
                         const aBetter = policy.conflictMode === 0 ? sizeA < sizeB : sizeA > sizeB;
-                        const sizeStrA = sizeA >= 1024 * 1024 * 1024 ? (sizeA / (1024 * 1024 * 1024)).toFixed(2) + ' GB' : (sizeA >= 1024 * 1024 ? (sizeA / (1024 * 1024)).toFixed(2) + ' MB' : sizeA + ' B');
-                        const sizeStrB = sizeB >= 1024 * 1024 * 1024 ? (sizeB / (1024 * 1024 * 1024)).toFixed(2) + ' GB' : (sizeB >= 1024 * 1024 ? (sizeB / (1024 * 1024)).toFixed(2) + ' MB' : sizeB + ' B');
+                        const formatSize = (s) => s >= 1024 * 1024 * 1024
+                            ? (s / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+                            : (s >= 1024 * 1024 ? (s / (1024 * 1024)).toFixed(2) + ' MB' : s + ' B');
+                        const sizeStrA = formatSize(sizeA);
+                        const sizeStrB = formatSize(sizeB);
                         return {
                             cmp: aBetter ? -1 : 1,
                             winner: aBetter ? 'a' : 'b',
                             decisiveCriterion: 'fileSize',
                             decisiveLabel: '文件大小',
-                            decisiveDetail: aBetter ? `${sizeStrA} 优于 ${sizeStrB}` : `${sizeStrB} 优于 ${sizeStrA}`
+                            decisiveDetail: aBetter
+                                ? `${sizeStrA} 优于 ${sizeStrB} (同等技术规格下大文件优先，码率更高)`
+                                : `${sizeStrB} 优于 ${sizeStrA} (目标库已有文件更大，码率更高)`
                         };
                     }
                     break;
@@ -3551,12 +3770,18 @@ class RecognitionEngine {
             }
         }
 
+        const formatSize = (s) => s >= 1024 * 1024 * 1024
+            ? (s / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+            : (s >= 1024 * 1024 ? (s / (1024 * 1024)).toFixed(2) + ' MB' : s + ' B');
+        const eqSize = Number(a.size || b.size || 0);
+        const eqSizeStr = eqSize > 0 ? ` (${formatSize(eqSize)})` : '';
+
         return {
             cmp: 0,
             winner: 'equal',
             decisiveCriterion: 'equal',
-            decisiveLabel: '画质规格',
-            decisiveDetail: '画质规格一致'
+            decisiveLabel: '规格与体积',
+            decisiveDetail: `画质规格与文件体积完全一致${eqSizeStr}`
         };
     }
 
@@ -3764,6 +3989,26 @@ class RecognitionEngine {
         let cleanOEdition = sanitizeSpec(fields.originalEdition);
         let cleanMSource = (fields.mediaSource && fields.mediaSource !== '原盘') ? sanitizeSpec(fields.mediaSource) : '';
 
+        // 统一规则：非 REMUX 文件一律添加全大写 WEB-DL 规范技术标签
+        const isRemux = Boolean(
+            fields.isRemux ||
+            /REMUX/i.test(cleanRType || '') ||
+            /REMUX/i.test(cleanMSource || '') ||
+            /REMUX/i.test(fields.name || fields.originalName || '')
+        );
+
+        if (isRemux) {
+            cleanRType = 'REMUX';
+            if (/WEB[- .]?DL/i.test(cleanMSource)) {
+                cleanMSource = '';
+            }
+        } else {
+            cleanMSource = 'WEB-DL';
+            if (/REMUX/i.test(cleanRType)) {
+                cleanRType = '';
+            }
+        }
+
         // ★ 当 resourceType 与 mediaSource 重合时（如均为 WEB-DL、WEBRip 或 BluRay），抑制 resourceType 防止双重输出
         if (cleanRType && cleanMSource) {
             const normR = cleanRType.replace(/[\s._-]+/g, '').toUpperCase();
@@ -3794,7 +4039,7 @@ class RecognitionEngine {
             seasonEpisode: fields.seasonEpisode || `S${seasonStr}E${epStr}`,
             episodeTitle: cleanEpTitle ? cleanEpTitle.replace(/\s*\(\s*/g, '(').replace(/\s*\)\s*/g, ')') : '',
             videoFormat: sanitizeSpec(fields.videoFormat) === '4K' ? '2160p' : sanitizeSpec(fields.videoFormat),
-            mediaSource: (fields.mediaSource && fields.mediaSource !== '原盘') ? sanitizeSpec(fields.mediaSource) : '',
+            mediaSource: cleanMSource,
             resourceType: cleanRType,
             effect: effectVal,
             highQuality: sanitizeSpec(fields.highQuality),

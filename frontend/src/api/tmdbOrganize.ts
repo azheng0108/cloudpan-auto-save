@@ -81,9 +81,11 @@ export interface OrganizeHistoryRecord {
   accountId: number;
   kind: string;
   fileRef: string;
+  oldParentRef?: string;
   oldParentPath?: string;
   oldName: string;
   size: number;
+  newParentRef?: string;
   newParentPath?: string;
   newName?: string;
   mediaType: string;
@@ -160,15 +162,96 @@ export const tmdbOrganizeApi = {
     return res.data;
   },
 
-  // 获取暂存区无法自动识别/待人工纠偏的文件清单
-  async getUnrecognizedFiles(params: { folderId?: string; accountId?: number | string } = {}) {
+  // 获取暂存区/隔离区/自定义目录的媒体文件清单
+  async getUnrecognizedFiles(params: {
+    folderId?: string;
+    accountId?: number | string;
+    mode?: 'all' | 'unrecognized_only';
+    minFileSizeMb?: number;
+  } = {}) {
     const res = await axios.get('/api/tmdb-organize/unrecognized', { params });
     return res.data.data;
+  },
+
+  // 高级手动整理即时双轨预览 (耗时严格 < 200ms)
+  async previewManual(payload: {
+    accountId?: number | string;
+    files: any[];
+    targetFolderId?: string;
+    targetFolderPath?: string;
+    mediaType?: string;
+    category?: string;
+    mode?: 'tmdb' | 'custom';
+    tmdbId?: number | string;
+    customTitle?: string;
+    customYear?: string;
+    customSeason?: number;
+    startEpisode?: number;
+    episodeStep?: number;
+    keepOriginalName?: boolean;
+    minFileSizeMb?: number;
+  }) {
+    const res = await axios.post('/api/tmdb-organize/preview-manual', payload);
+    return res.data.data;
+  },
+
+  // 高级手动整理正式执行 (Strict WAL 预写日志与逐项原子移动)
+  async manualOrganize(payload: {
+    accountId?: number | string;
+    batchName?: string;
+    tasks: any[];
+    options?: Record<string, any>;
+  }) {
+    const res = await axios.post('/api/tmdb-organize/manual-organize', payload);
+    return res.data.data;
+  },
+
+  // 清理暂存区已搬空残留空目录与广告说明文件
+  async cleanResidualFolders(params: { folderIds: string[]; accountId?: number | string }) {
+    const res = await axios.post('/api/tmdb-organize/clean-residual', params);
+    return res.data;
   },
 
   // TMDB 即时影视搜索
   async searchTmdb(params: { query: string; mediaType?: string; year?: string }) {
     const res = await axios.post('/api/tmdb-organize/search-tmdb', params);
+    return res.data.data;
+  },
+
+  // 直接获取 TMDB 剧集全量季列表概览
+  async getTvSeasons(tvId: string | number) {
+    const res = await axios.get(`/api/tmdb-organize/tv/${tvId}/seasons`);
+    return res.data.data;
+  },
+
+  // 直接获取 TMDB 剧集指定季度的全量单集明细
+  async getSeasonEpisodes(tvId: string | number, seasonNumber: number | string) {
+    const res = await axios.get(`/api/tmdb-organize/tv/${tvId}/season/${seasonNumber}`);
+    return res.data.data;
+  },
+
+  // AI 智能辅助识别与影视条目提纯
+  async aiIdentify(payload: { query: string; folderName?: string; files?: any[]; accountId?: number | string; tmdbId?: number | string; tmdbCandidate?: any }) {
+    const res = await axios.post('/api/tmdb-organize/ai-identify', payload);
+    return res.data.data;
+  },
+
+  // 物理流媒体规格嗅探 (基于 139 直链 Range 与 WASM MediaInfo)
+  async probeGroup(payload: {
+    accountId?: number | string;
+    items: Array<{ fileId: string; name?: string; size?: number; isVideo?: boolean }>;
+  }) {
+    const res = await axios.post('/api/tmdb-organize/probe-group', payload);
+    return res.data.data;
+  },
+
+  // 媒体库洗版仲裁预检 (比对已有文件画质规格)
+  async washCheck(payload: {
+    accountId?: number | string;
+    targetDirPath?: string;
+    items: Array<any>;
+  }) {
+    const res = await axios.post('/api/tmdb-organize/wash-check', payload);
     return res.data.data;
   },
 
@@ -186,14 +269,44 @@ export const tmdbOrganizeApi = {
       targetSeason?: number;
       targetEpisode?: number;
       targetEpisodeTitle?: string;
+      targetNewFileName?: string;
+      probedMeta?: any;
       oldPath?: string;
       parentFolderId?: string;
       size?: number;
     }>;
     targetDirPath?: string;
     cleanEmptySourceDir?: boolean;
+    batchId?: number | null;
   }) {
     const res = await axios.post('/api/tmdb-organize/resolve-unrecognized', payload);
     return res.data.data;
+  },
+
+  // 服务端异步后台归档服务 (容器后台驻留执行，即使前端页面关闭也能平稳运行到底)
+  async startAsyncResolve(payload: {
+    accountId?: number | string;
+    mode: 'single' | 'batch';
+    groups: Array<{
+      groupId?: string;
+      groupTitle?: string;
+      title?: string;
+      items: any[];
+    }>;
+    targetDirPath?: string;
+    cleanEmptySourceDir?: boolean;
+  }) {
+    const res = await axios.post('/api/tmdb-organize/async-resolve', payload);
+    return res.data;
+  },
+
+  async getAsyncResolveStatus() {
+    const res = await axios.get('/api/tmdb-organize/async-resolve/status');
+    return res.data.data;
+  },
+
+  async abortAsyncResolve() {
+    const res = await axios.post('/api/tmdb-organize/async-resolve/abort');
+    return res.data;
   }
 };

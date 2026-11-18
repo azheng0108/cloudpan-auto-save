@@ -206,7 +206,7 @@ class MobileAiClient {
         if (this._accreditDone.has(account.id)) return true;
         try {
             const res = await got.post(ACCREDIT_URL, {
-                headers: this._buildAiHeaders(basic),
+                headers: this._buildAiHeaders(basic, false),
                 json: { sourceBusiness: 1 },
                 timeout: { request: 15000 },
                 responseType: 'json'
@@ -225,10 +225,10 @@ class MobileAiClient {
     }
 
     /** 灵犀 AI 域完整请求头集合（§2.1，实测缺一不可） */
-    _buildAiHeaders(basic) {
+    _buildAiHeaders(basic, isSse = true) {
         return {
             'Content-Type': 'application/json',
-            'Accept': 'text/event-stream',
+            'Accept': isSse ? 'text/event-stream' : 'application/json, text/plain, */*',
             'authorization': basic,
             'user-agent': UA,
             'x-requested-with': 'com.chinamobile.mcloud',
@@ -407,6 +407,7 @@ class MobileAiClient {
             }
         }
 
+        logger.info(`[移动AI-灵犀] 发起对话 (账号: ${account.id}/${account.username}): ${dialogue.replace(/\n/g, ' ')}`);
         let result = await this._addChatOnce(basic, userId, dialogue, opts);
 
         // 被动刷新：令牌失效（01000003 / HTTP 401/403）→ 刷新后重试一次（§3.2）
@@ -427,6 +428,7 @@ class MobileAiClient {
 
         if (result.ok) {
             this._recordSuccess();
+            logger.info(`[移动AI-灵犀] 对话响应成功 (模型: ${result.modelType || '默认'}, 内容: ${(result.content || '').slice(0, 100)}...)`);
             return { success: true, data: { content: result.content, modelType: result.modelType, sessionId: result.sessionId } };
         }
         this._recordFailure();

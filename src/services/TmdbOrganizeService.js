@@ -228,9 +228,14 @@ const TaskManager = {
                         const junkFiles = files.filter(f => {
                             const fname = (f.name || '').toLowerCase();
                             if (JUNK_NAMES.has(fname) || Number(f.size || 0) === 0) return true;
+                            const ext = fname.includes('.') ? fname.slice(fname.lastIndexOf('.') + 1) : '';
+                            if (['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'].includes(ext) && Number(f.size || 0) < 5 * 1024 * 1024) {
+                                if (/(?:二维码|下载|广告|说明|播放|poster|cover|banner|logo|thumb|fanart|icon)/i.test(fname) || /^[a-f0-9_\-]{16,64}$/i.test(fname.replace(/\.[^.]+$/, ''))) {
+                                    return true;
+                                }
+                            }
                             try {
                                 const { StagingOrganizeService } = require('./StagingOrganizeService');
-                                const ext = fname.includes('.') ? fname.slice(fname.lastIndexOf('.') + 1) : '';
                                 return StagingOrganizeService.isAdOrPromoFile(fname, ext, folder.path ? `${folder.path}/${fname}` : fname);
                             } catch (_) {
                                 return false;
@@ -417,9 +422,23 @@ const TaskManager = {
             Logger.info(`[TMDB整理] 开始递归扫描目录，起始端点数: ${queue.length}`);
 
             const allItems = [];
+            const maxDirs = options.maxDirs || 120;
+            const maxDurationMs = options.maxDurationMs || 15000;
+            const startTime = Date.now();
+            let scannedDirCount = 0;
 
             while (queue.length > 0) {
                 if (signal?.aborted || Context.state.isAbortRequested) throw new Error('ABORTED');
+                if (Date.now() - startTime > maxDurationMs) {
+                    Logger.warn(`[TMDB整理] 目录递归扫描达到安全时间阈值(${maxDurationMs}ms)，自动截断返回已扫描资产，杜绝无限挂起`);
+                    break;
+                }
+                if (scannedDirCount >= maxDirs) {
+                    Logger.warn(`[TMDB整理] 目录递归扫描达到最大目录数量(${maxDirs})，自动截断返回已扫描资产`);
+                    break;
+                }
+                scannedDirCount++;
+
                 const current = queue.shift();
                 onProgress?.(`正在扫描: ${current.path}`);
                 sourceFolders.set(current.id, {
@@ -465,8 +484,21 @@ const TaskManager = {
             return allItems;
         }
 
-        static clusterFiles(files) {
+        static clusterFiles(files, options = {}) {
             const groupsMap = new Map();
+
+            let optSeason = options.season || options.targetSeason || null;
+            if (!optSeason && options.post) {
+                try {
+                    const postText = typeof options.post === 'string' ? options.post : (options.post.text || options.post.title || '');
+                    const { TgChannelMonitorService } = require('./channel/TgChannelMonitorService');
+                    const postMedia = TgChannelMonitorService.extractMediaInfoFromPost(postText);
+                    if (postMedia?.season) optSeason = postMedia.season;
+                } catch (_) {}
+            }
+            if (!optSeason && options.task?.taskName) {
+                optSeason = RecognitionEngine.targetSeasonFromFolder(options.task.taskName);
+            }
 
             // 统计各目录下视频数量，用于区分单片合集与分集
             const dirVideoCounts = new Map();
@@ -513,16 +545,48 @@ const TaskManager = {
                             break;
                         }
 
+                        // 1.5 纯技术规格/画质/版本/总集数子目录（如 "4K HQ 杜比视界 高码率（66集全）", "1080p 高码率", "4K REMUX"）穿透
+                        if (RecognitionEngine.isPureVersionOrSpecFolder(seg) && p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
+                            continue;
+                        }
+
+                        // 1.6 独立篇章/番外篇子目录（如 "东宁府番外篇（2024）", "星海飞驰篇"）
+                        const arcObj = RecognitionEngine.extractArcSubtitle(seg);
+                        if (arcObj && p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
+                            const parentClean = RecognitionEngine.cleanAnimeFolderName(parts[p - 1]);
+                            effectiveFolderName = `${parentClean} ${arcObj.arcName}`;
+                            effectiveFolderPath = '/' + parts.slice(0, p + 1).join('/');
+                            break;
+                        }
+
                         // 2. 唯有自身无独立片名的纯分季/分卷/特别篇子目录（如 "Season 1", "Season 1 SDR", "S02", "第1季", "特别篇", "SP", "BDMV" 等），
                         //    且父级存在有效非通用目录时，才允许向上溯源至父级剧集目录
                         const isCollectionFolder = RecognitionEngine.isCollectionFolder(seg);
                         const folderSeasonVal = RecognitionEngine.targetSeasonFromFolder(seg);
                         const isSubSeason = RecognitionEngine.isSubSeasonFolder(seg) || (folderSeasonVal !== null) ||
-                            /(?:Season|S|第)\s*\d+|第?\s*[0-9零〇一二两兩三四五六七八九十百\d]+\s*[季期部卷篇]|OVA|OAD|SP|特别篇|剧场版|劇場版/i.test(seg) ||
+                            /(?:Season|S|第)\s*\d+|第?\s*[0-9零〇一二两兩三四五六七八九十百\d]+\s*[季期部卷篇]|OVA|OAD|SP|特别篇/i.test(seg) ||
                             /[篇章]\s*$/i.test(seg);
 
                         if (isSubSeason && !isCollectionFolder && p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
                             continue;
+                        }
+
+                        // 3. 核心穿透治理：如果当前目录只是拼音缩写/技术标签/压制组/纯英文短代号（如 ZOUMA, GUYU, TAIYANG, CHONGSHENG, DALI, MEIGUI, DOUPO, XIANZAI, 1080p, BDMV 等）
+                        // 且父级目录存在非通用的权威影视名称（包含中文、或者明确包含年份、或者包含 TMDB 标签）
+                        // 坚决允许向上穿透，严禁把子层拼音代号锁定为影视片名！
+                        if (p > 0 && !RecognitionEngine.isGenericFolder(parts[p - 1])) {
+                            const parentSeg = parts[p - 1];
+                            const parentHasChinese = /[\u4e00-\u9fa5]/.test(parentSeg);
+                            const currentHasChinese = /[\u4e00-\u9fa5]/.test(seg);
+                            const parentHasYearOrTmdb = /[\{\[](?:tmdb|tmdbid)[-:= ]?\d+[\}\]]/i.test(parentSeg) || /\b(19\d{2}|20\d{2})\b/.test(parentSeg);
+                            const isTechnicalOrPinyinSlug = !currentHasChinese && (
+                                /^(?:[a-zA-Z]{1,15}|\d{3,4}[pP]|4[kK]|bdrip|remux|web-?dl|bluray|iso|bdmv|h\.?26[45]|hevc|x26[45]|aac|dts|atmos|sdr|hdr\d*|dv)$/i.test(seg.trim()) ||
+                                /^[A-Z0-9_\-\. ]{1,16}$/.test(seg.trim())
+                            );
+
+                            if ((!currentHasChinese && (parentHasChinese || parentHasYearOrTmdb)) || isTechnicalOrPinyinSlug) {
+                                continue;
+                            }
                         }
 
                         // ★ 核心防越界门禁 (阻断跨剧污染至顶级分类目录)：
@@ -581,17 +645,16 @@ const TaskManager = {
                     /^\d{1,4}\s*(?:国语|粤语|中配|日配|台配|國語|日語|粵語|雙語|國配|台語|国配|日语|双语|多语|生肉|熟肉)?$/i.test(fileTitle);
                 const hasStrongFolderTitle = Boolean(cleanFolder && cleanFolder.length >= 2 && !isGenericFolder);
 
-                // 季推导：优先检查直接父目录，再检查整条路径中的季标记，最后回退到 effectiveFolderName (严禁从通用容器目录提取季度)
-                let folderSeason = (!RecognitionEngine.isGenericFolder(file.parentFolderName)) ? RecognitionEngine.targetSeasonFromFolder(file.parentFolderName) : null;
-                if (!folderSeason && file.relativePath) {
+                // 季推导：优先检查直接父目录，再检查整条路径中的季标记，最后回退到 effectiveFolderName
+                let folderSeason = RecognitionEngine.targetSeasonFromFolder(file.parentFolderName);
+                if (folderSeason === null && file.relativePath) {
                     const parts = file.relativePath.split('/').filter(Boolean);
                     for (let p = parts.length - 2; p >= 0; p--) {
-                        if (RecognitionEngine.isGenericFolder(parts[p])) continue;
                         const s = RecognitionEngine.targetSeasonFromFolder(parts[p]);
                         if (s !== null) { folderSeason = s; break; }
                     }
                 }
-                if (!folderSeason && effectiveFolderName && !RecognitionEngine.isGenericFolder(effectiveFolderName)) {
+                if (folderSeason === null && effectiveFolderName) {
                     folderSeason = RecognitionEngine.targetSeasonFromFolder(effectiveFolderName);
                 }
                 file._folderSeason = folderSeason !== null && folderSeason !== undefined ? String(folderSeason) : '';
@@ -603,7 +666,8 @@ const TaskManager = {
                     )
                 );
 
-                const se = RecognitionEngine.parseSeasonEpisode(pureFileName, Number(folderSeason || 1));
+                const initialSeasonHint = (folderSeason !== null && folderSeason !== undefined && folderSeason !== '') ? Number(folderSeason) : 1;
+                const se = RecognitionEngine.parseSeasonEpisode(pureFileName, initialSeasonHint);
 
                 // 通用演唱会 / 音乐会判定：演唱会属于 Movie，分类属于演唱会
                 const isConcert = Boolean(
@@ -627,17 +691,32 @@ const TaskManager = {
                     hasDiscIndicator
                 );
 
+                // 通用剧场版 / 独立电影判定：若文件名或目录名带有剧场版/Movie标识且无明确 TV 连载分集标记，确立为独立电影
+                const isTheatricalMovie = Boolean(
+                    pureFileName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i) ||
+                    (file.parentFolderName && file.parentFolderName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i) && !RecognitionEngine.isGenericFolder(file.parentFolderName)) ||
+                    (effectiveFolderName && effectiveFolderName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i) && !RecognitionEngine.isGenericFolder(effectiveFolderName))
+                ) && !hasExplicitTvEp && !hasEpisodeRangeInFolder;
+
+                if (isTheatricalMovie && pathTmdbId) {
+                    const directFolderHasTmdb = Boolean((file.parentFolderName || '').match(/[\{\[](?:tmdb|tmdbid)[-:= ]?(\d+)[\}\]]/i));
+                    const fileHasTmdb = Boolean((file.name || '').match(/[\{\[](?:tmdb|tmdbid)[-:= ]?(\d+)[\}\]]/i));
+                    if (!directFolderHasTmdb && !fileHasTmdb) {
+                        pathTmdbId = '';
+                    }
+                }
+
                 // 具备硬性剧集证据 (显式SxxExx/第X集/季目录/集数范围/Disc光盘分卷) 时 100% 确立为 TV
-                const hasHardTvEvidence = Boolean(hasExplicitTvEp || folderSeason || hasEpisodeRangeInFolder);
+                const hasHardTvEvidence = !isTheatricalMovie && Boolean(hasExplicitTvEp || folderSeason || hasEpisodeRangeInFolder);
                 // 弱剧集判定：当单文件带有明确单片独立上映年份且无显式剧集标记时，坚决保护为电影，杜绝篡改
-                const hasWeakTvEvidence = (!/\.iso$/i.test(pureFileName) || hasDiscIndicator) && (
+                const hasWeakTvEvidence = !isTheatricalMovie && (!/\.iso$/i.test(pureFileName) || hasDiscIndicator) && (
                     se.isSpecial ||
                     se.isDate ||
                     se.hasEpisode ||
                     (animeFile.episode !== null && animeFile.episode > 0)
                 );
 
-                const isTv = !isConcert && (hasHardTvEvidence || (hasWeakTvEvidence && !fileYear));
+                const isTv = !isConcert && !isTheatricalMovie && (hasHardTvEvidence || (hasWeakTvEvidence && !fileYear));
 
                 // ★ 电影合集独立单片判定：同一目录下有多个电影视频，且无 CD/Part 分卷标记时，判定为独立电影单片合集
                 const dirPath = file.relativePath ? file.relativePath.slice(0, file.relativePath.lastIndexOf('/')) : (file.parentFolderName || 'root');
@@ -648,7 +727,14 @@ const TaskManager = {
                 let inferredTitle = '';
                 let year = fileYear || folderYear;
 
-                if (isMultiVideoCollection) {
+                if (isTheatricalMovie) {
+                    const fileStem = pureFileName.replace(/\.[a-z0-9]+$/i, '').trim();
+                    const cleanStem = RecognitionEngine.inferTitle(fileStem) || fileStem.replace(/[\[【][^\]】]*[\]】]/g, ' ').replace(/\s+/g, ' ').trim();
+                    const folderStem = (effectiveFolderName && !RecognitionEngine.isGenericFolder(effectiveFolderName) && effectiveFolderName.match(/(?:剧场版|劇場版|\b(?:The\s+)?Movie\b)/i))
+                        ? RecognitionEngine.cleanAnimeFolderName(effectiveFolderName)
+                        : '';
+                    inferredTitle = folderStem || cleanStem;
+                } else if (isMultiVideoCollection) {
                     const fileStem = pureFileName.replace(/\.[a-z0-9]+$/i, '').trim();
                     const cleanStem = RecognitionEngine.inferTitle(fileStem) || fileStem.replace(/[\[【][^\]】]*[\]】]/g, ' ').replace(/\s+/g, ' ').trim();
                     const isFolderCategorical = isGenericFolder || RecognitionEngine.isGenericFolder(cleanFolder) || RecognitionEngine.isCollectionFolder(cleanFolder) || RecognitionEngine.isCollectionFolder(effectiveFolderName);
@@ -713,7 +799,7 @@ const TaskManager = {
                     ? String(se.season)
                     : ((folderSeason !== null && folderSeason !== undefined && folderSeason !== '')
                         ? String(folderSeason)
-                        : (se.season !== undefined && se.season !== null ? String(se.season) : '1'));
+                        : (se.season !== undefined && se.season !== null ? String(se.season) : (optSeason ? String(optSeason) : '1')));
 
                 let groupKey;
                 const cleanBaseTitle = isTv ? RecognitionEngine.stripLooseEpisodeTail(inferredTitle || cleanFolder || '') : (inferredTitle || cleanFolder || '');
@@ -728,6 +814,9 @@ const TaskManager = {
                     // 3. 无论文件处于独立媒体目录还是平铺目录，不同季度一律按季独立建组
                     const seriesKey = effTmdbId ? `tmdb:${effTmdbId}` : (normTitle + (year ? ':' + year : ''));
                     groupKey = `tv:${seriesKey}:s${effInitialSeason || '1'}`;
+                } else if (isTheatricalMovie) {
+                    const movieKey = effTmdbId ? `tmdb:${effTmdbId}` : `${normTitle}${year ? ':' + year : ''}`;
+                    groupKey = `movie:${movieKey}${dateSuffix}`;
                 } else if (isMultiVideoCollection) {
                     const movieKey = effTmdbId ? `tmdb:${effTmdbId}` : `${normTitle}${year ? ':' + year : ''}`;
                     groupKey = `movie:${movieKey}${dateSuffix}`;
@@ -757,9 +846,9 @@ const TaskManager = {
                         countryCode: fileCountryInfo.countryCode || '',
                         tmdbId: pathTmdbId || animeFile.tmdbId || '',
                         mediaType: isTv ? 'tv' : 'movie',
-                        category: isConcert ? '演唱会' : (isAnime ? '动漫' : (isTv ? '剧集' : '电影')),
-                        season: effInitialSeason || '1',
-                        targetSeason: (se.isSpecial || se.season === 0 || effInitialSeason === '0') ? '0' : (effInitialSeason || '1'),
+                        category: isConcert ? '演唱会' : (isAnime ? (isTv ? '动漫' : '动画电影') : (isTv ? '剧集' : '电影')),
+                        season: isTv ? (effInitialSeason || '1') : '',
+                        targetSeason: isTv ? ((se.isSpecial || se.season === 0 || effInitialSeason === '0') ? '0' : (effInitialSeason || '1')) : '',
                         startEp: '',
                         seasonOffset: 0,
                         epOffset: 0,
@@ -788,7 +877,7 @@ const TaskManager = {
                 if (isConcert) group.isConcert = true;
                 group.files.push(file);
                 // 多季合并自适应：若已有其它季文件并入本组，自动将 targetSeason 置空，转为按每文件各自季号自动分季
-                if (group.targetSeason && file._folderSeason && String(group.targetSeason) !== String(file._folderSeason)) {
+                if (group.mediaType === 'tv' && group.targetSeason && file._folderSeason && String(group.targetSeason) !== String(file._folderSeason)) {
                     group.targetSeason = '';
                 }
 
@@ -1227,7 +1316,7 @@ const TaskManager = {
                 tooltipTitle = `【${group.title || '影视'} ${sLabel}】缺失集数 (共 ${missingCount} 集):&#10;` +
                     detailedList.slice(0, 15).join('&#10;') +
                     (detailedList.length > 15 ? `&#10;... 等共 ${missingCount} 集` : '') +
-                    '&#10;&#10;👉 点击可查看并复制完整缺失清单';
+                    '&#10;&#10;提示：点击可查看并复制完整缺失清单';
             } else if (isMatch && tmdbCount > 0) {
                 tooltipTitle = `本地视频集数 (${localCount} 集) 与 TMDB 官方共 ${tmdbCount} 集完全吻合 (✓)`;
             } else if (isExtra) {
@@ -1297,9 +1386,11 @@ const TaskManager = {
                                     }
                                     Logger.info(`[TMDB刮削] TMDB ID (${curId}) 直查命中并自校验通过: "${best.title}" (${best.year || '未知年份'}, 模态: ${group.mediaType})`);
                                 } else {
-                                    // 若所有模态均与文件名冲突，保留第一个条目供后续熔断机制安全报警
-                                    best = idMatches[0];
-                                    Logger.warn(`[TMDB刮削] TMDB ID (${curId}) 直查条目与本地片名均存在疑似冲突`);
+                                    // 若直查条目与本地视频文件冲突（例如父目录是旧系列ID，而文件为独立新作/衍生作）
+                                    // 解除该已知 ID 的强绑定，清空 best，降级走文件名关键字多级检索自愈匹配
+                                    best = null;
+                                    group.tmdbId = '';
+                                    Logger.warn(`[TMDB刮削] 预设 TMDB ID (${curId}) 直查条目与本地视频文件存在显著冲突 (如年份不符)，解除 ID 绑定并降级走片名多级检索`);
                                 }
                             }
                         } catch (idErr) {
@@ -1348,8 +1439,21 @@ const TaskManager = {
                                 }
                                 const chosen = await RecognitionEngine.chooseTmdbCandidate(searchResults, group, tmdbClient);
                                 best = chosen?.candidate || (chosen?.id ? chosen : null);
-                                if (best) break;
+                                if (best) {
+                                    // 仅当达到高置信度精确标题匹配 (如准确命中主名) 时提前截断；
+                                    // 若仅为次级子串模糊匹配，继续尝试后续更高优的候选词，防止弱词过早劫持
+                                    const normTarget = RecognitionEngine.normalizeTitleKey(group.title);
+                                    const normBest = RecognitionEngine.normalizeTitleKey(best.title || best.name);
+                                    const isExactMatch = Boolean(normTarget && normBest && (normBest === normTarget || (chosen?.score && chosen.score >= 420)));
+                                    if (isExactMatch) break;
+                                }
                             }
+                        }
+
+                        // 若多轮检索均未提前截断，综合全部候选集执行最终优选
+                        if (searchResults.length > 0) {
+                            const chosen = await RecognitionEngine.chooseTmdbCandidate(searchResults, group, tmdbClient);
+                            best = chosen?.candidate || (chosen?.id ? chosen : null);
                         }
                     }
 
@@ -1359,7 +1463,8 @@ const TaskManager = {
                             const aiService = require('./ai');
                             const aiCfg = aiService.getEffectiveConfig();
                             const MobileAiClient = require('./MobileAiClient');
-                            const anyAi = aiService.isEnabled(aiCfg) || Boolean(MobileAiClient.getFallbackConfig()?.enable);
+                            const mainAiEnabled = Boolean(aiCfg.enable);
+                            const anyAi = mainAiEnabled && (aiService.isEnabled(aiCfg) || Boolean(MobileAiClient.getFallbackConfig()?.enable));
                             if (anyAi) {
                                 const repFile = (group.files || []).find(f => RecognitionEngine.isVideoFile(f.name)) || group.files[0];
                                 const rawTarget = group.title || group.folderName || (repFile ? repFile.name : '');
@@ -1476,8 +1581,59 @@ const TaskManager = {
                                     if (Array.isArray(best.seasons) && best.seasons.length > 0) {
                                         group.seasons = best.seasons;
                                     }
+                                    // 优先拉取全量官方季信息 (包含 air_date, episode_count)，为精确季号推断提供权威基础数据
+                                    await TmdbOrganizeService.ensureGroupSeasonsLoaded(group, null, tmdbClient);
+
+                                    // ★ 核心：TMDB 官方季真实性校验与归一化（防止推断出 TMDB 官方季列表中不存在的季号）
+                                    if (Array.isArray(group.seasons) && group.seasons.length > 0) {
+                                        const validSeasons = group.seasons.filter(s => s.season_number > 0);
+                                        const curTargetS = Number(group.targetSeason || group.season || 1);
+
+                                        if (validSeasons.length > 0 && curTargetS > 0 && !validSeasons.some(s => s.season_number === curTargetS)) {
+                                            let correctedSeason = null;
+                                            const fileEps = (group.files || []).map(f => {
+                                                const se = RecognitionEngine.parseSeasonEpisode(f.name, curTargetS);
+                                                return se.episode || 0;
+                                            }).filter(n => n > 0);
+                                            const maxEp = fileEps.length > 0 ? Math.max(...fileEps) : 0;
+                                            if (maxEp > 0) {
+                                                const fitCandidates = validSeasons.filter(s => (s.episode_count || 0) >= maxEp);
+                                                if (fitCandidates.length === 1) {
+                                                    correctedSeason = fitCandidates[0].season_number;
+                                                }
+                                            }
+                                            if (!correctedSeason && validSeasons.length === 1) {
+                                                correctedSeason = validSeasons[0].season_number;
+                                            }
+
+                                            if (correctedSeason !== null && correctedSeason > 0 && correctedSeason !== curTargetS) {
+                                                Logger.info(`[TMDB季播校准] 影视【${group.title}】原设定季 S${curTargetS} 在 TMDB 官方季列表中不存在，自动校准为 TMDB 实际存在的有效季 S${correctedSeason}`);
+                                                group.season = String(correctedSeason);
+                                                group.targetSeason = String(correctedSeason);
+                                                for (const f of (group.files || [])) {
+                                                    if (f._folderSeason && String(f._folderSeason) === String(curTargetS)) {
+                                                        f._folderSeason = String(correctedSeason);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     // ★ 核心按年份推断季号：若本地资源带有明确年份且当前季为默认 1，依据 TMDB 官方季首播年份自动校准
-                                    const effLocalYear = group.localYear || (group.files || []).map(f => RecognitionEngine.extractYear(f.parentFolderName) || RecognitionEngine.extractYear(f.name)).find(Boolean);
+                                    let effLocalYear = group.localYear || (group.files || []).map(f => RecognitionEngine.extractYear(f.parentFolderName) || RecognitionEngine.extractYear(f.name)).find(Boolean);
+                                    if (!effLocalYear) {
+                                        // 检查文件修改时间/创建时间中的公历年份
+                                        for (const f of (group.files || [])) {
+                                            const d = f.updatedAt || f.createTime || f.createdAt;
+                                            if (d) {
+                                                const y = String(new Date(d).getFullYear());
+                                                if (/^(?:19|20)\d{2}$/.test(y)) {
+                                                    effLocalYear = y;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
                                     if (effLocalYear && (!group.targetSeason || group.targetSeason === '1' || group.season === '1')) {
                                         const yearInferredSeason = TmdbOrganizeService.inferSeasonFromYear(group.seasons, effLocalYear);
                                         if (yearInferredSeason && yearInferredSeason > 0) {
@@ -1486,7 +1642,51 @@ const TaskManager = {
                                             group.targetSeason = String(yearInferredSeason);
                                         }
                                     }
-                                    await TmdbOrganizeService.ensureGroupSeasonsLoaded(group, null, tmdbClient);
+
+                                    // ★ 历史归档与媒体库活跃季度对齐：当剧集存在多季且本地为默认 1 时，检查历史记录或目标库活跃季度
+                                    if ((!group.targetSeason || group.targetSeason === '1' || group.season === '1') && group.tmdbId && Array.isArray(group.seasons) && group.seasons.length > 2) {
+                                        const repFile = (group.files || []).find(f => RecognitionEngine.isVideoFile(f.name)) || group.files?.[0];
+                                        const hasExplicitS = repFile ? RecognitionEngine.hasExplicitSeasonEpisode(repFile.name) : false;
+                                        if (!hasExplicitS) {
+                                            try {
+                                                const db = require('../database');
+                                                if (db?.AppDataSource?.isInitialized) {
+                                                    const recRepo = db.AppDataSource.getRepository('ScrapeRecord');
+                                                    const parentFolder = repFile?.parentFolderName || '';
+                                                    let pastRec = null;
+                                                    if (parentFolder && !RecognitionEngine.isGenericFolder(parentFolder)) {
+                                                        pastRec = await recRepo.createQueryBuilder('rec')
+                                                            .where('rec.tmdbId = :tmdbId', { tmdbId: String(group.tmdbId) })
+                                                            .andWhere('rec.status = :st', { st: 'applied' })
+                                                            .andWhere('rec.oldParentPath LIKE :p', { p: `%${parentFolder}%` })
+                                                            .andWhere('rec.season IS NOT NULL AND rec.season > 0')
+                                                            .orderBy('rec.id', 'DESC')
+                                                            .getOne();
+                                                    }
+                                                    if (!pastRec) {
+                                                        pastRec = await recRepo.createQueryBuilder('rec')
+                                                            .where('rec.tmdbId = :tmdbId', { tmdbId: String(group.tmdbId) })
+                                                            .andWhere('rec.status = :st', { st: 'applied' })
+                                                            .andWhere('rec.season IS NOT NULL AND rec.season > 0')
+                                                            .orderBy('rec.id', 'DESC')
+                                                            .getOne();
+                                                    }
+                                                    if (pastRec && pastRec.season > 1) {
+                                                        Logger.info(`[TMDB季播] 影视【${group.title}】对齐历史生效归档 (批次 ${pastRec.batchId})，智能延续季号: ${group.season || 1} -> ${pastRec.season}`);
+                                                        group.season = String(pastRec.season);
+                                                        group.targetSeason = String(pastRec.season);
+                                                    }
+                                                }
+                                            } catch (recErr) {
+                                                Logger.debug(`[TMDB季播] 历史季度对齐跳过:`, recErr?.message || recErr);
+                                            }
+                                        }
+                                    }
+
+                                    // 若季号校准后发生变化，补齐目标季分集
+                                    if (group.season && group.season !== '1') {
+                                        await TmdbOrganizeService.ensureGroupSeasonsLoaded(group, Number(group.season), tmdbClient);
+                                    }
                                     Logger.debug(`[TMDB整理] 预加载官方各季与分集成功 (季数: ${group.seasons?.length || 0}, 已加载 ${Object.keys(group.seasonEpisodesMap || {}).length} 季共 ${group.officialEpisodes?.length || 0} 集)`);
                                 } catch (err) {
                                     Logger.warn(`[TMDB整理] 预加载官方分集失败:`, err?.message || err);
@@ -2248,6 +2448,19 @@ const TaskManager = {
                 let rawTargetSeason = getSeasonNum(group.targetSeason);
                 let rawGroupSeason = getSeasonNum(group.season) !== null ? getSeasonNum(group.season) : 1;
 
+                if (isTv && Array.isArray(group.seasons) && group.seasons.length > 0) {
+                    const validSeasons = group.seasons.filter(s => s.season_number > 0);
+                    if (validSeasons.length > 0 && rawTargetSeason !== null && rawTargetSeason > 0 && !validSeasons.some(s => s.season_number === rawTargetSeason)) {
+                        const fitting = validSeasons.length === 1 ? validSeasons[0] : null;
+                        if (fitting) {
+                            rawTargetSeason = fitting.season_number;
+                            rawGroupSeason = fitting.season_number;
+                            group.season = String(rawTargetSeason);
+                            group.targetSeason = String(rawTargetSeason);
+                        }
+                    }
+                }
+
                 // ★ 若当前为剧集且未显式指定更高季，通过本地文件/目录年份二次校准季号
                 if (isTv && (!rawTargetSeason || rawTargetSeason === 1) && (rawGroupSeason === 1)) {
                     const effLocalYear = group.localYear || (group.files || []).map(f => RecognitionEngine.extractYear(f.parentFolderName) || RecognitionEngine.extractYear(f.name)).find(Boolean);
@@ -2382,13 +2595,24 @@ const TaskManager = {
                     // 若当前文件直接父目录带有独立年份，优先检查该年份是否命中特定季
                     let fileYearInferred = null;
                     if (isTv && (rawFileSeason === null || rawFileSeason === 1) && (!hasTargetSeason || rawTargetSeason === 1)) {
-                        const fileYear = RecognitionEngine.extractYear(file.parentFolderName) || RecognitionEngine.extractYear(file.name);
+                        let fileYear = RecognitionEngine.extractYear(file.parentFolderName) || RecognitionEngine.extractYear(file.name);
+                        if (!fileYear && (file.updatedAt || file.createTime)) {
+                            const y = String(new Date(file.updatedAt || file.createTime).getFullYear());
+                            if (/^(?:19|20)\d{2}$/.test(y)) fileYear = y;
+                        }
                         if (fileYear) {
                             fileYearInferred = TmdbOrganizeService.inferSeasonFromYear(group.seasons, fileYear);
                         }
                     }
 
                     let effSeason = isTv ? (fileYearInferred !== null ? fileYearInferred : (hasTargetSeason ? rawTargetSeason : (rawFileSeason !== null ? rawFileSeason : rawGroupSeason))) : 1;
+                    if (isTv && effSeason > 0 && Array.isArray(group.seasons) && group.seasons.length > 0) {
+                        const validSeasons = group.seasons.filter(s => s.season_number > 0);
+                        if (validSeasons.length > 0 && !validSeasons.some(s => s.season_number === effSeason)) {
+                            const fitting = validSeasons.length === 1 ? validSeasons[0] : null;
+                            if (fitting) effSeason = fitting.season_number;
+                        }
+                    }
                     let effEpisode = 1;
                     let matchedOfficialEp = null;
                     let isSpecialFile = false;
@@ -2472,6 +2696,17 @@ const TaskManager = {
                                     : (hasTargetSeason ? rawTargetSeason : (autoS !== undefined ? autoS : (rawFolderSeason !== null ? rawFolderSeason : (se.season ? se.season : rawGroupSeason))));
                                 const seasonOffsetNum = isSpecialFile ? 0 : Number(group.seasonOffset || 0);
                                 effSeason = isSpecialFile ? 0 : Math.max(0, baseSeason + seasonOffsetNum);
+
+                                // ★ TMDB 官方季真实性校验：若推断季在 TMDB 中不存在，自动回正至有效季
+                                if (isTv && effSeason > 0 && Array.isArray(group.seasons) && group.seasons.length > 0) {
+                                    const validSeasons = group.seasons.filter(s => s.season_number > 0);
+                                    if (validSeasons.length > 0 && !validSeasons.some(s => s.season_number === effSeason)) {
+                                        const fitSeason = validSeasons.find(s => (s.episode_count || 0) >= (se.episode || effEpisode)) || (validSeasons.length === 1 ? validSeasons[0] : null);
+                                        if (fitSeason) {
+                                            effSeason = fitSeason.season_number;
+                                        }
+                                    }
+                                }
                                 if (isSpecialFile) {
                                     // 未收录特别篇保持原解析集数或 0，不侵占正片 videoIdx 顺延
                                     effEpisode = Number(se.hasEpisode && se.episode ? se.episode : 0);
@@ -2650,6 +2885,28 @@ const TaskManager = {
                         } else {
                             finalSpecs[k] = '';
                         }
+                    }
+
+                    // ★ 统一规范：非 REMUX 视频资源统一赋予全大写 WEB-DL 规范技术标签
+                    const isRemuxFile = Boolean(
+                        file._probedMeta?.isRemux ||
+                        finalSpecs.isRemux ||
+                        /REMUX/i.test(finalSpecs.resourceType || '') ||
+                        /REMUX/i.test(finalSpecs.mediaSource || '') ||
+                        /REMUX/i.test(file.name || '')
+                    );
+                    if (isRemuxFile) {
+                        finalSpecs.resourceType = 'REMUX';
+                        finalSpecs.isRemux = true;
+                        if (/WEB[- .]?DL/i.test(finalSpecs.mediaSource)) {
+                            finalSpecs.mediaSource = '';
+                        }
+                    } else if (isVideo) {
+                        finalSpecs.mediaSource = 'WEB-DL';
+                        if (/REMUX/i.test(finalSpecs.resourceType)) {
+                            finalSpecs.resourceType = '';
+                        }
+                        finalSpecs.isRemux = false;
                     }
 
                     // ★ 剧集同行共识增强：单集若因网络探针超时降级 (isFallbackFromName)，自动对齐同组权威 HDR/编码规格
@@ -3300,7 +3557,20 @@ const TaskManager = {
                             const decisiveRes = RecognitionEngine.compareCandidatesDecisive(incomingTags, existingTags, washPolicy);
                             const cmp = decisiveRes.cmp;
 
-                            Logger.info(`[TMDB整理-画质比对] 进场文件【${task.oldName}】(${incomingTags.resolution || '未知分辨率'}, ${incomingTags.codec || '未知编码'}, ${incomingTags.hdr || 'SDR'}) vs 目标库已有【${matchedExisting.name}】(${existingTags.resolution || '未知分辨率'}, ${existingTags.codec || '未知编码'}, ${existingTags.hdr || 'SDR'}) => 仲裁判定: ${cmp < 0 ? '进场版本更优 (洗版置换)' : cmp > 0 ? '已有版本更优 (淘汰暂存副本)' : '同画质'} [决胜: ${decisiveRes.decisiveLabel} - ${decisiveRes.decisiveDetail}]`);
+                            const formatTagSummary = (tags) => {
+                                const parts = [
+                                    tags.videoFormat || '未知分辨率',
+                                    tags.dynamicRange || 'SDR',
+                                    tags.colorDepth && tags.colorDepth !== '8bit' ? tags.colorDepth : '',
+                                    tags.videoCodec || tags.codec || '未知编码',
+                                    tags.audioCodec || tags.audio,
+                                    tags.frameRate,
+                                    tags.size ? (tags.size >= 1024 * 1024 * 1024 ? (tags.size / (1024 * 1024 * 1024)).toFixed(2) + ' GB' : (tags.size / (1024 * 1024)).toFixed(2) + ' MB') : ''
+                                ].filter(Boolean);
+                                return `[${parts.join(' / ')}]`;
+                            };
+
+                            Logger.info(`[TMDB整理-画质比对] 进场文件【${task.oldName}】(规范目标: ${task.newName}) ${formatTagSummary(incomingTags)} vs 目标库已有【${matchedExisting.name}】${formatTagSummary(existingTags)} => 仲裁判定: ${cmp < 0 ? '进场版本更优 (洗版置换)' : cmp > 0 ? '已有版本更优 (淘汰暂存副本)' : '同画质规格与体积'} [决胜: ${decisiveRes.decisiveLabel} - ${decisiveRes.decisiveDetail}]`);
 
                             if (cmp < 0 || (cmp === 0 && /(?:\s*-\s*(?:\d+(?:\.\d+)?(?:GB|MB|G|M)|4K|1080P|v\d+))\./i.test(matchedExisting.name))) {
                                 // 新版本质量更优，或旧版带有历史消歧脏后缀 -> 标记洗版置换，延后淘汰（严禁提前删除！只有在新文件成功重命名和移动后才淘汰旧版）
@@ -3345,17 +3615,17 @@ const TaskManager = {
                                 try {
                                     await DriveAPI.batchDelete([task.fileId], modeConfig);
                                     discardedCount++;
-                                    Logger.info(`[TMDB整理-淘汰清理] 目标媒体库已有更高画质版本 (${matchedExisting.name} > ${task.newName})，已将暂存区次级副本【${task.oldName}】移入 139 回收站！`);
-                                    onProgress?.(done, activeTasks.length, `[淘汰清理] 媒体库已有更优版本，暂存区次级副本 ${task.oldName} 已移入回收站`);
+                                    Logger.info(`[TMDB整理-淘汰清理] 目标媒体库已有更高画质版本 (${matchedExisting.name} > ${task.newName}，决胜: ${decisiveRes.decisiveLabel} - ${decisiveRes.decisiveDetail})，已将暂存区次级副本【${task.oldName}】移入 139 回收站！`);
+                                    onProgress?.(done, activeTasks.length, `[淘汰清理] 媒体库已有更优版本(${decisiveRes.decisiveDetail})，暂存区次级副本 ${task.oldName} 已移入回收站`);
                                 } catch (delErr) {
                                     Logger.warn(`[TMDB整理-淘汰清理] 清理暂存区次级副本失败: ${delErr.message}`);
                                 }
                                 break;
                             } else {
                                 if (task.newName === matchedExisting.name) {
-                                    // 目标库中已存在完全同名文件 -> 淘汰暂存区重复副本，移入 139 回收站
+                                    // 目标库中已存在完全同名且规格体积完全相同的文件 -> 淘汰暂存区重复副本，移入 139 回收站（跳过重复入库）
                                     task.conflictDiscard = true;
-                                    task.conflictAction = `目标媒体库中已存在完全同名文件【${matchedExisting.name}】，暂存区重复副本【${task.oldName}】清理移入回收站`;
+                                    task.conflictAction = `目标媒体库中已存在完全相同规格与体积的文件【${matchedExisting.name}】(${decisiveRes.decisiveDetail})，暂存区冗余副本【${task.oldName}】清理移入回收站（跳过重复入库）`;
                                     task.decisionReason = task.conflictAction;
                                     task.washDetails = {
                                         type: "duplicate",
@@ -3365,13 +3635,16 @@ const TaskManager = {
                                         existingName: matchedExisting.name,
                                         existingSize: matchedExisting.size || 0,
                                         existingTags,
-                                        cmp: 0
+                                        cmp: 0,
+                                        decisiveCriterion: decisiveRes.decisiveCriterion,
+                                        decisiveLabel: decisiveRes.decisiveLabel,
+                                        decisiveDetail: decisiveRes.decisiveDetail
                                     };
                                     try {
                                         await DriveAPI.batchDelete([task.fileId], modeConfig);
                                         discardedCount++;
-                                        Logger.info(`[TMDB整理-同名清理] 目标媒体库已有完全同名文件 (${matchedExisting.name})，已将暂存区重复副本【${task.oldName}】移入 139 回收站！`);
-                                        onProgress?.(done, activeTasks.length, `[同名清理] 目标库已有相同文件，暂存区重复副本 ${task.oldName} 已移入回收站`);
+                                        Logger.info(`[TMDB整理-同名清理] 目标媒体库已有完全同名且规格体积相同的文件 (${matchedExisting.name} - ${decisiveRes.decisiveDetail})，已将暂存区重复副本【${task.oldName}】移入 139 回收站（跳过重复入库）！`);
+                                        onProgress?.(done, activeTasks.length, `[同名清理] 目标库已有完全相同文件，暂存区重复副本 ${task.oldName} 已移入回收站`);
                                     } catch (delErr) {
                                         Logger.warn(`[TMDB整理-同名清理] 清理暂存区重复副本失败: ${delErr.message}`);
                                     }

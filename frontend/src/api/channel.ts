@@ -192,6 +192,12 @@ export const channelApi = {
   } | ChannelHistoryItem[]> {
     return http.get('/api/channel-monitors/history', { params });
   },
+  retryHistory(id: number): Promise<any> {
+    return http.post(`/api/channel-monitors/history/${id}/retry`);
+  },
+  retryBatchHistory(data?: { ids?: number[]; allFailed?: boolean; accountId?: number }): Promise<any> {
+    return http.post('/api/channel-monitors/history/retry-batch', data);
+  },
   getMonitors(): Promise<ChannelMonitorItem[]> {
     return http.get('/api/channel-monitors');
   },

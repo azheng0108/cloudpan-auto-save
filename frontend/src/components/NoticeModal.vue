@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import {
   Sparkles,
   ShieldAlert,
@@ -19,16 +19,23 @@ import {
   SlidersHorizontal,
   KeyRound,
   DownloadCloud,
+  History,
+  Check,
+  Bot,
+  Terminal,
+  FileCode2,
 } from 'lucide-vue-next';
 
 const props = withDefaults(
   defineProps<{
     modelValue: boolean;
     forceAcknowledge?: boolean;
+    initialTab?: 'changelog' | 'guide' | 'disclaimer';
   }>(),
   {
     modelValue: false,
     forceAcknowledge: false,
+    initialTab: 'changelog',
   }
 );
 
@@ -40,45 +47,62 @@ const emit = defineEmits<{
 import { ElMessage } from 'element-plus';
 import { settingsApi } from '../api/settings';
 
-const agreed = ref(true);
-const activeTab = ref<'updates' | 'guide' | 'disclaimer'>('updates');
+const CURRENT_APP_VERSION = '2.4.16';
+const ACK_KEY = `cloudpan_v${CURRENT_APP_VERSION}_notice_ack`;
 
-const ACK_KEY = 'cloudpan_v2415_notice_ack';
+const agreed = ref(false);
+const activeTab = ref<'changelog' | 'guide' | 'disclaimer'>('changelog');
+
+const isForced = computed(() => {
+  if (props.forceAcknowledge) return true;
+  try {
+    const stored = localStorage.getItem(ACK_KEY);
+    return stored !== 'true';
+  } catch (e) {
+    return true;
+  }
+});
 
 watch(
   () => props.modelValue,
   (val) => {
     if (val) {
+      if (props.initialTab) {
+        activeTab.value = props.initialTab;
+      }
       const stored = localStorage.getItem(ACK_KEY);
-      agreed.value = stored !== null ? stored === 'true' : true;
+      agreed.value = stored === 'true';
     }
   }
 );
 
 onMounted(() => {
+  if (props.initialTab) {
+    activeTab.value = props.initialTab;
+  }
   const stored = localStorage.getItem(ACK_KEY);
-  agreed.value = stored !== null ? stored === 'true' : true;
+  agreed.value = stored === 'true';
 });
 
 function handleClose() {
-  if (props.forceAcknowledge && !agreed.value) {
+  if (isForced.value) {
+    ElMessage.warning('首次升级请先阅读并确认当前版本更新说明');
     return;
   }
-  try {
-    sessionStorage.setItem('cloudpan_notice_dismissed_session', 'true');
-    localStorage.setItem('cloudpan_notice_dismissed', 'true');
-  } catch (e) {}
   emit('update:modelValue', false);
 }
 
 function handleConfirm() {
-  agreed.value = true;
+  if (!agreed.value) {
+    ElMessage.warning('请先勾选我已仔细阅读并了解更新说明与规范');
+    return;
+  }
   try {
     localStorage.setItem(ACK_KEY, 'true');
     localStorage.setItem('cloudpan_notice_ack', 'true');
     localStorage.setItem('cloudpan_notice_dismissed', 'true');
     sessionStorage.setItem('cloudpan_notice_dismissed_session', 'true');
-    document.cookie = 'cloudpan_notice_ack=true; path=/; max-age=315360000; SameSite=Lax';
+    document.cookie = `${ACK_KEY}=true; path=/; max-age=315360000; SameSite=Lax`;
   } catch (e) {}
 
   try {
@@ -86,12 +110,13 @@ function handleConfirm() {
       if (cfg) {
         cfg.system = cfg.system || {};
         cfg.system.noticeAck = true;
+        cfg.system.lastNoticeVersion = CURRENT_APP_VERSION;
         settingsApi.saveSettings(cfg).catch(() => {});
       }
     }).catch(() => {});
   } catch (e) {}
 
-  ElMessage.success('已确认规范须知，后续将不再弹出');
+  ElMessage.success('已确认更新日志与规范须知');
   emit('acknowledged');
   emit('update:modelValue', false);
 }
@@ -119,16 +144,16 @@ function handleConfirm() {
                   系统版本与全流程使用指引
                 </h3>
                 <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-600 text-white tracking-wide">
-                  v2.4.15
+                  v2.4.16
                 </span>
               </div>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                全栈架构重大重构 · 影视智能整理 · 媒体资产治理
+                AI 影视识别增强 · 内置官方 AI 开箱即用 · 规范命名 · 日志与交互体验优化
               </p>
             </div>
           </div>
           <button
-            v-if="!forceAcknowledge"
+            v-if="!isForced"
             type="button"
             class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
             @click="handleClose"
@@ -137,20 +162,21 @@ function handleConfirm() {
           </button>
         </div>
 
-        <!-- 3 步走独立 Tab 切换 (版本概览 ➔ 新手使用说明 ➔ 风险免责) -->
+        <!-- 3 步走独立 Tab 切换 (更新日志 ➔ 新手使用说明 ➔ 风险免责) -->
         <div class="flex border-b border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/40 px-3 sm:px-5 pt-2 shrink-0 overflow-x-auto no-scrollbar">
           <button
             type="button"
             class="px-3.5 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
             :class="
-              activeTab === 'updates'
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+              activeTab === 'changelog'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400 font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             "
-            @click="activeTab = 'updates'"
+            @click="activeTab = 'changelog'"
           >
-            <Sparkles class="w-3.5 h-3.5" />
-            <span>1. 重构版本概览</span>
+            <History class="w-3.5 h-3.5" />
+            <span>1. 更新日志 (v2.4.16)</span>
+            <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse ml-0.5" />
           </button>
           <button
             type="button"
@@ -164,14 +190,13 @@ function handleConfirm() {
           >
             <BookOpen class="w-3.5 h-3.5" />
             <span>2. 新手使用指南</span>
-            <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse ml-0.5" />
           </button>
           <button
             type="button"
             class="px-3.5 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
             :class="
               activeTab === 'disclaimer'
-                ? 'border-amber-600 text-amber-600 dark:text-amber-400 dark:border-amber-400'
+                ? 'border-amber-600 text-amber-600 dark:text-amber-400 dark:border-amber-400 font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             "
             @click="activeTab = 'disclaimer'"
@@ -183,63 +208,150 @@ function handleConfirm() {
 
         <!-- 弹窗正文内容 (随 Tab 独立展示，杜绝杂糅) -->
         <div class="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs text-gray-600 dark:text-gray-300 leading-relaxed flex-1">
-          <!-- 标签页 1：更新亮点概览 (重构版本) -->
-          <div v-if="activeTab === 'updates'" class="space-y-3.5">
-            <div class="p-3 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-xl">
-              <p class="font-medium text-blue-900 dark:text-blue-300">
-                🎉 本次版本对系统架构与用户交互进行了彻底重构，全面迈入现代化全屏响应式标准。
-              </p>
+          <!-- 标签页 1：更新日志 (v2.4.16 & v2.4.15 全栈架构重构合并) -->
+          <div v-if="activeTab === 'changelog'" class="space-y-4">
+            <!-- v2.4.16 当前最新版本 -->
+            <div class="p-3.5 rounded-xl border border-blue-200/80 dark:border-blue-900/60 bg-blue-50/30 dark:bg-blue-950/20 space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-blue-100 dark:border-blue-900/40">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded-md font-mono font-bold text-xs bg-blue-600 text-white">
+                    v2.4.16
+                  </span>
+                  <span class="font-bold text-gray-900 dark:text-white">功能改进与问题修复</span>
+                </div>
+                <span class="text-[11px] text-gray-400 font-mono">2026-11-18</span>
+              </div>
+
+              <!-- 统一单列排版：一行一个区域 -->
+              <div class="space-y-2.5 text-[11px]">
+                <!-- 1. AI 影视识别优化 -->
+                <div class="p-2.5 rounded-lg border border-blue-100/80 dark:border-blue-900/40 bg-white dark:bg-gray-800/60 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <Bot class="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>AI 影视识别更准确、不再拒答</span>
+                  </div>
+                  <ul class="list-disc list-inside space-y-0.5 text-gray-600 dark:text-gray-300 leading-normal pl-0.5">
+                    <li><strong>自动附带真实文件名</strong>：不再只凭推文文本盲猜，系统发起对话时会自动带上下探到的真实视频文件名（如 S01E01、第1集），AI 提纯片名与集数更精准。</li>
+                    <li><strong>去除网络链接，杜绝拒答</strong>：剥离推文中的网络链接并明确要求纯文本提取，彻底解决此前大模型因尝试访问外部链接而报错拒答的问题。</li>
+                    <li><strong>长篇年番年份解耦</strong>：针对《沧元图》《一念永恒》等上百集连载动漫，自动解除推文带当季年份（如 2026）的干扰，优先以正确首播年份检索 TMDB，不再搜错剧集。</li>
+                    <li><strong>番外与特别篇自动识别</strong>：全面识别云盘文件夹中的特别篇（SP）、番外篇、点映礼与加更篇，自动归入对应分季或特别篇，不再遗漏或乱放。</li>
+                  </ul>
+                </div>
+
+                <!-- 2. 内置官方 AI 通道 -->
+                <div class="p-2.5 rounded-lg border border-blue-100/80 dark:border-blue-900/40 bg-white dark:bg-gray-800/60 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <Radio class="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span>内置官方 AI 服务默认开箱即用</span>
+                  </div>
+                  <ul class="list-disc list-inside space-y-0.5 text-gray-600 dark:text-gray-300 leading-normal pl-0.5">
+                    <li><strong>开箱即用直连</strong>：系统默认优先启用内置官方大模型通道，直接利用当前登录的云盘账号发起会话，无需自建大模型、无需填写第三方 API Key、无需探测本地 8045 端口。</li>
+                    <li><strong>协议与稳定性优化</strong>：优化底层会话请求协议，修复偶尔出现的 406 (Not Acceptable) 鉴权报错，保证后台长期自动化稳定运行。</li>
+                  </ul>
+                </div>
+
+                <!-- 3. 文件探测与重命名规范 -->
+                <div class="p-2.5 rounded-lg border border-blue-100/80 dark:border-blue-900/40 bg-white dark:bg-gray-800/60 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <FileCode2 class="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>影视文件重命名更规范</span>
+                  </div>
+                  <p class="text-gray-600 dark:text-gray-300 leading-normal pl-0.5">
+                    探测并重命名非 REMUX 原盘文件（普通网络压制或流媒体视频）时，自动补齐大写的 <strong>WEB-DL</strong> 标签，方便 Emby / Jellyfin / Plex 准确区分原盘与网络压制版本。
+                  </p>
+                </div>
+
+                <!-- 4. 日志更清爽透明 -->
+                <div class="p-2.5 rounded-lg border border-blue-100/80 dark:border-blue-900/40 bg-white dark:bg-gray-800/60 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <Terminal class="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>日志更清爽、排查问题一目了然</span>
+                  </div>
+                  <ul class="list-disc list-inside space-y-0.5 text-gray-600 dark:text-gray-300 leading-normal pl-0.5">
+                    <li><strong>解决“失败 0 个”乱报红</strong>：修复了批处理任务统计汇报（如“写入完成：失败 0 个”、“执行完毕：失败: 0”）因包含“失败”二字被误标为红色 FAIL 错误日志的缺陷，现在全部正常显示为绿色成功（OK）。</li>
+                    <li><strong>消除重复日志刷屏</strong>：修复了实时日志偶发连续出现两条一模一样记录的问题。</li>
+                    <li><strong>AI 与 TMDB 比对全过程透明</strong>：实时日志新增 AI 提取片名、TMDB 搜索候选以及最终匹配理由的详细日志，为什么命中这部剧清清楚楚。</li>
+                  </ul>
+                </div>
+
+                <!-- 5. 弹窗与交互细节 -->
+                <div class="p-2.5 rounded-lg border border-blue-100/80 dark:border-blue-900/40 bg-white dark:bg-gray-800/60 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <History class="w-3.5 h-3.5 text-violet-600 shrink-0" />
+                    <span>更新弹窗与操作体验优化</span>
+                  </div>
+                  <ul class="list-disc list-inside space-y-0.5 text-gray-600 dark:text-gray-300 leading-normal pl-0.5">
+                    <li><strong>更新后自动弹出提醒</strong>：更新系统版本后，首次登录进入控制台会自动弹出本次更新说明与使用指南，无需到处寻找入口。</li>
+                    <li><strong>修复弹窗内容重叠 Bug</strong>：彻底解决此前弹窗中更新日志与免责声明混在一起叠加显示的 Bug。</li>
+                    <li><strong>统一单列排版</strong>：界面更新卡片全部统一为单列全宽布局，结构规范清晰。</li>
+                  </ul>
+                </div>
+              </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/40 space-y-1">
-                <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white">
-                  <Tv class="w-4 h-4 text-blue-600" />
-                  Vue 3 现代响应式前端
+            <!-- v2.4.15 历史版本归档 (合并原核心架构特性，无需单独列出) -->
+            <div class="p-3.5 rounded-xl border border-gray-200/80 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-850 space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-gray-200/60 dark:border-gray-800">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded-md font-mono font-bold text-xs bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                    v2.4.15
+                  </span>
+                  <span class="font-bold text-gray-900 dark:text-white">全栈架构重构与核心能力</span>
                 </div>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">
-                  彻底移除传统多页面 HTML 架构，采用 Vue 3 + Vite + Pinia 单页应用，实现秒级响应与丝滑交互。
-                </p>
+                <span class="text-[11px] text-gray-400 font-mono">2026-10-27</span>
               </div>
 
-              <div class="p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/40 space-y-1">
-                <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white">
-                  <Clapperboard class="w-4 h-4 text-indigo-600" />
-                  TMDB 智能影视整理
+              <!-- 统一单列排版：一行一个区域 -->
+              <div class="space-y-2.5 text-[11px]">
+                <div class="p-2.5 rounded-lg border border-gray-200/60 dark:border-gray-800 bg-white dark:bg-gray-800/40 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <Tv class="w-3.5 h-3.5 text-blue-600" />
+                    <span>Vue 3 现代响应式前端</span>
+                  </div>
+                  <p class="text-gray-500 dark:text-gray-400 leading-normal">
+                    彻底移除传统多页面 HTML 架构，采用 Vue 3 + Vite + Pinia 单页应用，实现秒级响应与丝滑交互。
+                  </p>
                 </div>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">
-                  影视剧集自动识别、多级模糊容错、季集指纹抽取并自动归档落盘，支持在线快速检索修正。
-                </p>
-              </div>
 
-              <div class="p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/40 space-y-1">
-                <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white">
-                  <FolderSymlink class="w-4 h-4 text-emerald-600" />
-                  139 官方 302 直链播放
+                <div class="p-2.5 rounded-lg border border-gray-200/60 dark:border-gray-800 bg-white dark:bg-gray-800/40 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <Clapperboard class="w-3.5 h-3.5 text-indigo-600" />
+                    <span>TMDB 智能影视整理</span>
+                  </div>
+                  <p class="text-gray-500 dark:text-gray-400 leading-normal">
+                    影视剧集自动识别、多级模糊容错、季集指纹抽取并自动归档落盘，支持在线快速检索修正。
+                  </p>
                 </div>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">
-                  内置直链生成引擎，本地镜像生成 STRM 文件，Emby/Jellyfin 直连 139 官方 CDN 高速串流，0 宿主机带宽占用。
-                </p>
-              </div>
 
-              <div class="p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/40 space-y-1">
-                <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white">
-                  <ShieldAlert class="w-4 h-4 text-amber-600" />
-                  网盘资产清理与去重中心
+                <div class="p-2.5 rounded-lg border border-gray-200/60 dark:border-gray-800 bg-white dark:bg-gray-800/40 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <FolderSymlink class="w-3.5 h-3.5 text-emerald-600" />
+                    <span>139 官方 302 直链播放</span>
+                  </div>
+                  <p class="text-gray-500 dark:text-gray-400 leading-normal">
+                    内置直链生成引擎，本地镜像生成 STRM 文件，Emby/Jellyfin 直连官方 CDN 高速串流，0 宿主机带宽占用。
+                  </p>
                 </div>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">
-                  6 层深度违规死链巡检、自底向上空目录修剪，以及纯算法 0 刮削多版本画质智能裁决去重。
-                </p>
-              </div>
 
-              <div class="p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/40 space-y-1 sm:col-span-2">
-                <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white">
-                  <Radio class="w-4 h-4 text-violet-600" />
-                  跨网盘离线 (首批 123) 与 TG 频道流式监控
+                <div class="p-2.5 rounded-lg border border-gray-200/60 dark:border-gray-800 bg-white dark:bg-gray-800/40 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <ShieldAlert class="w-3.5 h-3.5 text-amber-600" />
+                    <span>网盘资产清理与去重中心</span>
+                  </div>
+                  <p class="text-gray-500 dark:text-gray-400 leading-normal">
+                    6 层深度违规死链巡检、自底向上空目录修剪，以及纯算法 0 刮削多版本画质智能裁决去重。
+                  </p>
                 </div>
-                <p class="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">
-                  139 直链一键下发 123 网盘云端高速离线下载；支持免 API Key 公开频道推文嗅探与自动转存路由。
-                </p>
+
+                <div class="p-2.5 rounded-lg border border-gray-200/60 dark:border-gray-800 bg-white dark:bg-gray-800/40 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-gray-900 dark:text-white text-xs">
+                    <Radio class="w-3.5 h-3.5 text-violet-600" />
+                    <span>跨网盘离线 (首批 123) 与 TG 频道流式监控</span>
+                  </div>
+                  <p class="text-gray-500 dark:text-gray-400 leading-normal">
+                    直链一键下发 123 网盘云端高速离线下载；支持免 API Key 公开频道推文嗅探与自动转存路由。
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -256,7 +368,7 @@ function handleConfirm() {
             </div>
           </div>
 
-          <!-- 标签页 2：新手使用指南 (独立下一页，避免与更新重构杂糅) -->
+          <!-- 标签页 2：新手使用指南 -->
           <div v-else-if="activeTab === 'guide'" class="space-y-4">
             <div class="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl flex items-start gap-2.5">
               <Compass class="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
@@ -284,7 +396,7 @@ function handleConfirm() {
                   </span>
                 </div>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-normal pl-7">
-                  支持多账号统一托管、扫码免密登录与 Token 自动保活；设为主力的账号将作为默认转存与整理归档的落盘主体。
+                  支持多账号统一托管、扫码快捷登录与 Token 自动保活；设为主力的账号将作为默认转存与整理归档的落盘主体。
                 </p>
               </div>
 
@@ -357,10 +469,10 @@ function handleConfirm() {
               <button
                 type="button"
                 class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                @click="activeTab = 'updates'"
+                @click="activeTab = 'changelog'"
               >
                 <ArrowLeft class="w-3.5 h-3.5" />
-                <span>返回版本概览</span>
+                <span>返回更新日志</span>
               </button>
               <button
                 type="button"
@@ -373,8 +485,8 @@ function handleConfirm() {
             </div>
           </div>
 
-          <!-- 标签页 3：风险与免责声明 -->
-          <div v-else class="space-y-3.5">
+          <!-- 标签页 3：风险与免责声明 (明确 v-else-if，杜绝混排串台) -->
+          <div v-else-if="activeTab === 'disclaimer'" class="space-y-3.5">
             <div class="p-3 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 rounded-xl flex items-start gap-2.5">
               <AlertTriangle class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
               <div class="space-y-1">
@@ -447,17 +559,20 @@ function handleConfirm() {
           </label>
 
           <div class="flex items-center justify-end gap-2">
+            <!-- 仅在非强制观看（已确认过该版本、后续主动翻阅）时才提供关闭退出按钮；强制观看时绝不展示任何取消/跳过按钮 -->
             <button
-              v-if="!forceAcknowledge"
+              v-if="!isForced"
               type="button"
-              class="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              class="px-3.5 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors cursor-pointer"
               @click="handleClose"
             >
-              稍后再看
+              关闭
             </button>
             <button
               type="button"
-              class="btn-primary text-xs px-4 py-1.5 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              :disabled="!agreed"
+              :class="!agreed ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'"
+              class="btn-primary text-xs px-4 py-1.5 flex items-center gap-1.5 shadow-sm transition-all"
               @click="handleConfirm"
             >
               <FileCheck class="w-3.5 h-3.5" />
