@@ -3,8 +3,14 @@ FROM node:22-alpine AS builder
 
 WORKDIR /home
 
-# 安装编译原生模块所需的基础工具链 (python3/make/g++)
-RUN apk add --no-cache python3 make g++
+# 安装编译原生模块所需的基础工具链 (python3/make/g++)，支持镜像源故障自愈与多轮重试
+RUN for i in 1 2 3 4 5; do \
+        (apk update && apk add --no-cache python3 make g++) && exit_code=0 && break || exit_code=$?; \
+        echo "apk install failed with code $exit_code, switching to fallback mirror and retrying ($i/5)..."; \
+        sed -i 's/dl-cdn.alpinelinux.org/mirrors.edge.kernel.org/g' /etc/apk/repositories 2>/dev/null || true; \
+        sleep 3; \
+    done; \
+    if [ "$exit_code" -ne 0 ]; then echo "Failed to install build dependencies"; exit $exit_code; fi
 
 # 先复制依赖清单，充分利用 Docker 层缓存
 COPY package.json yarn.lock ./
@@ -43,7 +49,13 @@ WORKDIR /home
 ARG APP_VERSION=dev
 
 # 安装系统运行时包、设置时区、安装 su-exec 降权工具、创建持久化目录并内置 ffmpeg 媒体探针
-RUN apk add --no-cache ca-certificates tzdata su-exec ffmpeg && \
+RUN for i in 1 2 3 4 5; do \
+        (apk update && apk add --no-cache ca-certificates tzdata su-exec ffmpeg) && exit_code=0 && break || exit_code=$?; \
+        echo "apk install failed with code $exit_code, switching to fallback mirror and retrying ($i/5)..."; \
+        sed -i 's/dl-cdn.alpinelinux.org/mirrors.edge.kernel.org/g' /etc/apk/repositories 2>/dev/null || true; \
+        sleep 3; \
+    done; \
+    if [ "$exit_code" -ne 0 ]; then echo "Failed to install production dependencies"; exit $exit_code; fi && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     mkdir -p /home/data /home/strm && \
