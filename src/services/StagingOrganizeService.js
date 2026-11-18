@@ -11,6 +11,8 @@ const { EventService } = require('./eventService');
 const ConfigService = require('./ConfigService');
 const { MessageUtil } = require('./message');
 const MediaCardFormatter = require('../utils/mediaCardFormatter');
+const { QuarantineService } = require('./QuarantineService');
+const { OrganizeMutex } = require('./OrganizeMutex');
 const logger = require('../utils/logger');
 const { logTaskEvent } = require('../utils/logUtils');
 
@@ -94,10 +96,18 @@ class StagingOrganizeService {
         if (JUNK_EXTENSIONS.has(ext)) return true;
 
         // 2. 教程、使用说明、引流广告、防封网址等通用语义模式
-        const PROMO_OR_TUTORIAL_PATTERN = /(?:教程|使用说明|如何使用|使用方法|播放说明|播放指南|解压(?:说明|方法|密码|码)?|安装(?:说明|教程|指南)?|操作(?:指南|说明)|新手(?:必看|指南|须知)|必读|请读|readme|manual|instructions?|常见问题|免责声明|最新(?:地址|网址|发布)|防(?:走丢|封|失联)|永久地址|备用(?:地址|网址)|发布(?:页|网|频道)|官方频道|交流群|内部群|通知群|企鹅群|微信群|qq群|裙|公众号|关注|扫码|引流|福利(?:群)?|海量资源|how[-_ ]?to[-_ ]?(?:use|play|install|watch)|tutorial)/i;
+        const PROMO_OR_TUTORIAL_PATTERN = /(?:教程|使用说明|如何使用|使用方法|播放说明|播放指南|解压(?:说明|方法|密码|码)?|安装(?:说明|教程|指南)?|操作(?:指南|说明)|新手(?:必看|指南|须知)|必读|请读|readme|manual|instructions?|常见问题|免责声明|最新(?:地址|网址|发布)|防(?:走丢|封|失联)|永久地址|备用(?:地址|网址)|发布(?:页|网|频道)|官方频道|交流群|内部群|通知群|企鹅群|微信群|qq群|裙|公众号|关注|扫码|引流|福利(?:群)?|海量资源|how[-_ ]?to[-_ ]?(?:use|play|install|watch)|tutorial|下载(?:链接|地址|二维码|网盘)?|二维码|官方接口播放器|播放器|提取码|访问码|免责|声明|招募|欢迎|更多资源|网盘下载|更新日志|发布页|app下载|爆米花)/i;
 
         // 检查文件名是否命中教程/广告模式
         if (PROMO_OR_TUTORIAL_PATTERN.test(name)) return true;
+
+        // 3. 常见说明/文本/链接文件（如果包含下载、链接、群、网盘、说明、地址、二维码等）
+        const TEXT_OR_LINK_EXTS = new Set(['txt', 'url', 'lnk', 'webloc', 'website', 'html', 'htm', 'nfo']);
+        if (TEXT_OR_LINK_EXTS.has(ext)) {
+            if (/(?:下载|链接|群|网盘|说明|地址|发布|备用|更新|播放器|提取码|密码|二维码)/i.test(name)) {
+                return true;
+            }
+        }
 
         // 检查所在相对路径目录层级（若某层父目录属于教程/说明/广告目录，内部所有非视频文件一律归入垃圾）
         if (relativePath) {
@@ -262,6 +272,13 @@ class StagingOrganizeService {
 
             const items = await cloud139.listDiskDirAll(folderId).catch(() => []);
             for (const item of items) {
+                if (item.type === 'folder') {
+                    const fName = String(item.name || '').trim();
+                    if (fName.startsWith('__') || fName === '__待人工整理__') {
+                        logger.info(`[暂存整理-扫描豁免] 发现隔离沉降目录 "${fName}"，显式跳过自动扫描`);
+                        continue;
+                    }
+                }
                 const isDirectChild = (folderId === rootCatalogId);
                 const curTopId = isDirectChild ? (topFolderId || (item.type === 'folder' ? item.fileId : '')) : topFolderId;
                 const curTopName = isDirectChild ? (topFolderName || (item.type === 'folder' ? item.name : '')) : topFolderName;
@@ -460,8 +477,18 @@ class StagingOrganizeService {
                 stagingFolderId = await this.ensureFolderPath(cloud139, globalStagingName);
             }
 
-            const targetFolderId = options.targetFolderId || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderId', '');
-            const defaultTargetFolderName = options.targetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName', '');
+            // 申请全局目录互斥锁，彻底杜绝与前端刮削工作台并发撞档
+            if (!OrganizeMutex.acquire(stagingFolderId, 'auto_staging', '后台暂存区自动整理')) {
+                const busyMsg = `[云盘整理-防并发重入] 暂存目录 (${stagingFolderId}) 正被前端工作台或其他任务占用，跳过本次自动整理`;
+                logger.warn(busyMsg);
+                if (!options.silentIfEmpty) {
+                    logTaskEvent(busyMsg);
+                }
+                return { scanned: 0, organized: 0, status: 'locked', message: busyMsg };
+            }
+
+            let targetFolderId = options.targetFolderId || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderId', '');
+            const defaultTargetFolderName = options.targetFolderName || ConfigService.getConfigValue('channelMonitor.defaultTargetFolderName', '') || '/媒体库';
             if (!targetFolderId || targetFolderId === '/' || targetFolderId === '0') {
                 const errMsg = '[云盘整理-安全熔断] 未配置有效的归档目标目录（严禁使用根目录或空目标目录），已熔断终止整理';
                 logger.error(errMsg);
@@ -479,10 +506,22 @@ class StagingOrganizeService {
                 await cloud139.listDiskDirAll(targetFolderId);
             } catch (targetCheckErr) {
                 if (targetCheckErr?.message?.includes('04000010') || targetCheckErr?.message?.includes('资源不存在')) {
-                    const errMsg = `[云盘整理-安全熔断] 配置的归档目标目录 (ID: ${targetFolderId}) 在 139 网盘中不存在(04000010)！已熔断终止整理，请在系统设置中重新选定有效的目标目录。`;
-                    logger.error(errMsg);
-                    logTaskEvent(errMsg);
-                    return { scanned: 0, organized: 0, status: 'invalid_target_folder', message: errMsg };
+                    logger.warn(`[云盘整理-自愈] 目标目录ID (${targetFolderId}) 已失效(04000010)，尝试按路径 "${defaultTargetFolderName}" 自动重解析寻址...`);
+                    try {
+                        const healedId = await this.ensureFolderPath(cloud139, defaultTargetFolderName);
+                        if (healedId && healedId !== '/' && healedId !== '0') {
+                            targetFolderId = healedId;
+                            ConfigService.setConfigValue('channelMonitor.defaultTargetFolderId', healedId);
+                            logTaskEvent(`[云盘整理-自愈] 归档目标目录已自动重定向至: ${defaultTargetFolderName} (${healedId})`);
+                        } else {
+                            throw new Error('未获取到有效目录ID');
+                        }
+                    } catch (healErr) {
+                        const errMsg = `[云盘整理-安全熔断] 配置的归档目标目录 (ID: ${targetFolderId}) 在 139 网盘中不存在(04000010)！且自动重新寻址 "${defaultTargetFolderName}" 失败: ${healErr.message}，已熔断终止整理。`;
+                        logger.error(errMsg);
+                        logTaskEvent(errMsg);
+                        return { scanned: 0, organized: 0, status: 'invalid_target_folder', message: errMsg };
+                    }
                 }
             }
 
@@ -555,6 +594,7 @@ class StagingOrganizeService {
             const autoWash = ConfigService.getConfigValue('channelMonitor.autoWash', true);
             const keepDolbyMultiVersion = ConfigService.getConfigValue('channelMonitor.keepDolbyMultiVersion', false);
             const washPolicy = ConfigService.getConfigValue('channelMonitor.washPolicy', 'qualityFirst');
+            const washPriorityOrder = ConfigService.getConfigValue('channelMonitor.washPriorityOrder', []);
 
             this._initTmdb();
             const groupsMap = await TmdbOrganizeService.clusterFiles(videoEntries, {
@@ -583,6 +623,7 @@ class StagingOrganizeService {
                 includeEpisodeTitle,
                 autoWash,
                 keepDolbyMultiVersion,
+                washPriorityOrder,
                 sourceFolders: allStagingEntries.filter(e => e.type === 'folder').map(f => {
                     const fullPath = f.relativePath || f.name || '';
                     const depth = fullPath.split('/').filter(Boolean).length;
@@ -613,6 +654,23 @@ class StagingOrganizeService {
                     } catch (scrapeErr) {
                         logger.warn(`[云盘整理-TMDB] 《${gTitle}》在线刮削异常: ${scrapeErr.message}`);
                     }
+                }
+
+                // 核心隔离防线：若 TMDB 无法匹配或被标记为 tmdbNotFound，且开启了隔离沉降，自动原子移入隔离区
+                const enableQuarantine = ConfigService.getConfigValue('channelMonitor.enableQuarantine', true);
+                if (enableQuarantine && (!group.tmdbId || group.tmdbNotFound)) {
+                    const sinkMsg = `[云盘整理-隔离沉降] 作品《${gTitle}》未匹配到有效 TMDB 条目，自动沉降至隔离区待人工治理...`;
+                    logger.warn(sinkMsg);
+                    logTaskEvent(sinkMsg);
+                    try {
+                        await QuarantineService.sink(group, cloud139, stagingFolderId, {
+                            reason: 'TMDB 未命中或片名存在消歧歧义',
+                            accountId: account?.id
+                        });
+                    } catch (sinkErr) {
+                        logger.error(`[云盘整理-隔离沉降] 沉降失败: ${sinkErr.message}`);
+                    }
+                    continue;
                 }
 
                 // 5.1.1 排除策略: 过滤预告片与样品文件 (excludeTrailersAndSamples)
@@ -711,9 +769,30 @@ class StagingOrganizeService {
                 });
                 singleGroupSnapshot.sourceFolders = groupSourceFolders;
 
+                // 若无法生成任何有效的归档任务，同样安全沉降至隔离区
+                if (enableQuarantine && (!singleGroupSnapshot.tasks || singleGroupSnapshot.tasks.length === 0)) {
+                    const sinkMsg = `[云盘整理-隔离沉降] 作品《${gTitle}》无法推导有效分季或归档任务，自动沉降至隔离区待人工治理...`;
+                    logger.warn(sinkMsg);
+                    logTaskEvent(sinkMsg);
+                    try {
+                        await QuarantineService.sink(group, cloud139, stagingFolderId, {
+                            reason: '单集无法解析且无有效入库任务',
+                            accountId: account?.id
+                        });
+                    } catch (sinkErr) {
+                        logger.error(`[云盘整理-隔离沉降] 沉降失败: ${sinkErr.message}`);
+                    }
+                    continue;
+                }
+
                 const singleExecResult = await TmdbOrganizeService.execute(singleGroupSnapshot, {
                     cloud139,
-                    washPolicy,
+                    washPolicy: {
+                        autoWash,
+                        washStrategy: washPolicy,
+                        keepDolbyMultiVersion,
+                        washPriorityOrder
+                    },
                     post: options.post,
                     ensureFolderPath: (p) => this.ensureFolderPath(cloud139, p, targetFolderId, defaultTargetFolderName)
                 }, {
@@ -899,6 +978,9 @@ class StagingOrganizeService {
                 details: totalMovedFiles
             };
         } finally {
+            if (typeof stagingFolderId !== 'undefined' && stagingFolderId) {
+                OrganizeMutex.release(stagingFolderId);
+            }
             StagingOrganizeService._isOrganizingRunning = false;
             this._isOrganizing = false;
         }

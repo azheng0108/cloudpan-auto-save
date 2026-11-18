@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useLogStore } from '../stores/log';
 import { systemApi, type SystemHealthData } from '../api/system';
 import { ElMessage } from 'element-plus';
+import NoticeModal from '../components/NoticeModal.vue';
 import {
   Activity,
   Tag,
@@ -24,6 +25,7 @@ const logStore = useLogStore();
 // ================= 系统健康状态 =================
 const healthLoading = ref(false);
 const healthData = ref<SystemHealthData | null>(null);
+const showNoticeModal = ref(false);
 
 async function fetchSystemStatus() {
   healthLoading.value = true;
@@ -57,7 +59,7 @@ const formattedUptime = computed(() => {
 });
 
 // ================= 日志过滤与检索体系 =================
-type TagType = 'ALL' | 'ERROR' | 'WARN' | 'DEBUG' | 'CHANNEL' | 'SCRAPE' | 'WAL' | '139';
+type TagType = 'ALL' | 'ERROR' | 'WARN' | 'DEBUG' | 'AI' | 'PROBE' | 'CHANNEL' | 'SCRAPE' | 'WAL' | '139';
 const activeTag = ref<TagType>('ALL');
 const searchKeyword = ref('');
 const logsContainerRef = ref<HTMLDivElement | null>(null);
@@ -67,11 +69,55 @@ const tagOptions: { key: TagType; label: string }[] = [
   { key: 'ERROR', label: '错误 (ERROR)' },
   { key: 'WARN', label: '警告 (WARN)' },
   { key: 'DEBUG', label: '调试 (DEBUG)' },
+  { key: 'AI', label: '灵犀 / AI' },
+  { key: 'PROBE', label: '媒体探针' },
   { key: 'CHANNEL', label: '频道监控' },
   { key: 'SCRAPE', label: 'TMDB整理' },
   { key: 'WAL', label: 'WAL洗版' },
   { key: '139', label: '139 网盘' },
 ];
+
+// 智能解析单行日志的等级指示
+function getLogLevel(line: string): 'FAIL' | 'WARN' | 'DEBUG' | 'OK' | '' {
+  if (!line) return '';
+  const str = String(line);
+
+  // 1. 检查显式日志等级前缀 [ERROR] / [WARN] / [DEBUG] / [INFO]
+  const prefixMatch = str.match(/\[(DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\]/i);
+  if (prefixMatch) {
+    const p = prefixMatch[1].toUpperCase();
+    if (p === 'ERROR' || p === 'FATAL') return 'FAIL';
+    if (p === 'WARN' || p === 'WARNING') return 'WARN';
+    if (p === 'DEBUG') return 'DEBUG';
+  }
+
+  // 2. 剥离无害的“0 失败 / 失败: 0 / 失败 0 个”等中英文计数汇报文本
+  const clean = str
+    .replace(/(?:失败|failed|errors?)[\s:：]*0\s*(?:个|项|条|次)?/gi, '')
+    .replace(/0\s*(?:个|项|条|次)?\s*(?:失败|failed|errors?)/gi, '');
+
+  // 3. 真实错误与异常判定
+  if (/(?:(?:\b|_)(?:error|fatal|exception|crash|panic)(?:\b|_)|失败|异常|报错|崩溃)/i.test(clean)) {
+    return 'FAIL';
+  }
+
+  // 4. 真实警告判定
+  if (/(?:(?:\b|_)(?:warn|warning)(?:\b|_)|警告|告警|阻断|拦截)/i.test(clean)) {
+    return 'WARN';
+  }
+
+  // 5. 调试日志判定
+  if (/(?:(?:\b|_)(?:debug|trace)(?:\b|_)|调试)/i.test(clean)) {
+    return 'DEBUG';
+  }
+
+  // 6. 成功与执行完成判定
+  if (/(?:成功|优选|完成|执行完毕|完毕|已就绪|就绪|通过)/i.test(clean)) {
+    return 'OK';
+  }
+
+  return '';
+}
 
 function matchesFilter(line: string): boolean {
   if (!line) return false;
@@ -79,11 +125,15 @@ function matchesFilter(line: string): boolean {
 
   // 1. 分词胶囊过滤
   if (activeTag.value === 'ERROR') {
-    if (!/error|err|failed|失败|异常/i.test(str)) return false;
+    if (getLogLevel(str) !== 'FAIL') return false;
   } else if (activeTag.value === 'WARN') {
-    if (!/warn|warning|警告/i.test(str)) return false;
+    if (getLogLevel(str) !== 'WARN') return false;
   } else if (activeTag.value === 'DEBUG') {
-    if (!/debug|调试/i.test(str)) return false;
+    if (getLogLevel(str) !== 'DEBUG') return false;
+  } else if (activeTag.value === 'AI') {
+    if (!/(?:\bAI\b|灵犀|大模型|大语言模型|\bLLM\b|\bNLP\b|deepseek|openai|chatgpt|claude|qwen|kimi|glm|blian_|ai_always|ai_hint)/i.test(str)) return false;
+  } else if (activeTag.value === 'PROBE') {
+    if (!/探针|mediainfo|probe|iso|蓝光|dvd|音视频流/i.test(str)) return false;
   } else if (activeTag.value === 'CHANNEL') {
     if (!/频道|channel|推文|telegram|tg/i.test(str)) return false;
   } else if (activeTag.value === 'SCRAPE') {
@@ -168,10 +218,14 @@ function parseLogItem(line: string): ParsedLogItem {
       tagClass = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
     } else if (/去重|wal|洗版/i.test(tag)) {
       tagClass = 'bg-amber-50 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300 border-amber-200 dark:border-amber-800';
-    } else if (/刮削|tmdb|媒体|整理|归档/i.test(tag)) {
+    } else if (/探针|probe|mediainfo/i.test(tag)) {
+      tagClass = 'bg-teal-50 text-teal-700 dark:bg-teal-950/70 dark:text-teal-300 border-teal-200 dark:border-teal-800';
+    } else if (/刮削|tmdb|整理|归档/i.test(tag)) {
       tagClass = 'bg-purple-50 text-purple-700 dark:bg-purple-950/70 dark:text-purple-300 border-purple-200 dark:border-purple-800';
     } else if (/频道|telegram/i.test(tag)) {
       tagClass = 'bg-sky-50 text-sky-700 dark:bg-sky-950/70 dark:text-sky-300 border-sky-200 dark:border-sky-800';
+    } else if (/(?:\bAI\b|灵犀|大模型)/i.test(tag)) {
+      tagClass = 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950/70 dark:text-fuchsia-300 border-fuchsia-200 dark:border-fuchsia-800';
     } else if (/139|转存|网盘|云盘/i.test(tag)) {
       tagClass = 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/70 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800';
     }
@@ -181,17 +235,14 @@ function parseLogItem(line: string): ParsedLogItem {
   let messageClass = 'text-gray-800 dark:text-gray-100';
 
   if (!level) {
-    if (/error|err|failed|失败|异常/i.test(line)) {
-      level = 'FAIL';
+    level = getLogLevel(line);
+    if (level === 'FAIL') {
       levelClass = 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800';
-    } else if (/warn|warning|警告/i.test(line)) {
-      level = 'WARN';
+    } else if (level === 'WARN') {
       levelClass = 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800';
-    } else if (/debug|调试/i.test(line)) {
-      level = 'DEBUG';
+    } else if (level === 'DEBUG') {
       levelClass = 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-300 dark:border-slate-700';
-    } else if (/成功|优选|完成/i.test(line)) {
-      level = 'OK';
+    } else if (level === 'OK') {
       levelClass = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
     }
   }
@@ -218,7 +269,19 @@ function parseLogItem(line: string): ParsedLogItem {
 }
 
 const parsedFilteredLogs = computed(() => {
-  return filteredLogs.value.map(parseLogItem);
+  const result: ParsedLogItem[] = [];
+  const recentKeys: string[] = [];
+  for (const line of filteredLogs.value) {
+    const item = parseLogItem(line);
+    const key = `${item.tag}|${item.level}|${item.message.trim()}`;
+    if (recentKeys.includes(key)) {
+      continue;
+    }
+    recentKeys.push(key);
+    if (recentKeys.length > 5) recentKeys.shift();
+    result.push(item);
+  }
+  return result;
 });
 
 // 自动滚动控制
@@ -359,10 +422,18 @@ onUnmounted(() => {
             <span class="text-xs text-gray-500 dark:text-gray-400 font-medium">系统内核版本</span>
             <Tag class="w-3.5 h-3.5 text-blue-500" />
           </div>
-          <div class="mt-2 flex items-center gap-2">
+          <div class="mt-2 flex items-center justify-between gap-2">
             <span class="text-sm font-bold text-gray-800 dark:text-gray-100 font-mono">
-              v{{ healthData?.version || '2.4.0' }}
+              v{{ healthData?.version || '2.4.16' }}
             </span>
+            <button
+              type="button"
+              class="text-[11px] px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:hover:bg-blue-900 dark:text-blue-300 font-medium transition-colors cursor-pointer border border-blue-200/60 dark:border-blue-800/60"
+              title="查看系统更新日志与版本说明"
+              @click="showNoticeModal = true"
+            >
+              更新日志
+            </button>
           </div>
           <span class="text-[11px] text-gray-400 dark:text-gray-500 mt-1 truncate">139 移动云盘专用版</span>
         </div>
@@ -596,6 +667,9 @@ onUnmounted(() => {
         提示：当前视图内存最多保留最近 2000 条，完整系统历史可点击右上角【下载日志】。支持点击顶部标签进行各模块/DEBUG过滤，点击【暂停滚动】可冻结视野并排查错误。
       </small>
     </div>
+
+    <!-- 更新日志与新手使用指南全局弹窗 -->
+    <NoticeModal v-model="showNoticeModal" initial-tab="changelog" />
   </div>
 </template>
 

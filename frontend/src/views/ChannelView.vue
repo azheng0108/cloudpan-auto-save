@@ -65,12 +65,14 @@ const loading = ref(false);
 const saving = ref(false);
 const syncing = ref(false);
 
-// AI 智能识别默认配置（与后端 src/services/ai.js:28-37 归一化默认值严格对齐）
+// AI 智能识别默认配置（与后端 src/services/ai.js 归一化默认值严格对齐，默认优先免密移动灵犀）
 const AI_DEFAULTS: ChannelAiConfig = {
   enable: false,
-  baseUrl: 'http://127.0.0.1:8045/v1',
+  provider: 'mobile',
+  providerName: '移动灵犀',
+  baseUrl: 'https://ai.yun.139.com',
   apiKey: '',
-  model: 'gemini-3.8-flash-tiered',
+  model: '移动灵犀智能大模型 (内置免配置)',
   mode: 'fallback',
   mobileFallback: { enable: true, networkSearch: true, proactiveRenew: true, timeoutMs: 60000 },
 };
@@ -81,10 +83,10 @@ const aiForm = computed<ChannelAiConfig>(() => config.value.ai ?? AI_DEFAULTS);
 const config = ref<ChannelGlobalConfig>({
   enabled: true,
   channels: [],
-  stagingFolderId: '',
-  stagingFolderName: '/暂存区/频道转存',
-  defaultTargetFolderId: '/',
-  defaultTargetFolderName: '默认媒体库 (/)',
+  stagingFolderId: 'FrQgS5DBtoXrsDF9E9e5Cc7R2J1tFbYT6',
+  stagingFolderName: '/临时存放',
+  defaultTargetFolderId: 'FtakjmnewOP2CFDarHL9I66zXFiUCsB19',
+  defaultTargetFolderName: '/媒体库',
   dispatchRules: [],
   whitelistRegex: '',
   blacklistKeywords: [],
@@ -798,10 +800,10 @@ async function loadInitialData() {
         ...config.value,
         ...res,
         channels: Array.isArray(res.channels) ? res.channels : [],
-        stagingFolderId: res.stagingFolderId || '',
-        stagingFolderName: res.stagingFolderName || '/暂存区/频道转存',
-        defaultTargetFolderId: res.defaultTargetFolderId || '/',
-        defaultTargetFolderName: res.defaultTargetFolderName || '默认媒体库 (/)',
+        stagingFolderId: res.stagingFolderId || 'FrQgS5DBtoXrsDF9E9e5Cc7R2J1tFbYT6',
+        stagingFolderName: (res.stagingFolderName && res.stagingFolderName !== '/暂存区/频道转存') ? res.stagingFolderName : '/临时存放',
+        defaultTargetFolderId: res.defaultTargetFolderId || 'FtakjmnewOP2CFDarHL9I66zXFiUCsB19',
+        defaultTargetFolderName: (res.defaultTargetFolderName && res.defaultTargetFolderName !== '默认媒体库' && res.defaultTargetFolderName !== '默认媒体库 (/)') ? res.defaultTargetFolderName : '/媒体库',
         whitelistRegex: res.whitelistRegex || '',
         blacklistKeywords: Array.isArray(res.blacklistKeywords) ? res.blacklistKeywords : [],
         visualCards: Array.isArray(res.visualCards) ? res.visualCards : [],
@@ -853,6 +855,8 @@ const channelHistoryPageSize = ref(20);
 const historyStatusFilter = ref<'' | 'success' | 'transferred' | 'skipped' | 'failed'>('');
 const historySearchQuery = ref('');
 const expandedRawTextIds = ref<Set<number>>(new Set());
+const retryingIds = ref<Set<number>>(new Set());
+const batchRetrying = ref(false);
 
 function toggleExpandRawText(id: number) {
   if (expandedRawTextIds.value.has(id)) {
@@ -1057,7 +1061,7 @@ function parsePostDetails(item: any) {
   let episodeTitle = '';
   let categoryYearLabel = category || mediaTypeLabel;
 
-  // ★ 核心权威兜底 1：若后端执行结果已识别出 TMDB 与权威正名（如 reason 包含 《嫁金钗》 [TMDB #300146]），无条件优先采纳！
+  // 核心权威兜底 1：若后端执行结果已识别出 TMDB 与权威正名（如 reason 包含 《嫁金钗》 [TMDB #300146]），无条件优先采纳！
   const reasonMatch = (item.reason || '').match(/《([^》]+)》/);
   if (reasonMatch && reasonMatch[1]) {
     cleanTitle = reasonMatch[1].trim();
@@ -1124,7 +1128,7 @@ function parsePostDetails(item: any) {
             if (m) tmdbId = m[1];
           }
 
-          // ★ 核心校准：从权威转存/入库结果深度反哺剧集模态、规范分集与画质规格
+          // 核心校准：从权威转存/入库结果深度反哺剧集模态、规范分集与画质规格
           const allDetailText = details.map((d: any) => `${d.originalName || ''} ${d.finalName || ''} ${d.targetFolderPath || ''}`).join(' ');
           const isDetailTv = first.mediaType === 'tv'
             || /目标目录\/剧集|Season\s*\d+|\bS\d{1,2}\s*E\d{1,4}\b|第\s*\d+\s*[季集话期]/i.test(allDetailText);
@@ -1183,7 +1187,7 @@ function parsePostDetails(item: any) {
     } catch {}
   }
 
-  // ★ 终极保障：成功入库或已命中 TMDB 的条目，绝对禁止出现"待识别"！
+  // 终极保障：成功入库或已命中 TMDB 的条目，绝对禁止出现"待识别"！
   if ((isSuccess(item) || tmdbId) && (!category || category === '待识别')) {
     category = '剧集';
     mediaTypeLabel = '剧集';
@@ -1346,6 +1350,43 @@ async function loadChannelHistory(page = 1) {
     ElMessage.error(err.message || '加载监控历史异常');
   } finally {
     historyLoading.value = false;
+  }
+}
+
+async function handleRetryHistory(item: ChannelHistoryItem) {
+  if (retryingIds.value.has(item.id)) return;
+  retryingIds.value.add(item.id);
+  try {
+    const res = await channelApi.retryHistory(item.id);
+    if (res?.success) {
+      ElMessage.success(`重试转存成功: ${parsePostDetails(item).cleanTitle || item.postTitle || ('推文 #' + (item.messageId || item.id))}`);
+    } else {
+      ElMessage.warning(`重试完成: ${res?.data?.reason || res?.error || '状态已更新'}`);
+    }
+    await loadChannelHistory(channelHistoryPage.value);
+  } catch (err: any) {
+    ElMessage.error(err.message || '重试转存失败');
+  } finally {
+    retryingIds.value.delete(item.id);
+  }
+}
+
+async function handleBatchRetryFailed() {
+  if (batchRetrying.value) return;
+  batchRetrying.value = true;
+  try {
+    const res = await channelApi.retryBatchHistory({ allFailed: true });
+    if (res?.success) {
+      const { total, successCount, failedCount } = res.data || {};
+      ElMessage.success(`批量重试完成: 共 ${total} 项，成功 ${successCount} 项${failedCount > 0 ? `，失败 ${failedCount} 项` : ''}`);
+    } else {
+      ElMessage.error(res?.error || '批量重试异常');
+    }
+    await loadChannelHistory(channelHistoryPage.value);
+  } catch (err: any) {
+    ElMessage.error(err.message || '批量重试失败');
+  } finally {
+    batchRetrying.value = false;
   }
 }
 
@@ -2050,7 +2091,7 @@ onUnmounted(() => {
                     :class="card.limitations?.includes('4K') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-blue-400'"
                     @click="toggleCardLimitation(card.id, '4K')"
                   >
-                    {{ card.limitations?.includes('4K') ? '✓ 4K' : '+ 4K' }}
+                    {{ card.limitations?.includes('4K') ? '4K' : '+ 4K' }}
                   </button>
                   <button
                     type="button"
@@ -2058,7 +2099,7 @@ onUnmounted(() => {
                     :class="card.limitations?.includes('完整剧集') ? 'bg-purple-600 text-white border-purple-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-purple-400'"
                     @click="toggleCardLimitation(card.id, '完整剧集')"
                   >
-                    {{ card.limitations?.includes('完整剧集') ? '✓ 完结' : '+ 完结' }}
+                    {{ card.limitations?.includes('完整剧集') ? '完结' : '+ 完结' }}
                   </button>
                 </div>
               </div>
@@ -2555,7 +2596,7 @@ onUnmounted(() => {
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-gray-800 dark:text-gray-200">识别提取结果</span>
                 <span v-if="aiTrialResult.fromCache" class="status-pill status-pill--info text-[10px]">
-                  ⚡ 缓存命中（10 分钟内相同文本）
+                  缓存命中（10 分钟内相同文本）
                 </span>
               </div>
 
@@ -2678,6 +2719,18 @@ onUnmounted(() => {
                 失败
               </button>
             </div>
+
+            <!-- 批量重试失败项按钮 -->
+            <button
+              type="button"
+              @click="handleBatchRetryFailed"
+              :disabled="batchRetrying"
+              class="px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer disabled:opacity-50 shrink-0"
+              title="一键批量重试所有失败的转存记录"
+            >
+              <RotateCw class="w-3.5 h-3.5 shrink-0" :class="{ 'animate-spin': batchRetrying }" />
+              <span>重试失败项</span>
+            </button>
 
             <!-- 刷新按钮 -->
             <button
@@ -2828,6 +2881,19 @@ onUnmounted(() => {
                   >
                     {{ isSuccess(item) ? '成功入库' : (isSkipped(item) ? '规则跳过' : (isFailed(item) ? '转存异常' : '转存处理中')) }}
                   </span>
+
+                  <!-- 失败项单项重试按钮 -->
+                  <button
+                    v-if="isFailed(item)"
+                    type="button"
+                    @click.stop="handleRetryHistory(item)"
+                    :disabled="retryingIds.has(item.id)"
+                    class="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0"
+                    title="重新嗅探并重试转存此推文"
+                  >
+                    <RotateCw class="w-2.5 h-2.5 shrink-0" :class="{ 'animate-spin': retryingIds.has(item.id) }" />
+                    <span>重试</span>
+                  </button>
 
                   <!-- 容量与时间 -->
                   <div class="text-right font-mono text-[11.5px] text-slate-500 dark:text-slate-400">

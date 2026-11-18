@@ -53,6 +53,23 @@ class MediaDriveAdapter {
         throw new Error('ensureDir not implemented');
     }
 
+    async ensureDirPath(fullPath) {
+        const segs = String(fullPath || '').split('/').filter(Boolean);
+        let cur = '/';
+        for (const seg of segs) {
+            cur = await this.ensureDir(cur, seg);
+        }
+        return cur;
+    }
+
+    async listDir(dirRef) {
+        throw new Error('listDir not implemented');
+    }
+
+    async deleteDir(dirRef) {
+        throw new Error('deleteDir not implemented');
+    }
+
     async rename(ref, newName) {
         throw new Error('rename not implemented');
     }
@@ -103,13 +120,37 @@ class Cloud139DriveAdapter extends MediaDriveAdapter {
     }
 
     async rename(ref, newName) {
-        await this.client.renameFile(ref, newName);
+        const res = await this.client.renameFile(ref, newName);
+        if (res && res.res_code !== 0 && !res.idempotent) {
+            throw new Error(`139网盘重命名失败: ${res.res_msg || '未知错误'}`);
+        }
+        return res;
     }
 
     async batchMove(refs, targetDirRef) {
         const idList = Array.isArray(refs) ? refs.filter(Boolean) : [refs];
         if (!idList.length) return;
-        await this.client.batchMoveHcy(idList, targetDirRef);
+        try {
+            await this.client.batchMoveHcy(idList, targetDirRef);
+        } catch (err) {
+            if (err.message && (
+                err.message.includes('无法移动到自身') ||
+                err.message.includes('自身所在目录') ||
+                err.message.includes('同一目录')
+            )) {
+                logger.info(`[139网盘-移动] 文件已位于目标目录中，无需重复移动: ${err.message}`);
+                return;
+            }
+            throw err;
+        }
+    }
+
+    async listDir(dirRef) {
+        return await this.client.listDiskDir(dirRef || '/');
+    }
+
+    async deleteDir(dirRef) {
+        return await this.client.deleteFiles([dirRef]);
     }
 }
 

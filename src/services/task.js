@@ -957,6 +957,38 @@ class TaskService {
             tmdbYear = RecognitionEngine.extractYear(rawTaskName) || '';
         }
 
+        if (!taskDto.tmdbId && taskName && taskName !== 'root') {
+            try {
+                const { TmdbService } = require('./tmdb');
+                const tmdbService = TmdbService.getInstance();
+                const videoType = taskDto.videoType || 'tv';
+                const searchRes = videoType === 'movie'
+                    ? await tmdbService.searchMovie(taskName, tmdbYear || undefined)
+                    : await tmdbService.searchTv(taskName, tmdbYear || undefined);
+                const firstHit = (searchRes?.results || [])[0];
+                if (firstHit && firstHit.id) {
+                    taskDto.tmdbId = String(firstHit.id);
+                    if (!tmdbYear) {
+                        const dateStr = firstHit.first_air_date || firstHit.release_date || '';
+                        if (dateStr) tmdbYear = dateStr.slice(0, 4);
+                    }
+                    if (!tmdbContent) {
+                        tmdbContent = JSON.stringify({
+                            id: firstHit.id,
+                            tmdbId: firstHit.id,
+                            title: firstHit.name || firstHit.title || taskName,
+                            year: tmdbYear || undefined,
+                            posterPath: firstHit.poster_path || '',
+                            mediaType: videoType
+                        });
+                    }
+                    logTaskEvent(`[139-TMDB自动补全] 影视剧名 "${taskName}" 自动关联官方 TMDB ID #${firstHit.id} (${firstHit.name || firstHit.title})`);
+                }
+            } catch (err) {
+                logger.warn(`[139-TMDB自动补全] 查片失败: ${err.message}`);
+            }
+        }
+
         if (!tmdbContent && (taskDto.posterPath || taskDto.tmdbId)) {
             tmdbContent = JSON.stringify({
                 id: taskDto.tmdbId ? (Number(taskDto.tmdbId) || taskDto.tmdbId) : undefined,

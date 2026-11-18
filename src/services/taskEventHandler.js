@@ -11,74 +11,14 @@ const ConfigService = require('./ConfigService');
 class TaskEventHandler {
     constructor(messageUtil) {
         this.messageUtil = messageUtil;
-        this._embyNotifyAt = new Map();    }
-
-    async _buildNormalizedTaskSubfolder(task, account, normalizedBasePath) {
-        let taskSubfolder = String(task.realFolderName || '')
-            .replace(/\\/g, '/')
-            .replace(/\/+/g, '/')
-            .replace(/^\/+|\/+$/g, '');
-
-        const rawSegments = taskSubfolder.split('/').filter(Boolean);
-        if (rawSegments.length === 0) {
-            return {
-                taskSubfolder,
-                matchedAnchor: '',
-                rootFolders: [],
-            };
-        }
-
-        const rootFolders = await this._getAListRootFolders(normalizedBasePath);
-        if (rootFolders.length === 0) {
-            logTaskEvent('未获取到 OpenList 挂载根首层目录，保持原始相对路径');
-            return {
-                taskSubfolder,
-                matchedAnchor: '',
-                rootFolders,
-            };
-        }
-
-        const exactSet = new Set(rootFolders);
-        const lowerMap = new Map(rootFolders.map(name => [name.toLowerCase(), name]));
-        let matchedIndex = -1;
-        let matchedAnchor = '';
-        for (let i = 0; i < rawSegments.length; i++) {
-            const seg = rawSegments[i];
-            if (exactSet.has(seg)) {
-                matchedIndex = i;
-                matchedAnchor = seg;
-                break;
-            }
-            const ciMatch = lowerMap.get(seg.toLowerCase());
-            if (ciMatch) {
-                matchedIndex = i;
-                matchedAnchor = ciMatch;
-                break;
-            }
-        }
-
-        if (matchedIndex > 0) {
-            taskSubfolder = rawSegments.slice(matchedIndex).join('/');
-            logger.debug(`OpenList 路径锚点命中: ${matchedAnchor}`);
-        } else if (matchedIndex === 0) {
-            logger.debug(`OpenList 路径锚点命中: ${matchedAnchor}`);
-        } else {
-            logTaskEvent(`OpenList 路径锚点未命中，保持原路径: ${taskSubfolder}`);
-            matchedAnchor = '';
-        }
-
-        return {
-            taskSubfolder,
-            matchedAnchor,
-            rootFolders,
-        };
+        this._embyNotifyAt = new Map();
     }
 
     async handle(taskCompleteEventDto) {
-        // 全局后处理总开关：阶段性关闭后处理流程 (自动重命名/STRM/NFO/OpenList/Emby/Webhook)
+        // 全局后处理总开关：阶段性关闭后处理流程 (自动重命名/STRM/NFO/Emby/Webhook)
         const isPostProcessEnabled = ConfigService.getConfigValue('postProcess.enable', false)
             || ConfigService.getConfigValue('postProcess.enabled', false);
-        const isStrmAutoGenerate = taskCompleteEventDto.sourceMode === 'staging_organize' && (
+        const isStrmAutoGenerate = (taskCompleteEventDto.sourceMode === 'staging_organize' || taskCompleteEventDto.sourceMode === 'manual_resolve') && (
             ConfigService.getConfigValue('strm.autoGenerateOnOrganize', true) &&
             (ConfigService.getConfigValue('strm.enable', false) || ConfigService.getConfigValue('channelMonitor.linkStrm', false))
         );
@@ -96,8 +36,8 @@ class TaskEventHandler {
             logTaskEvent(`── 后处理完成 ──`);
             return;
         }
-        let refreshContext = null;
         try {
+            logTaskEvent('[1] 自动重命名');
             await this._handleAutoRename(taskCompleteEventDto);
         } catch (error) {
             logger.error('自动重命名失败', { error: error.message, stack: error.stack });
@@ -118,37 +58,30 @@ class TaskEventHandler {
             logTaskEvent(`[3] NFO 刮削失败（不阻断后续流程）: ${error.message}`);
         }
         try {
-            logTaskEvent('[4] OpenList 缓存刷新');
-            refreshContext = await this._handleCloudCacheRefresh(taskCompleteEventDto);
-        } catch (error) {
-            logger.error('OpenList 缓存刷新失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`[4] OpenList 缓存刷新失败（不阻断后续通知）: ${error.message}`);
-        }
-        try {
-            logTaskEvent('[5] Emby 媒体库直连刷新');
-            const embyResult = await this._handleEmbyNotify(taskCompleteEventDto, refreshContext);
+            logTaskEvent('[4] Emby 媒体库直连刷新');
+            const embyResult = await this._handleEmbyNotify(taskCompleteEventDto);
             if (embyResult?.status === 'success') {
-                logTaskEvent(`[5] Emby 媒体库刷新完成: 模式=${embyResult.refreshMode || '目录增量'}`);
+                logTaskEvent(`[4] Emby 媒体库刷新完成: 模式=${embyResult.refreshMode || '目录增量'}`);
             } else if (embyResult?.status === 'skipped') {
-                logTaskEvent(`[5] Emby 媒体库刷新跳过: ${embyResult.reason || '未启用'}`);
+                logTaskEvent(`[4] Emby 媒体库刷新跳过: ${embyResult.reason || '未启用'}`);
             }
         } catch (error) {
             logger.error('Emby 媒体库刷新失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`[5] Emby 媒体库刷新失败: ${error.message}`);
+            logTaskEvent(`[4] Emby 媒体库刷新失败: ${error.message}`);
         }
         try {
-            logTaskEvent('[6] Webhook 入库通知 (SmartStrm / 第三方)');
-            const notifyResult = await this._handleWebhookNotify(taskCompleteEventDto, refreshContext);
+            logTaskEvent('[5] Webhook 入库通知 (SmartStrm / 第三方)');
+            const notifyResult = await this._handleWebhookNotify(taskCompleteEventDto);
             if (notifyResult?.status === 'success') {
                 logTaskEvent(
-                    `[6] Webhook 通知完成（HTTP ${notifyResult.statusCode || 200}）`
+                    `[5] Webhook 通知完成（HTTP ${notifyResult.statusCode || 200}）`
                 );
             } else if (notifyResult?.status === 'skipped') {
-                logTaskEvent(`[6] Webhook 通知跳过: ${notifyResult.reason || '未启用'}`);
+                logTaskEvent(`[5] Webhook 通知跳过: ${notifyResult.reason || '未启用'}`);
             }
         } catch (error) {
             logger.error('Webhook 出站通知失败', { error: error.message, stack: error.stack });
-            logTaskEvent(`[6] Webhook 出站通知失败: ${error.message}`);
+            logTaskEvent(`[5] Webhook 出站通知失败: ${error.message}`);
         }
         logTaskEvent(`── 后处理完成 ──`);
     }
@@ -157,6 +90,7 @@ class TaskEventHandler {
         try {
             if (
                 taskCompleteEventDto.sourceMode === 'staging_organize' ||
+                taskCompleteEventDto.sourceMode === 'manual_resolve' ||
                 taskCompleteEventDto.task?.enableTaskScraper === true ||
                 Boolean(taskCompleteEventDto.task?.tmdbId) ||
                 !taskCompleteEventDto.taskService
@@ -272,211 +206,26 @@ class TaskEventHandler {
     }
 
     /**
-     * 单层刷新 OpenList 挂载点目录缓存。
-     * 同时刷新原生路径（alistNativePath）和 STRM 虚拟路径（alistStrmPath 或自动推算），
-     * 确保 OpenList STRM 驱动能为 Emby 暴露最新 .strm 文件。
-     * 只发送 fs/list(refresh=true)，不做递归。
+     * 通知 Emby 刷新对应媒体库 (适用于本地 STRM 用户或直连用户)。
+     * 向 Emby 发送标准轻量目录事件通知。
      * @param {TaskCompleteEventDto} dto
      */
-    async _handleCloudCacheRefresh(dto) {
-        if (!alistService.Enable()) {
-            const baseUrlExists = !!ConfigService.getConfigValue('alist.baseUrl');
-            const apiKeyExists = !!ConfigService.getConfigValue('alist.apiKey');
-            logTaskEvent(`Alist 未启用，跳过 OpenList 缓存刷新 | enable=false | baseUrl=${baseUrlExists} | apiKey=${apiKeyExists}`);
-            return;
-        }
-
-        const task = dto.task || {};
-        const account = task.account || {};
-        if (!task.id) {
-            logTaskEvent(`未指定任务实体，跳过 OpenList 缓存刷新`);
-            return null;
-        }
-        const alistNativePath = account.alistNativePath?.trim();
-        const alistStrmPathRaw = account.alistStrmPath?.trim();
-
-        if (!alistNativePath && !alistStrmPathRaw) {
-            logTaskEvent(`alistNativePath 与 alistStrmPath 均未配置，跳过 OpenList 缓存刷新 | taskId=${task.id} | realFolderName=${task.realFolderName}`);
-            return;
-        }
-
-        // 推算 STRM 虚拟路径：账号手动配置 > 全局 strmMountPath + alistNativePath > 无
-        let strmBasePath = alistStrmPathRaw;
-        if (!strmBasePath && alistNativePath) {
-            const strmMountPath = String(ConfigService.getConfigValue('alist.strmMountPath') || '')
-                .trim()
-                .replace(/\/+$/, '');
-            if (strmMountPath) {
-                const nativeSuffix = alistNativePath.replace(/^\/+/, '');
-                strmBasePath = `${strmMountPath}/${nativeSuffix}`;
-                logger.debug(`STRM 虚拟路径自动推算: ${strmBasePath}`);
-            } else {
-                logger.debug('STRM 挂载路径未配置，跳过 STRM 虚拟路径自动推算');
-            }
-        }
-
-        // 原生路径刷新（优先，若 alistNativePath 存在）
-        let nativeRefreshResult = null;
-        let taskSubfolder = null;
-        let nativeRefreshPath = null;
-
-        if (alistNativePath) {
-            const normalizedNative = String(alistNativePath)
-                .replace(/\\/g, '/')
-                .replace(/\/+/g, '/')
-                .replace(/\/+$/g, '');
-
-            const subfolder = await this._buildNormalizedTaskSubfolder(task, account, normalizedNative);
-            taskSubfolder = subfolder.taskSubfolder;
-
-            nativeRefreshPath = taskSubfolder
-                ? `${normalizedNative}/${taskSubfolder}`
-                : normalizedNative;
-
-            await new Promise(resolve => setTimeout(resolve, 5000));
-
-            if (dto.firstExecution) {
-                const parentPath = nativeRefreshPath.includes('/')
-                    ? nativeRefreshPath.substring(0, nativeRefreshPath.lastIndexOf('/'))
-                    : null;
-                if (parentPath) {
-                    logger.debug(`首次执行，预热原生父目录缓存: ${parentPath}`);
-                    await alistService.refreshSingleDirectory(parentPath).catch(e =>
-                        logger.debug(`原生父目录预热失败(忽略): ${e.message}`)
-                    );
-                }
-            }
-
-            logger.debug(`触发 OpenList 原生路径缓存刷新: ${nativeRefreshPath}`);
-            try {
-                nativeRefreshResult = await alistService.refreshSingleDirectory(nativeRefreshPath);
-                logTaskEvent(`原生目录刷新完成: ${nativeRefreshPath}（共 ${nativeRefreshResult.contentCount} 个文件）`);
-            } catch (e) {
-                if (dto.firstExecution && /object not found/i.test(e.message)) {
-                    logTaskEvent(`OpenList 原生路径新目录刷新失败(首次执行容错，不阻断): ${e.message}`);
-                    nativeRefreshResult = { success: false, firstExecutionPartial: true };
-                } else {
-                    throw e;
-                }
-            }
-        } else {
-            // 无原生路径，延迟移到 STRM 刷新前
-            await new Promise(resolve => setTimeout(resolve, 5000));
-        }
-
-        // STRM 虚拟路径刷新（在原生路径刷新后执行，确保原生缓存先就绪）
-        let strmRefreshResult = null;
-        let strmRefreshPath = null;
-
-        if (strmBasePath) {
-            const normalizedStrm = String(strmBasePath)
-                .replace(/\\/g, '/')
-                .replace(/\/+/g, '/')
-                .replace(/\/+$/g, '');
-
-            // 若原生路径未提供 taskSubfolder，则基于 STRM 路径重新计算
-            if (!taskSubfolder && alistNativePath == null) {
-                const subfolder = await this._buildNormalizedTaskSubfolder(task, account, normalizedStrm);
-                taskSubfolder = subfolder.taskSubfolder;
-            }
-
-            strmRefreshPath = taskSubfolder
-                ? `${normalizedStrm}/${taskSubfolder}`
-                : normalizedStrm;
-
-            if (dto.firstExecution) {
-                const parentPath = strmRefreshPath.includes('/')
-                    ? strmRefreshPath.substring(0, strmRefreshPath.lastIndexOf('/'))
-                    : null;
-                if (parentPath) {
-                    logger.debug(`首次执行，预热 STRM 父目录缓存: ${parentPath}`);
-                    await alistService.refreshSingleDirectory(parentPath).catch(e =>
-                        logger.debug(`STRM 父目录预热失败(忽略): ${e.message}`)
-                    );
-                }
-            }
-
-            logger.debug(`触发 OpenList STRM 路径缓存刷新: ${strmRefreshPath}`);
-            try {
-                strmRefreshResult = await alistService.refreshSingleDirectory(strmRefreshPath);
-                logTaskEvent(`STRM 目录刷新完成: ${strmRefreshPath}（共 ${strmRefreshResult.contentCount} 个文件）`);
-            } catch (e) {
-                if (dto.firstExecution && /object not found/i.test(e.message)) {
-                    logTaskEvent(`OpenList STRM 路径新目录刷新失败(首次执行容错，不阻断): ${e.message}`);
-                    strmRefreshResult = { success: false, firstExecutionPartial: true };
-                } else {
-                    logTaskEvent(`OpenList STRM 路径刷新失败(不阻断 Emby): ${e.message}`);
-                    strmRefreshResult = { success: false, error: e.message };
-                }
-            }
-
-            // 刷新后验证 STRM 内容是否已更新
-            if (strmRefreshResult?.success !== false && Array.isArray(dto.fileList) && dto.fileList.length > 0) {
-                const expectedFileNames = dto.fileList.map(f => {
-                    const name = typeof f === 'string' ? f : (f?.fileName || f?.name || '');
-                    return name.replace(/\.[^.]+$/, '') + '.strm';
-                }).filter(Boolean);
-
-                if (expectedFileNames.length > 0) {
-                    let verifyResult = await alistService.verifyStrmContent(strmRefreshPath, expectedFileNames);
-                    if (!verifyResult.verified) {
-                        logTaskEvent(`STRM 内容验证未通过，等待 3 秒后重试：找到 ${verifyResult.foundCount} 个，缺失 ${verifyResult.missingCount} 个`);
-                        await new Promise(resolve => setTimeout(resolve, 3000));
-                        verifyResult = await alistService.verifyStrmContent(strmRefreshPath, expectedFileNames);
-                    }
-                    if (verifyResult.verified) {
-                        logTaskEvent(`STRM 内容验证通过（共 ${verifyResult.foundCount} 个文件）`);
-                    } else {
-                        logger.debug(`STRM 内容验证未通过: found=${verifyResult.foundCount}, missing=${verifyResult.missingCount}`);
-                    }
-                }
-            }
-        }
-
-        const bothFailed = (alistNativePath && !nativeRefreshResult?.success && !nativeRefreshResult?.firstExecutionPartial)
-            && (strmBasePath && !strmRefreshResult?.success && !strmRefreshResult?.firstExecutionPartial);
-        if (bothFailed) {
-            throw new Error(`OpenList 原生路径与 STRM 路径均刷新失败`);
-        }
-
-        const refreshPath = nativeRefreshPath || strmRefreshPath;
-        const refreshMode = alistNativePath
-            ? (strmBasePath ? '双路径' : '原生专用')
-            : 'STRM 专用';
-
-        logTaskEvent(`OpenList 缓存刷新完成（模式: ${refreshMode}）`);
-        return {
-            taskSubfolder,
-            refreshPath,
-            refreshMode,
-        };
-    }
-
-    /**
-     * 通知 Emby 刷新对应媒体库 (适用于 OpenList 原生 STRM 或本地 STRM 用户)。
-     * 在 OpenList 目录缓存刷新后调用，向 Emby 发送标准轻量目录事件通知。
-     * @param {TaskCompleteEventDto} dto
-     * @param {object} refreshContext
-     */
-    async _handleEmbyNotify(dto, refreshContext = null) {
+    async _handleEmbyNotify(dto) {
         const embyEnable = ConfigService.getConfigValue('emby.enable', false);
         if (!embyEnable) {
-            logTaskEvent('[5] Emby 媒体库直连刷新跳过: 未开启 Emby 联动入库');
+            logTaskEvent('[4] Emby 媒体库直连刷新跳过: 未开启 Emby 联动入库');
             return { status: 'skipped', reason: 'disabled' };
         }
         try {
             const embyService = new EmbyService();
             if (!embyService.enable || !embyService.embyUrl || !embyService.embyApiKey) {
-                logTaskEvent('[5] Emby 媒体库直连刷新跳过: 未配置 Emby 服务端地址或 API Key');
+                logTaskEvent('[4] Emby 媒体库直连刷新跳过: 未配置 Emby 服务端地址或 API Key');
                 return { status: 'skipped', reason: 'not_configured' };
             }
-            logTaskEvent('[5] 正在联动通知 Emby 刷新媒体库...');
+            logTaskEvent('[4] 正在联动通知 Emby 刷新媒体库...');
 
             // 收集需通知的目录
             let paths = [];
-            if (refreshContext?.directoryPath) {
-                paths.push(refreshContext.directoryPath);
-            }
             if (dto?.files && Array.isArray(dto.files)) {
                 for (const f of dto.files) {
                     const dir = f.targetPath ? require('path').dirname(f.targetPath) : (f.parentPath || '');
@@ -492,16 +241,16 @@ class TaskEventHandler {
                 });
                 const ok = await embyService.refreshMediaByPaths(mappedPaths);
                 if (ok) {
-                    logTaskEvent(`[5] 已成功通知 Emby 刷新入库: ${mappedPaths.slice(0, 3).join(', ')}`);
+                    logTaskEvent(`[4] 已成功通知 Emby 刷新入库: ${mappedPaths.slice(0, 3).join(', ')}`);
                     return { status: 'success', refreshMode: 'path_updated', paths: mappedPaths };
                 }
             }
 
-            const res = await embyService.notify(dto?.task || {}, { directoryPath: refreshContext?.directoryPath });
+            const res = await embyService.notify(dto?.task || {}, {});
             return res;
         } catch (err) {
             logger.warn(`[Emby联动] 通知入库刷新异常: ${err.message}`);
-            logTaskEvent(`[5] 联动 Emby 入库通知异常: ${err.message}`);
+            logTaskEvent(`[4] 联动 Emby 入库通知异常: ${err.message}`);
             return { status: 'failed', error: err.message };
         }
     }
@@ -509,9 +258,8 @@ class TaskEventHandler {
     /**
      * 通知 SmartStrm / 第三方 Webhook 服务触发媒体入库或生成 302 STRM
      * @param {TaskCompleteEventDto} dto
-     * @param {object} refreshContext
      */
-    async _handleWebhookNotify(dto, refreshContext = null) {
+    async _handleWebhookNotify(dto) {
         if (!webhookService.outboundEnable) {
             return { status: 'skipped', reason: 'disabled' };
         }
@@ -521,26 +269,21 @@ class TaskEventHandler {
             return { status: 'skipped', reason: 'no_task' };
         }
 
+        const taskSubfolder = String(task.realFolderName || '')
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/^\/+|\/+$/g, '');
+
         const normalizedBasePath = String(account.alistNativePath || '')
             .replace(/\\/g, '/')
             .replace(/\/+/g, '/')
             .replace(/\/+$/g, '');
-        const normalizedFromRefresh = String(refreshContext?.taskSubfolder || '')
-            .replace(/\\/g, '/')
-            .replace(/\/+/g, '/')
-            .replace(/^\/+|\/+$/g, '');
-        const { taskSubfolder: autoSubfolder } = await this._buildNormalizedTaskSubfolder(task, account, normalizedBasePath);
-        const taskSubfolder = normalizedFromRefresh || autoSubfolder;
 
-        const fallbackRawPath = String(task.realFolderName || '')
-            .replace(/\\/g, '/')
-            .replace(/\/+/g, '/')
-            .replace(/\/+$/g, '');
         const fullCloudPath = normalizedBasePath
             ? (taskSubfolder
                 ? `${normalizedBasePath}/${taskSubfolder}`.replace(/\/+/g, '/').replace(/\/+$/g, '')
                 : normalizedBasePath)
-            : fallbackRawPath;
+            : taskSubfolder;
 
         return await webhookService.notifyTransferComplete(task, {
             savePath: fullCloudPath,

@@ -158,6 +158,18 @@ const registerAccountsRoutes = (app, deps) => {
             await accountRepo.save(account);
             Cloud139Service.clearInstance(account);
 
+            if (account.isActive) {
+                // 异步触发因凭证失效失败的历史频道转存项自动重试自愈
+                setTimeout(() => {
+                    try {
+                        const { TgChannelMonitorService } = require('../../services/channel/TgChannelMonitorService');
+                        TgChannelMonitorService.getInstance().autoRetryFailedAuthItems(account.id).catch(err => {
+                            logTaskEvent(`[账号自愈] 自动重试历史转存异常: ${err.message}`);
+                        });
+                    } catch (_) {}
+                }, 500);
+            }
+
             const result = {
                 accountId: account.id,
                 memberInfo,
@@ -250,7 +262,8 @@ const registerAccountsRoutes = (app, deps) => {
         // 移动云盘 139 二维码扫码登录：创建新会话
     app.get('/api/accounts/qrcode/create', async (req, res) => {
         try {
-            const data = await qrLoginService.createQrSession(deps);
+            const targetAccountId = req.query.targetAccountId ? Number(req.query.targetAccountId) : null;
+            const data = await qrLoginService.createQrSession({ ...deps, targetAccountId });
             res.json({ success: true, data });
         } catch (error) {
             res.json({ success: false, error: error.message });

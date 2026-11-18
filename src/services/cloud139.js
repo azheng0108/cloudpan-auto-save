@@ -1443,7 +1443,34 @@ class Cloud139Service {
         if (!ids.length || !toParentFileId) {
             throw new Error('batchMoveHcy: fileIds 与 toParentFileId 不能为空');
         }
-        return this._personalKdNjsPost('/hcy/file/batchMove', { fileIds: ids, toParentFileId }, '/');
+        const moveRes = await this._personalKdNjsPost('/hcy/file/batchMove', { fileIds: ids, toParentFileId }, '/');
+        const taskId = moveRes?.taskId || moveRes?.taskInfo?.taskId;
+        if (taskId) {
+            // 轮询等待 139 异步移动任务真正执行完毕，避免后续立即重命名产生文件锁或并发冲突
+            const maxWaitMs = 20000;
+            const startTime = Date.now();
+            while (Date.now() - startTime < maxWaitMs) {
+                await new Promise(r => setTimeout(r, 400));
+                try {
+                    const taskStatusRes = await this._personalKdNjsPost('/hcy/task/get', { taskId }, '/');
+                    const status = taskStatusRes?.taskInfo?.status;
+                    if (status === 'Succeed') {
+                        return { ...moveRes, ...taskStatusRes, success: true };
+                    }
+                    if (status === 'Failed') {
+                        const errMsg = taskStatusRes?.taskInfo?.message || taskStatusRes?.batchFileResults?.[0]?.message || '139网盘异步移动任务失败';
+                        if (errMsg.includes('无法移动到自身') || errMsg.includes('自身所在目录') || errMsg.includes('同一目录')) {
+                            logger.info(`[139] 移动目标为当前所在目录，自动视为移动已就绪: ${errMsg}`);
+                            return { ...moveRes, ...taskStatusRes, success: true, alreadyInTarget: true };
+                        }
+                        throw new Error(`139网盘移动任务失败: ${errMsg}`);
+                    }
+                } catch (pollErr) {
+                    if (pollErr.message && pollErr.message.includes('失败')) throw pollErr;
+                }
+            }
+        }
+        return moveRes;
     }
 
     /**

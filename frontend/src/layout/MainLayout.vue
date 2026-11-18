@@ -21,18 +21,24 @@ import {
   Sun,
   Moon,
   Tv,
+  Sparkles,
+  Clock,
+  RotateCw,
 } from 'lucide-vue-next';
 import { isDark, toggleTheme, initTheme } from '../composables/useTheme';
 import NoticeModal from '../components/NoticeModal.vue';
 import { settingsApi } from '../api/settings';
 import { HelpCircle } from 'lucide-vue-next';
+import { useOrganizeStore } from '../stores/organize';
 
 const route = useRoute();
 const router = useRouter();
+const organizeStore = useOrganizeStore();
 
 // 移动端侧边栏展开状态
 const sidebarOpen = ref(false);
 const showNoticeModal = ref(false);
+const forceAcknowledgeNotice = ref(false);
 
 // 手风琴折叠状态 (使用 reactive 保证双向绑定与持久化)
 const groupCollapsed = reactive({
@@ -52,35 +58,23 @@ onMounted(() => {
   // 初始化暗黑/亮色主题
   initTheme();
 
+  const CURRENT_APP_VERSION = '2.4.16';
+  const VERSION_ACK_KEY = `cloudpan_v${CURRENT_APP_VERSION}_notice_ack`;
+
   function isNoticeAcknowledged(): boolean {
     try {
-      if (
-        localStorage.getItem('cloudpan_v2415_notice_ack') === 'true' ||
-        localStorage.getItem('cloudpan_notice_ack') === 'true' ||
-        localStorage.getItem('cloudpan_notice_dismissed') === 'true' ||
-        sessionStorage.getItem('cloudpan_notice_dismissed_session') === 'true' ||
-        document.cookie.includes('cloudpan_notice_ack=true')
-      ) {
+      // 只要用户未确认过当前新版本的更新日志，一律弹出，确保更新后直接展示更新日志
+      if (localStorage.getItem(VERSION_ACK_KEY) === 'true') {
         return true;
       }
     } catch (e) {}
     return false;
   }
 
-  // 登录进入控制台后，核查是否已确认过规范须知，杜绝重复弹出
+  // 登录进入控制台后，核查是否已确认过当前版本的更新日志
   if (!isNoticeAcknowledged()) {
-    settingsApi.getSettings().then((cfg) => {
-      if (cfg?.system?.noticeAck) {
-        try {
-          localStorage.setItem('cloudpan_v2415_notice_ack', 'true');
-          localStorage.setItem('cloudpan_notice_ack', 'true');
-        } catch {}
-      } else {
-        showNoticeModal.value = true;
-      }
-    }).catch(() => {
-      showNoticeModal.value = true;
-    });
+    forceAcknowledgeNotice.value = true;
+    showNoticeModal.value = true;
   }
 
   // 恢复本地存储的手风琴折叠偏好
@@ -306,16 +300,34 @@ function handleHeaderSaveClick() {
             <router-link
               to="/organize"
               class="sidebar-nav-item"
-              :class="{ active: route.path === '/organize' || (route.path === '/scrape' && (!route.query.tab || route.query.tab === 'organize')) }"
+              :class="{ active: route.path === '/organize' && !route.query.tab }"
               @click="sidebarOpen = false"
             >
               <Clapperboard class="w-4 h-4" />
               <span>媒体整理</span>
             </router-link>
             <router-link
+              to="/workbench"
+              class="sidebar-nav-item"
+              :class="{ active: route.path === '/workbench' || route.path === '/scrape' || (route.path === '/organize' && route.query.tab === 'manual') }"
+              @click="sidebarOpen = false"
+            >
+              <Sparkles class="w-4 h-4" />
+              <span>刮削工作台</span>
+            </router-link>
+            <router-link
+              to="/history"
+              class="sidebar-nav-item"
+              :class="{ active: route.path === '/history' || (route.path === '/organize' && route.query.tab === 'history') }"
+              @click="sidebarOpen = false"
+            >
+              <Clock class="w-4 h-4" />
+              <span>整理记录</span>
+            </router-link>
+            <router-link
               to="/wash"
               class="sidebar-nav-item"
-              :class="{ active: route.path === '/wash' || (route.path === '/scrape' && route.query.tab === 'wash') }"
+              :class="{ active: route.path === '/wash' }"
               @click="sidebarOpen = false"
             >
               <SlidersHorizontal class="w-4 h-4" />
@@ -336,16 +348,6 @@ function handleHeaderSaveClick() {
 
       <!-- 侧边栏底部：退出登录与主题/版本状态 -->
       <div class="p-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/60 flex-shrink-0 space-y-2">
-        <button
-          type="button"
-          class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/30 hover:bg-indigo-100/70 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
-          title="打开全流程新手使用指南与规范"
-          @click="showNoticeModal = true"
-        >
-          <HelpCircle class="w-3.5 h-3.5 text-indigo-500" />
-          <span>新手使用指南</span>
-        </button>
-
         <button
           type="button"
           class="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors shadow-sm cursor-pointer"
@@ -395,14 +397,42 @@ function handleHeaderSaveClick() {
           </div>
         </div>
 
-        <!-- 顶部右侧：使用指南、主题切换与保存按钮 -->
+        <!-- 顶部右侧：全局任务进度、使用指南、主题切换与保存按钮 -->
         <div class="flex items-center gap-2 sm:gap-3">
+          <!-- 全局实时归档任务进度胶囊 (任意页面均可见，点击回到刮削工作台) -->
+          <router-link
+            v-if="organizeStore.organizeProgress.active"
+            to="/workbench"
+            class="h-8 px-2.5 rounded-lg border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/90 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors flex items-center gap-2 text-xs font-medium shadow-xs"
+            :title="`正在后台归档中: ${organizeStore.organizeProgress.percent}% (点击回到工作台)`"
+          >
+            <RotateCw class="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span class="hidden md:inline font-mono">
+              {{ organizeStore.organizeProgress.mode === 'batch'
+                ? `批量归档 [${organizeStore.organizeProgress.currentGroupIndex || 1}/${organizeStore.organizeProgress.totalGroups || 1}]:`
+                : '归档中:'
+              }}
+            </span>
+            <span class="font-bold truncate max-w-[100px] sm:max-w-[150px]">
+              《{{ organizeStore.organizeProgress.groupTitle || '影视入库' }}》
+            </span>
+            <span class="font-mono text-indigo-600 dark:text-indigo-400 font-bold">
+              {{ organizeStore.organizeProgress.percent }}%
+            </span>
+            <div class="w-12 h-1.5 bg-indigo-200 dark:bg-indigo-900 rounded-full overflow-hidden hidden sm:block">
+              <div
+                class="h-full bg-linear-to-r from-indigo-500 to-blue-600 rounded-full transition-all duration-300"
+                :style="{ width: `${organizeStore.organizeProgress.percent}%` }"
+              ></div>
+            </div>
+          </router-link>
+
           <!-- 新手使用指南按钮 -->
           <button
             type="button"
-            class="h-8 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs text-xs font-medium"
+            class="h-8 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs text-xs font-medium"
             title="查看系统使用指南与版本说明"
-            @click="showNoticeModal = true"
+            @click="forceAcknowledgeNotice = false; showNoticeModal = true"
           >
             <HelpCircle class="w-3.5 h-3.5 text-indigo-500" />
             <span class="hidden sm:inline">使用指南</span>
@@ -434,14 +464,18 @@ function handleHeaderSaveClick() {
       </header>
 
       <!-- 主内容滚动区 -->
-      <main class="flex-1 p-3 sm:p-4 md:p-6 lg:p-8 overflow-y-auto">
+      <main class="flex-1 p-3 sm:p-4 md:p-5 lg:p-6 overflow-y-auto">
         <div class="app-viewport-container w-full">
-          <router-view />
+          <router-view v-slot="{ Component }">
+            <keep-alive>
+              <component :is="Component" />
+            </keep-alive>
+          </router-view>
         </div>
       </main>
     </div>
   </div>
-    <NoticeModal v-model="showNoticeModal" />
+    <NoticeModal v-model="showNoticeModal" :force-acknowledge="forceAcknowledgeNotice" />
   </template>
 
 <style scoped>

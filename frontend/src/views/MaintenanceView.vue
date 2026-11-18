@@ -1777,7 +1777,7 @@ const allScannedShows = computed<MissingShowGroup[]>(() => {
     list = Array.from(map.values());
   }
 
-  // ★ 核心体验：若开启「只检查完结剧」，当季连载中剧集（如《幻视任务》）即时自动过滤屏蔽！
+  //  核心体验：若开启「只检查完结剧」，当季连载中剧集（如《幻视任务》）即时自动过滤屏蔽！
   if (missingOptions.onlyEnded) {
     list = list.filter((s) => isShowEndedItem(s));
   }
@@ -2188,9 +2188,9 @@ async function handleClearAllMaintenanceJobs() {
     maintenanceJobs.value = [];
     expandedJobId.value = null;
     expandedJobDetail.value = null;
-    ElMessage.success('已成功清空全部维护流水记录');
+    ElMessage.success('已成功清空全部维护记录');
   } catch (e: any) {
-    ElMessage.error(`清空流水失败: ${e.message || '未知异常'}`);
+    ElMessage.error(`清空记录失败: ${e.message || '未知异常'}`);
   }
 }
 
@@ -3239,7 +3239,7 @@ function openBatchDeleteModal() {
   if (batchCandidates.value.length === 0) {
     // 熔断提示转内联提示卡（呈现于批量清理入口下方，文案原文保留）
     batchBreakerNotice.value =
-      '当前检测到的缺集剧集均为【连载中】剧集，当前缺更属于正常追更等待状态。🛡️ 安全熔断保护已生效：系统已自动彻底排除全部连载中剧集，防止追更文件被误删！';
+      '当前检测到的缺集剧集均为【连载中】剧集，当前缺更属于正常追更等待状态。️ 安全熔断保护已生效：系统已自动彻底排除全部连载中剧集，防止追更文件被误删！';
     batchDeletePanelOpen.value = false;
     return;
   }
@@ -3565,13 +3565,13 @@ async function copyShowDetailedReport(show: MissingShowGroup) {
 
   const lines: string[] = [];
   lines.push(`【剧集缺集巡检与源文件比对报告】《${show.title}》`);
-  lines.push(`📁 网盘目录: ${show.folderPath}`);
-  lines.push(`📊 收录总览: 本地已收录 ${show.totalLocalCount} 集 / 官方共 ${show.totalTmdbCount || (show.totalLocalCount + show.totalMissingCount)} 集 | 累计缺失 ${show.totalMissingCount} 集 (共 ${visibleSeasons.length} 季)`);
+  lines.push(` 网盘目录: ${show.folderPath}`);
+  lines.push(` 收录总览: 本地已收录 ${show.totalLocalCount} 集 / 官方共 ${show.totalTmdbCount || (show.totalLocalCount + show.totalMissingCount)} 集 | 累计缺失 ${show.totalMissingCount} 集 (共 ${visibleSeasons.length} 季)`);
   lines.push('');
 
   // 1. 缺失分集一览 (一目了然看清缺哪几集)
   if (missingSeasons.length > 0) {
-    lines.push(`❌ 缺集分布清单 (共 ${missingSeasons.length} 季存在缺更):`);
+    lines.push(` 缺集分布清单 (共 ${missingSeasons.length} 季存在缺更):`);
     for (const s of missingSeasons) {
       lines.push(`  • ${s.seasonLabel}: 缺失 ${s.missingCount} 集 [${s.missingRangesStr}]`);
       if (s.detailedList && s.detailedList.length) {
@@ -3585,12 +3585,12 @@ async function copyShowDetailedReport(show: MissingShowGroup) {
       }
     }
   } else {
-    lines.push('✔️ 状态良好: 全剧所有季度均已收全，无缺失分集。');
+    lines.push('️ 状态良好: 全剧所有季度均已收全，无缺失分集。');
   }
   lines.push('');
 
   // 2. 源文件名与分集识别对照 (核对源文件与识别结果是否一致正确)
-  lines.push('📄 网盘真实源文件与识别对照 (用于核对识别准确性):');
+  lines.push(' 网盘真实源文件与识别对照 (用于核对识别准确性):');
   for (const s of visibleSeasons) {
     const localFiles = s.localFiles || [];
     const unmatched = getUnmatchedFiles(s);
@@ -3601,15 +3601,15 @@ async function copyShowDetailedReport(show: MissingShowGroup) {
     } else {
       for (const f of localFiles) {
         if (f.parsedEpisode) {
-          lines.push(`  ✓ E${String(f.parsedEpisode).padStart(2, '0')} | 源文件: ${f.name} -> 识别匹配: 第 ${f.parsedEpisode} 集 [一致正确]`);
+          lines.push(`   E${String(f.parsedEpisode).padStart(2, '0')} | 源文件: ${f.name} -> 识别匹配: 第 ${f.parsedEpisode} 集 [一致正确]`);
         } else {
-          lines.push(`  ⚠️ 存疑 | 源文件: ${f.name} -> 未能匹配集号 [待核对]`);
+          lines.push(`  ️ 存疑 | 源文件: ${f.name} -> 未能匹配集号 [待核对]`);
         }
       }
     }
 
     if (unmatched.length > 0) {
-      lines.push(`  ⚠️ 存疑/未识别文件 (${unmatched.length} 个):`);
+      lines.push(`  ️ 存疑/未识别文件 (${unmatched.length} 个):`);
       for (const uf of unmatched) {
         lines.push(`    - ${uf.name} (${uf.sizeFormatted || ''})`);
       }
@@ -3665,7 +3665,7 @@ async function copyAllMissing() {
     // 增加源文件核对提示
     const allUnmatched = getVisibleSeasons(show).flatMap((s) => getUnmatchedFiles(s));
     if (allUnmatched.length > 0) {
-      chunks.push(`   ⚠️ 该剧存在 ${allUnmatched.length} 个未匹配集号的源文件:`);
+      chunks.push(`   ️ 该剧存在 ${allUnmatched.length} 个未匹配集号的源文件:`);
       allUnmatched.forEach((uf) => {
         chunks.push(`     - ${uf.name}`);
       });
@@ -4200,7 +4200,7 @@ onUnmounted(() => {
                   <span class="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                     <span>云盘违规与死链深度巡检中</span>
                     <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300 font-bold animate-pulse">
-                      ⚡ 正在穿透遍历
+                       正在穿透遍历
                     </span>
                   </span>
                 </div>
@@ -4633,7 +4633,7 @@ onUnmounted(() => {
               <template v-else-if="batch.bannedCount > 0 && batch.findings && batch.findings.length > 0">
                 <!-- 处置成功反馈横幅 (若刚处置过) -->
                 <div v-if="batch.cleanResult" class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
-                  <span>✓ 已成功处置 {{ batch.cleanResult.successCount }} 项，释放存储空间 {{ batch.cleanResult.freedSizeFormatted }}</span>
+                  <span> 已成功处置 {{ batch.cleanResult.successCount }} 项，释放存储空间 {{ batch.cleanResult.freedSizeFormatted }}</span>
                   <button type="button" class="text-[11px] underline cursor-pointer" @click="batch.cleanResult = null">关闭</button>
                 </div>
 
@@ -4959,7 +4959,7 @@ onUnmounted(() => {
                   <span class="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                     <span>全库剧集缺更巡检中</span>
                     <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold animate-pulse">
-                      ⚡ 实时流式呈现
+                       实时流式呈现
                     </span>
                   </span>
                   <span v-if="missingJobStatus?.currentShow" class="text-xs font-semibold text-blue-600 dark:text-blue-400 truncate max-w-xs">
@@ -5279,7 +5279,7 @@ onUnmounted(() => {
                     <div class="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-xl flex items-start gap-2.5">
                       <ShieldCheck class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                       <div class="text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed">
-                        <strong>🛡️ 连载剧安全熔断保护已生效：</strong>系统已自动彻底排除全部【连载中】剧集（连载缺更属于正常追更等待状态）。本次清理仅包含已完结但文件残缺的弃剧目标，确保在追剧集 100% 安全。
+                        <strong>️ 连载剧安全熔断保护已生效：</strong>系统已自动彻底排除全部【连载中】剧集（连载缺更属于正常追更等待状态）。本次清理仅包含已完结但文件残缺的弃剧目标，确保在追剧集 100% 安全。
                       </div>
                     </div>
 
@@ -5372,7 +5372,7 @@ onUnmounted(() => {
                       </div>
 
                       <div v-if="batchCandidates.length === 0" class="p-6 text-center text-slate-400 text-xs">
-                        🛡️ 系统已自动安全排除全部连载中剧集，当前暂无已完结的残缺剧集可清理
+                        ️ 系统已自动安全排除全部连载中剧集，当前暂无已完结的残缺剧集可清理
                       </div>
                     </div>
                   </div>
@@ -5416,7 +5416,7 @@ onUnmounted(() => {
                     <ShieldAlert class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div class="space-y-0.5">
                       <div class="font-bold flex items-center gap-1">
-                        <span>🛡️ 智能防误判保护机制已生效</span>
+                        <span>️ 智能防误判保护机制已生效</span>
                         <span class="text-[11px] font-normal text-amber-700 dark:text-amber-300">(坚决杜绝低置信度下的强行胡乱绑定与误判)</span>
                       </div>
                       <p class="text-[11px] text-amber-800/80 dark:text-amber-300/80">
@@ -5444,7 +5444,7 @@ onUnmounted(() => {
                         </div>
 
                         <div class="text-xs text-slate-500 dark:text-slate-400 font-mono truncate">
-                          📁 路径: {{ show.folderPath }}
+                           路径: {{ show.folderPath }}
                         </div>
 
                         <!-- 样本文件名展示 (帮用户秒懂真实内容) -->
@@ -5728,7 +5728,7 @@ onUnmounted(() => {
                                   <AlertTriangle class="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                                   <div class="text-xs text-rose-800 dark:text-rose-200 leading-relaxed space-y-1">
                                     <div class="font-bold">
-                                      ⚠️ 高危熔断拦截：连载中剧集保护
+                                      ️ 高危熔断拦截：连载中剧集保护
                                     </div>
                                     <div>
                                       {{ ongoingVerifyTarget.targetLabel }} 为【连载中】剧集，当前缺集属于正常追更等待状态！确认删除将导致已收录的
@@ -5977,7 +5977,7 @@ onUnmounted(() => {
                                 <div v-if="isShowOngoing(singleDeleteTargetShow)" class="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-xl flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200 leading-relaxed font-medium">
                                   <AlertTriangle class="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                                   <div>
-                                    <strong>⚠️ 高危连载剧警示：</strong>《{{ singleDeleteTargetShow.title }}》为【连载中】剧集，当前缺更属于正常追更等待状态。若确认删除，网盘内已收录的 {{ singleDeleteTargetShow.totalLocalCount }} 个分集文件将被移入回收站导致追更丢失！
+                                    <strong>️ 高危连载剧警示：</strong>《{{ singleDeleteTargetShow.title }}》为【连载中】剧集，当前缺更属于正常追更等待状态。若确认删除，网盘内已收录的 {{ singleDeleteTargetShow.totalLocalCount }} 个分集文件将被移入回收站导致追更丢失！
                                   </div>
                                 </div>
 
@@ -6025,7 +6025,7 @@ onUnmounted(() => {
 
                                 <div class="flex items-center justify-between gap-2.5">
                                   <div class="text-[11px] text-slate-400">
-                                    📁 网盘路径：{{ singleDeleteTargetShow.folderPath }}
+                                     网盘路径：{{ singleDeleteTargetShow.folderPath }}
                                   </div>
                                   <button
                                     type="button"
@@ -6145,7 +6145,7 @@ onUnmounted(() => {
                                 >
                                   <AlertTriangle class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                                   <div class="space-y-1 min-w-0">
-                                    <div class="font-bold">⚠️ 发现 {{ getUnmatchedFiles(getBatchActiveSeason(batch, show)).length }} 个未匹配到集号的源文件（请核对命名）：</div>
+                                    <div class="font-bold">️ 发现 {{ getUnmatchedFiles(getBatchActiveSeason(batch, show)).length }} 个未匹配到集号的源文件（请核对命名）：</div>
                                     <div class="font-mono text-[11px] space-y-0.5">
                                       <div v-for="uf in getUnmatchedFiles(getBatchActiveSeason(batch, show))" :key="uf.fileId || uf.name" class="truncate">
                                         • {{ uf.name }} ({{ uf.sizeFormatted }})
@@ -6286,9 +6286,9 @@ onUnmounted(() => {
         <!-- 头部标题说明与刷新清空按钮 -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-800">
           <div>
-            <h3 class="text-sm font-bold text-gray-900 dark:text-white">云盘巡检维护流水与审计记录</h3>
+            <h3 class="text-sm font-bold text-gray-900 dark:text-white">云盘巡检维护与审计记录</h3>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              统一持久化汇总违规死链巡检、剧集缺更检测、安全隔离处置与空目录修剪的执行快照与历史流水
+              统一持久化汇总违规死链巡检、剧集缺更检测、安全隔离处置与空目录修剪的执行快照与历史记录
             </p>
           </div>
 
@@ -6300,12 +6300,12 @@ onUnmounted(() => {
               @click="loadMaintenanceJobs"
             >
               <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isLoadingJobs }" />
-              <span>刷新流水</span>
+              <span>刷新记录</span>
             </button>
-            <!-- 清空流水：两段式原位确认（对齐频道监控规范 ChannelView:1338-1355 clearingCardsConfirm 模式） -->
+            <!-- 清空记录：两段式原位确认 -->
             <div v-if="maintenanceJobs.length > 0" class="flex items-center gap-1.5">
               <div v-if="clearRecordsConfirm" class="confirm-pill-group">
-                <span class="confirm-pill__text">确认清空全部流水? 此操作无法撤销</span>
+                <span class="confirm-pill__text">确认清空全部记录? 此操作无法撤销</span>
                 <button type="button" class="confirm-pill__yes" @click="handleClearAllMaintenanceJobs">
                   确定清空
                 </button>
@@ -6320,7 +6320,7 @@ onUnmounted(() => {
                 @click="handleClearAllMaintenanceJobs"
               >
                 <Trash2 class="w-3.5 h-3.5" />
-                <span>清空流水</span>
+                <span>清空记录</span>
               </button>
             </div>
           </div>
@@ -6354,7 +6354,7 @@ onUnmounted(() => {
             :class="{ 'tab-pill--active': activeRecordsFilter === 'all' }"
             @click="activeRecordsFilter = 'all'"
           >
-            全部流水 ({{ maintenanceJobs.length }})
+            全部记录 ({{ maintenanceJobs.length }})
           </button>
           <button
             type="button"
@@ -6632,7 +6632,7 @@ onUnmounted(() => {
                 ? '暂无剧集缺更检测记录'
                 : activeRecordsFilter === 'cron'
                 ? '暂无后台定时任务执行记录'
-                : '暂无维护流水记录'
+                : '暂无维护记录'
             }}
           </h4>
           <p class="text-xs text-gray-400 mt-1">

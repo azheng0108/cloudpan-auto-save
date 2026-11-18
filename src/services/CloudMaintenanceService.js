@@ -740,9 +740,14 @@ class CloudMaintenanceService {
                     const junkFiles = currentFiles.filter(f => {
                         const fname = (f.name || f.contentName || '').toLowerCase();
                         if (JUNK_NAMES.has(fname) || f.size === 0 || f.contentSize === '0') return true;
+                        const ext = fname.includes('.') ? fname.slice(fname.lastIndexOf('.') + 1) : '';
+                        if (['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'].includes(ext) && Number(f.size || 0) < 5 * 1024 * 1024) {
+                            if (/(?:二维码|下载|广告|说明|播放|poster|cover|banner|logo|thumb|fanart|icon)/i.test(fname) || /^[a-f0-9_\-]{16,64}$/i.test(fname.replace(/\.[^.]+$/, ''))) {
+                                return true;
+                            }
+                        }
                         try {
                             const { StagingOrganizeService } = require('./StagingOrganizeService');
-                            const ext = fname.includes('.') ? fname.slice(fname.lastIndexOf('.') + 1) : '';
                             return StagingOrganizeService.isAdOrPromoFile(fname, ext, node.path ? `${node.path}/${fname}` : fname);
                         } catch (_) {
                             return false;

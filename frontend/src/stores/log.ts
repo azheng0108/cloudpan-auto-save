@@ -18,18 +18,48 @@ export const useLogStore = defineStore('log', () => {
       isConnected.value = true;
     };
 
+    const normalizeMsg = (s: string) => {
+      if (!s) return '';
+      let str = s.replace(/^\[\d{4}[/-]\d{1,2}[/-]\d{1,2}[^\]]*\]\s*/, '');
+      str = str.replace(/^\[\d{1,2}:\d{2}:\d{2}\]\s*/, '');
+      return str.trim();
+    };
+
+    const isRecentDuplicate = (clean: string) => {
+      if (!clean) return true;
+      const checkCount = Math.min(logLines.value.length, 5);
+      for (let i = logLines.value.length - 1; i >= logLines.value.length - checkCount; i--) {
+        if (normalizeMsg(logLines.value[i]) === clean) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'history') {
-          const historyLogs = Array.isArray(data.logs) ? data.logs.slice(-maxLogs) : [];
-          logLines.value = historyLogs;
+          const raw = Array.isArray(data.logs) ? data.logs : [];
+          const deduped: string[] = [];
+          const recentClean: string[] = [];
+          for (const line of raw) {
+            const clean = normalizeMsg(line);
+            if (!clean || recentClean.includes(clean)) continue;
+            recentClean.push(clean);
+            if (recentClean.length > 5) recentClean.shift();
+            deduped.push(line);
+          }
+          logLines.value = deduped.slice(-maxLogs);
         } else if (data.type === 'log') {
           const message = String(data.message || '');
           if (message) {
-            logLines.value.push(message);
-            if (logLines.value.length > maxLogs) {
-              logLines.value.splice(0, logLines.value.length - maxLogs);
+            const clean = normalizeMsg(message);
+            if (!isRecentDuplicate(clean)) {
+              logLines.value.push(message);
+              if (logLines.value.length > maxLogs) {
+                logLines.value.splice(0, logLines.value.length - maxLogs);
+              }
             }
           }
         }

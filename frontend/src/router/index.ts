@@ -118,7 +118,6 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'organize',
         name: 'Organize',
-        alias: ['scrape'],
         component: ScrapeView,
         meta: {
           title: '媒体整理',
@@ -126,6 +125,27 @@ const routes: RouteRecordRaw[] = [
           desc: '暂存区自动整理归档、TMDB 智能识别、分季建树归档、标准点分命名与伴随字幕配对',
           showSaveBtn: true,
           saveBtnText: '保存整理配置',
+        },
+      },
+      {
+        path: 'workbench',
+        name: 'Workbench',
+        alias: ['scrape'],
+        component: ScrapeView,
+        meta: {
+          title: '刮削工作台',
+          badge: '人工纠偏',
+          desc: '面向未识别隔离资产与任意云盘目录的交互式整理中枢，支持 TMDB 匹配、保真归档与小文件过滤',
+        },
+      },
+      {
+        path: 'history',
+        name: 'History',
+        component: ScrapeView,
+        meta: {
+          title: '整理记录',
+          badge: '历史追溯',
+          desc: '云盘媒体规范化整理与归档记录，支持来源与目标路径比对、执行状态追踪及原路撤回恢复',
         },
       },
       {

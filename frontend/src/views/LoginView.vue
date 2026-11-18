@@ -325,7 +325,7 @@ onUnmounted(() => {
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 仿 MoviePilot 高级白色亚克力毛玻璃风格 (图2) */
+/* 高级白色亚克力毛玻璃风格 */
 .card-frosted-light {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(28px) saturate(180%);

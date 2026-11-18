@@ -51,14 +51,14 @@ async function handleManualCheckQrAuth() {
     const res = await accountApi.checkQrStatus(sid);
     if (res.status === 'confirmed') {
       stopQrPoll();
-      ElMessage.success(res.message || '🎉 扫码授权成功！新账号凭据已自动同步绑定');
+      ElMessage.success(res.message || '扫码授权成功！新账号凭据已自动同步绑定');
       showForm.value = false;
       await loadAccounts(false);
       return;
     }
     
     // 官方仍在等待中，保持轮询并提示用户
-    ElMessage.info(res.message || '📱 正在等待手机端确认授权，若手机端已提示授权成功，请稍等 1~2 秒后再次点击');
+    ElMessage.info(res.message || '正在等待手机端确认授权，若手机端已提示授权成功，请稍等 1~2 秒后再次点击');
   } catch (err: any) {
     ElMessage.warning(`检测授权状态: ${err.message || '请确保手机端已点击确认登录'}`);
   } finally {
@@ -66,15 +66,16 @@ async function handleManualCheckQrAuth() {
   }
 }
 
-// 初始化二维码会话与轮询
-async function initQrCode() {
+// 初始化二维码会话与轮询 (支持指定 targetAccId 用于更新既有账号凭据)
+async function initQrCode(targetAccId?: number | null | unknown) {
   stopQrPoll();
   qrLoading.value = true;
   qrExpired.value = false;
   qrCountdown.value = 120;
   qrStatusText.value = '请使用中国移动云盘 App 或微信扫一扫';
   try {
-    const res = await accountApi.createQrCode();
+    const accId = typeof targetAccId === 'number' ? targetAccId : (isEditing.value ? form.value.id : undefined);
+    const res = await accountApi.createQrCode(accId || undefined);
     qrDataUrl.value = res.qrDataUrl;
     qrSid.value = res.sID;
     qrCountdown.value = res.expiresIn || 120;
@@ -143,8 +144,8 @@ function stopQrPoll() {
 function switchLoginMode(mode: 'qrcode' | 'manual') {
   loginMode.value = mode;
   if (mode === 'qrcode') {
-    if (!qrDataUrl.value || qrExpired.value) {
-      initQrCode();
+    if (!qrDataUrl.value || qrExpired.value || (isEditing.value && form.value.id)) {
+      initQrCode(isEditing.value ? form.value.id : undefined);
     }
   } else {
     stopQrPoll();
@@ -301,8 +302,8 @@ function openInlineAddForm(shouldScroll = true) {
   }
 }
 
-// 展开内联编辑表单
-function openInlineEditForm(account: AccountItem) {
+// 展开内联编辑表单 (支持通过扫码或手动模式更新凭据)
+function openInlineEditForm(account: AccountItem, mode: 'qrcode' | 'manual' = 'qrcode') {
   isEditing.value = true;
   captchaVisible.value = false;
   captchaUrl.value = '';
@@ -314,6 +315,12 @@ function openInlineEditForm(account: AccountItem) {
     cookies: '',
     accountType: 'cloud139',
   };
+  loginMode.value = mode;
+  if (mode === 'qrcode') {
+    initQrCode(Number(account.id));
+  } else {
+    stopQrPoll();
+  }
   showForm.value = true;
   nextTick(() => {
     formContainerRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -590,7 +597,7 @@ onUnmounted(() => {
             <Plus v-else class="w-4 h-4" />
           </div>
           <h3 class="text-sm font-bold text-gray-900 dark:text-white">
-            {{ isEditing ? `修改账号【${form.alias || form.username}】` : '绑定新 139 移动云盘账号' }}
+            {{ isEditing ? `更新/配置账号【${form.alias || form.username}】` : '绑定新 139 移动云盘账号' }}
           </h3>
         </div>
 
@@ -605,8 +612,8 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 绑定模式切换 Tab (扫码推荐 / 手动凭据，仅在新建账号时展示) -->
-      <div v-if="!isEditing" class="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-xl w-fit mb-4">
+      <!-- 绑定/更新模式切换 Tab (扫码推荐 / 手动凭据) -->
+      <div class="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-xl w-fit mb-4">
         <button
           type="button"
           class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
@@ -614,7 +621,7 @@ onUnmounted(() => {
           @click="switchLoginMode('qrcode')"
         >
           <QrCode class="w-3.5 h-3.5" />
-          <span>扫码登录（免抓包，推荐）</span>
+          <span>{{ isEditing ? '扫码更新凭据（免抓包，推荐）' : '扫码登录（免抓包，推荐）' }}</span>
         </button>
         <button
           type="button"
@@ -623,17 +630,21 @@ onUnmounted(() => {
           @click="switchLoginMode('manual')"
         >
           <Edit3 class="w-3.5 h-3.5" />
-          <span>手动填写凭据</span>
+          <span>{{ isEditing ? '修改配置 / 手动凭据' : '手动填写凭据' }}</span>
         </button>
       </div>
 
-      <!-- 模式 1: 二维码扫码登录卡片 -->
+      <!-- 模式 1: 二维码扫码登录/更新卡片 -->
       <div
-        v-if="!isEditing && loginMode === 'qrcode'"
+        v-if="loginMode === 'qrcode'"
         class="flex flex-col items-center justify-center py-6 px-4 bg-gray-50/70 dark:bg-gray-900/40 rounded-2xl border border-gray-100 dark:border-gray-800 my-2"
       >
+        <div v-if="isEditing" class="mb-3 px-3.5 py-1.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-800/80 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2 max-w-md text-center">
+          <Info class="w-4 h-4 shrink-0" />
+          <span>正在为账号【{{ form.alias || form.username }}】扫码更新凭证，手机端确认授权后将自动恢复激活。</span>
+        </div>
         <div class="text-sm font-bold text-gray-800 dark:text-gray-100 mb-1 flex items-center gap-2">
-          <span>中国移动云盘免密扫码登录</span>
+          <span>{{ isEditing ? '中国移动云盘扫码更新凭据' : '中国移动云盘免密扫码登录' }}</span>
         </div>
         <div class="text-xs text-gray-500 dark:text-gray-400 mb-4 flex items-center gap-1.5">
           <span>支持「中国移动云盘 App」或「微信」扫一扫</span>
@@ -706,7 +717,7 @@ onUnmounted(() => {
             @click="handleManualCheckQrAuth"
           >
             <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingAuth }" />
-            <span>{{ checkingAuth ? '正在检测手机授权...' : '🔄 我已在手机上完成授权，立即检查/同步' }}</span>
+            <span>{{ checkingAuth ? '正在检测手机授权...' : '我已在手机上完成授权，立即检查/同步' }}</span>
           </button>
 
           <button
@@ -724,8 +735,8 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 模式 2: 手动表单模式 (仅在 isEditing 或 loginMode === 'manual' 时展示) -->
-      <div v-show="isEditing || loginMode === 'manual'">
+      <!-- 模式 2: 手动表单模式 (仅在 loginMode === 'manual' 时展示) -->
+      <div v-show="loginMode === 'manual'">
       <!-- 统一集中说明区 (按设计规范第 4.2 节：紧邻卡片头部下方、表单输入项上方，全卡片仅此一处) -->
       <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 space-y-2 mb-4">
         <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
@@ -1067,9 +1078,20 @@ onUnmounted(() => {
             <!-- 正常操作按钮 -->
             <template v-else>
               <button
+                v-if="account.memberStatus === 'auth_failed' || account.isActive === false"
+                type="button"
+                class="!h-7 !px-2.5 !text-xs font-semibold text-rose-700 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                title="扫码更新该账号凭据"
+                @click="openInlineEditForm(account, 'qrcode')"
+              >
+                <QrCode class="w-3 h-3" />
+                <span>扫码更新</span>
+              </button>
+
+              <button
                 type="button"
                 class="btn-default !h-7 !px-2.5 !text-xs font-medium"
-                @click="openInlineEditForm(account)"
+                @click="openInlineEditForm(account, account.memberStatus === 'auth_failed' ? 'qrcode' : 'manual')"
               >
                 <Edit3 class="w-3 h-3" />
                 <span>{{ account.memberStatus === 'auth_failed' ? '更新凭据' : '配置' }}</span>

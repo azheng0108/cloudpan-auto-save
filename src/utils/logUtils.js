@@ -37,6 +37,9 @@ async function rotateLogs() {
     }
 }
 
+// 日志广播防抖防重缓存，彻底杜绝短时间内并发/相邻重复日志刷屏
+const _recentBroadcasts = [];
+
 /**
  * 统一接收来自 Winston 记录器的所有日志事件（覆盖所有模块、所有级别的全局日志）
  * 写入本地 app.log 并实时通过 SSE 推送给前端全局系统日志面板
@@ -56,6 +59,20 @@ function broadcastWinstonLog(info) {
             try {
                 logText += ` ${JSON.stringify(meta)}`;
             } catch (_) {}
+        }
+
+        // 短时防重拦截（3 秒内滑窗比对，彻底拦截并发与相邻重复日志刷屏）
+        const rawContent = logText.trim().replace(/^\[\d{4}[/-]\d{1,2}[/-]\d{1,2}[^\]]*\]\s*/, '');
+        const now = Date.now();
+        while (_recentBroadcasts.length > 0 && (now - _recentBroadcasts[0].time > 3000)) {
+            _recentBroadcasts.shift();
+        }
+        if (rawContent && _recentBroadcasts.some(item => item.text === rawContent)) {
+            return;
+        }
+        _recentBroadcasts.push({ text: rawContent, time: now });
+        if (_recentBroadcasts.length > 30) {
+            _recentBroadcasts.shift();
         }
 
         const upperLevel = String(level || 'info').toUpperCase();
@@ -155,7 +172,21 @@ const sendHistoryLogs = async (res) => {
             const firstNewline = logs.indexOf('\n');
             if (firstNewline >= 0) logs = logs.slice(firstNewline + 1);
         }
-        res.write(`data: ${JSON.stringify({type: 'history', logs: logs.split('\n').filter(Boolean)})}\n\n`);
+        const rawLines = logs.split('\n').filter(Boolean);
+        const dedupedLogs = [];
+        const recentClean = [];
+        for (const line of rawLines) {
+            const clean = line.replace(/^\[[^\]]+\]\s*/, '').trim();
+            if (clean && recentClean.includes(clean)) {
+                continue;
+            }
+            if (clean) {
+                recentClean.push(clean);
+                if (recentClean.length > 5) recentClean.shift();
+            }
+            dedupedLogs.push(line);
+        }
+        res.write(`data: ${JSON.stringify({type: 'history', logs: dedupedLogs})}\n\n`);
     } catch (error) {
         // 文件不存在时静默，返回空历史
         if (error.code !== 'ENOENT') {
